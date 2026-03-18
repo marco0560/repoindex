@@ -81,7 +81,7 @@ def main() -> int:
     elif args.command == "context-for":
         result = context_for(Path.cwd(), args.query)
         print(result)
-        return
+        return 0
 
     parser.print_help()
-    return 1
+    return 0
