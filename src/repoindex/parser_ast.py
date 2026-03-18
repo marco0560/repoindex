@@ -18,7 +18,20 @@ def _signature_text(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     return f"{node.name}({', '.join(arg_names)})"
 
 
-def parse_file(path: Path) -> dict[str, Any]:
+def _module_name_from_path(path: Path, root: Path) -> str:
+    rel = path.with_suffix("").relative_to(root)
+    parts = list(rel.parts)
+
+    if "src" in parts:
+        parts = parts[parts.index("src") + 1 :]
+
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+
+    return ".".join(parts)
+
+
+def parse_file(path: Path, root: Path) -> dict[str, Any]:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
 
@@ -26,7 +39,7 @@ def parse_file(path: Path) -> dict[str, Any]:
 
     result: dict[str, Any] = {
         "module": {
-            "name": path.stem,
+            "name": _module_name_from_path(path, root),
             "docstring": module_doc,
             "has_docstring": int(module_doc is not None),
         },
@@ -38,7 +51,7 @@ def parse_file(path: Path) -> dict[str, Any]:
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
             class_doc = ast.get_docstring(node)
-            class_entry = {
+            class_entry: dict[str, Any] = {
                 "name": node.name,
                 "lineno": node.lineno,
                 "end_lineno": getattr(node, "end_lineno", None),

@@ -18,7 +18,7 @@ def find_symbol(root: Path, name: str) -> list[tuple[str, str, str, int]]:
             """,
             (name,),
         ).fetchall()
-        return [(str(t), str(m), str(f), int(l)) for t, m, f, l in rows]
+        return [(str(t), str(m), str(f), int(lineno)) for t, m, f, lineno in rows]
     finally:
         conn.close()
 
@@ -26,13 +26,11 @@ def find_symbol(root: Path, name: str) -> list[tuple[str, str, str, int]]:
 def docstring_issues(root: Path) -> list[tuple[str, str]]:
     conn = sqlite3.connect(get_db_path(root))
     try:
-        rows = conn.execute(
-            """
+        rows = conn.execute("""
             SELECT issue_type, message
             FROM docstring_issues
             ORDER BY issue_type, message
-            """
-        ).fetchall()
+            """).fetchall()
         return [(str(t), str(m)) for t, m in rows]
     finally:
         conn.close()

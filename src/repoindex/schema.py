@@ -100,5 +100,5 @@ DDL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_symbol_name ON symbol_index(name);
-    """
+    """,
 ]

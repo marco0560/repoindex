@@ -44,4 +44,6 @@ def test_index_and_queries(tmp_path: Path) -> None:
 
     issues = docstring_issues(tmp_path)
     messages = [message for _issue_type, message in issues]
-    assert any("Method Demo.method is missing a docstring" == message for message in messages)
+    assert any(
+        "Method Demo.method: Missing docstring" == message for message in messages
+    )

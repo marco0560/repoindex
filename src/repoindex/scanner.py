@@ -5,7 +5,6 @@ import hashlib
 from pathlib import Path
 from typing import Iterator
 
-
 EXCLUDED_DIRS = {
     ".repoindex",
     ".venv",
@@ -64,7 +63,7 @@ def iter_python_files(root: Path) -> Iterator[Path]:
         yield path
 
 
-def file_metadata(path: Path) -> dict:
+def file_metadata(path: Path) -> dict[str, object]:
     data = path.read_bytes()
     return {
         "path": str(path),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from repoindex.docstring import validate_docstring
 from repoindex.parser_ast import parse_file
 from repoindex.scanner import file_metadata, iter_python_files
 from repoindex.storage import get_db_path
@@ -34,7 +35,7 @@ def index_repo(root: Path) -> None:
             )
             file_id = cur.lastrowid
 
-            parsed = parse_file(path)
+            parsed = parse_file(path, root)
 
             cur = conn.execute(
                 "INSERT INTO modules(file_id, name, docstring, has_docstring) VALUES (?, ?, ?, ?)",
@@ -58,15 +59,20 @@ def index_repo(root: Path) -> None:
                 ),
             )
 
-            if not parsed["module"]["has_docstring"]:
+            issues = validate_docstring(
+                parsed["module"]["docstring"],
+                is_public=1,
+            )
+
+            for issue_type, message in issues:
                 conn.execute(
                     "INSERT INTO docstring_issues(function_id, class_id, module_id, issue_type, message) VALUES (?, ?, ?, ?, ?)",
                     (
                         None,
                         None,
                         module_id,
-                        "missing",
-                        f"Module {parsed['module']['name']} is missing a docstring",
+                        issue_type,
+                        f"Module {parsed['module']['name']}: {message}",
                     ),
                 )
 
@@ -95,15 +101,17 @@ def index_repo(root: Path) -> None:
                     ),
                 )
 
-                if not cls["has_docstring"]:
+                issues = validate_docstring(cls["docstring"], is_public=1)
+
+                for issue_type, message in issues:
                     conn.execute(
                         "INSERT INTO docstring_issues(function_id, class_id, module_id, issue_type, message) VALUES (?, ?, ?, ?, ?)",
                         (
                             None,
                             class_id,
                             None,
-                            "missing",
-                            f"Class {cls['name']} is missing a docstring",
+                            issue_type,
+                            f"Class {cls['name']}: {message}",
                         ),
                     )
 
@@ -136,15 +144,19 @@ def index_repo(root: Path) -> None:
                         ),
                     )
 
-                    if not method["has_docstring"]:
+                    issues = validate_docstring(
+                        method["docstring"], method["is_public"]
+                    )
+
+                    for issue_type, message in issues:
                         conn.execute(
                             "INSERT INTO docstring_issues(function_id, class_id, module_id, issue_type, message) VALUES (?, ?, ?, ?, ?)",
                             (
                                 function_id,
                                 None,
                                 None,
-                                "missing",
-                                f"Method {cls['name']}.{method['name']} is missing a docstring",
+                                issue_type,
+                                f"Method {cls['name']}.{method['name']}: {message}",
                             ),
                         )
 
@@ -177,15 +189,17 @@ def index_repo(root: Path) -> None:
                     ),
                 )
 
-                if not fn["has_docstring"]:
+                issues = validate_docstring(fn["docstring"], fn["is_public"])
+
+                for issue_type, message in issues:
                     conn.execute(
                         "INSERT INTO docstring_issues(function_id, class_id, module_id, issue_type, message) VALUES (?, ?, ?, ?, ?)",
                         (
                             function_id,
                             None,
                             None,
-                            "missing",
-                            f"Function {fn['name']} is missing a docstring",
+                            issue_type,
+                            f"Function {fn['name']}: {message}",
                         ),
                     )
 
