@@ -3,7 +3,7 @@ name = "repoindex"
 version = "0.1.0"
 description = "Local repository indexing and retrieval tool"
 authors = [{name = "Marco Coppola"}]
-requires-python = "==3.13"
+requires-python = ">=3.13"
 dependencies = []
 
 [project.scripts]

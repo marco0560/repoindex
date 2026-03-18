@@ -1,4 +1,16 @@
+# Packaging artifacts
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
 .venv/
+
+# Repoindex internal DB
+.repoindex/
+
+# Python caches
 __pycache__/
 *.pyc
-.repoindex/
+.mypy_cache/
+.pytest_cache/

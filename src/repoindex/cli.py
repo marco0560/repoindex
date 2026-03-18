@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from repoindex.indexer import index_repo
+from repoindex.query.context import context_for
 from repoindex.query.exact import docstring_issues, find_symbol
 from repoindex.storage import init_db
 
@@ -19,6 +20,9 @@ def build_parser() -> argparse.ArgumentParser:
     symbol_parser.add_argument("name")
 
     sub.add_parser("audit-docstrings", help="List docstring issues")
+
+    context_parser = sub.add_parser("context-for")
+    context_parser.add_argument("query", type=str)
 
     return parser
 
@@ -74,6 +78,10 @@ def main() -> int:
         return _run_symbol(args.name)
     if args.command == "audit-docstrings":
         return _run_audit_docstrings()
+    elif args.command == "context-for":
+        result = context_for(Path.cwd(), args.query)
+        print(result)
+        return
 
     parser.print_help()
     return 1
