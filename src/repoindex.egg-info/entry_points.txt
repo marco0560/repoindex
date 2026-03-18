@@ -1,0 +1,2 @@
+[console_scripts]
+repoindex = repoindex.cli:main

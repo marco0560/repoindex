@@ -1,0 +1,20 @@
+[project]
+name = "repoindex"
+version = "0.1.0"
+description = "Local repository indexing and retrieval tool"
+authors = [{name = "Marco Coppola"}]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+repoindex = "repoindex.cli:main"
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88
+
+[tool.mypy]
+python_version = "3.10"
+strict = true

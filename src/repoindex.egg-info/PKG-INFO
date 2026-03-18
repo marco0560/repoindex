@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: repoindex
+Version: 0.1.0
+Summary: Local repository indexing and retrieval tool
+Author: Marco Coppola
+Requires-Python: >=3.10
