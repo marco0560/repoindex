@@ -48,8 +48,12 @@ def _run_symbol(name: str) -> int:
         print(f"No symbol found: {name}")
         return 1
 
-    for symbol_type, module_name, file_path, lineno in rows:
-        print(f"{symbol_type}: {module_name} {file_path}:{lineno}")
+    for symbol_type, module_name, symbol_name, file_path, lineno in rows:
+        if symbol_type == "module":
+            print(f"{symbol_type}: {module_name} {file_path}:{lineno}")
+        else:
+            print(f"{symbol_type}: {module_name}.{symbol_name} {file_path}:{lineno}")
+
     return 0
 
 

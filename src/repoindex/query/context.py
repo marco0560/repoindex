@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-from pathlib import Path
-
+import re
 import sqlite3
+from pathlib import Path
 
 from repoindex.query.exact import find_symbol
 from repoindex.storage import get_db_path
 
+SymbolRow = tuple[str, str, str, str, int]
+ReferenceRow = tuple[str, int]
 
-def _symbols_in_module(root: Path, module: str) -> list[tuple[str, str, str, int]]:
 
+def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
     conn = sqlite3.connect(get_db_path(root))
     try:
         rows = conn.execute(
             """
-            SELECT type, module_name, file_path, lineno
+            SELECT type, module_name, name, file_path, lineno
             FROM symbol_index
             WHERE module_name = ?
             LIMIT 20
@@ -24,17 +26,17 @@ def _symbols_in_module(root: Path, module: str) -> list[tuple[str, str, str, int
     finally:
         conn.close()
 
-    return [(str(t), str(m), str(f), int(lineno)) for t, m, f, lineno in rows]
+    return [
+        (str(t), str(m), str(n), str(f), int(lineno)) for t, m, n, f, lineno in rows
+    ]
 
 
-def _find_references(
-    root: Path, symbol_name: str
-) -> list[tuple[str, str, int]]:
+def _find_references(root: Path, symbol_name: str) -> list[ReferenceRow]:
     """
-    Find files referencing a symbol name (simple text match).
-    """
+    Find files referencing a symbol name using symbol_index entries.
 
-    import sqlite3
+    This is a deterministic, lightweight approximation of cross-module usage.
+    """
 
     conn = sqlite3.connect(get_db_path(root))
     try:
@@ -50,111 +52,112 @@ def _find_references(
     finally:
         conn.close()
 
-    return [(str(f), int(lineno)) for f, lineno in rows]
+    return [(str(file_path), int(lineno)) for file_path, lineno in rows]
+
+
+def _tokenize(text: str) -> set[str]:
+    parts = re.split(r"[^A-Za-z0-9_]+", text.lower())
+    tokens: set[str] = set()
+
+    for part in parts:
+        if not part:
+            continue
+
+        tokens.add(part)
+        for sub in part.split("_"):
+            if sub:
+                tokens.add(sub)
+
+    return tokens
+
+
+def _score_match(query: str, match: SymbolRow) -> int:
+    symbol_type, module_name, name, file_path, lineno = match
+    del file_path, lineno
+
+    score = 0
+
+    query_l = query.lower()
+    module_l = module_name.lower()
+    name_l = name.lower()
+    type_l = symbol_type.lower()
+
+    query_tokens = _tokenize(query_l)
+    module_tokens = _tokenize(module_l)
+    name_tokens = _tokenize(name_l)
+
+    if query_l in name_l:
+        score += 10
+    if query_l in module_l:
+        score += 4
+    if query_l in type_l:
+        score += 1
+
+    score += len(query_tokens & name_tokens) * 3
+    score += len(query_tokens & module_tokens)
+
+    for qt in query_tokens:
+        for nt in name_tokens:
+            if qt in nt or nt in qt:
+                score += 2
+                continue
+            if qt[:5] == nt[:5]:
+                score += 2
+
+    return score
+
+
+def _format_symbol(symbol: SymbolRow, *, include_path: bool) -> str:
+    symbol_type, module_name, name, file_path, lineno = symbol
+
+    if symbol_type == "module":
+        head = f"{symbol_type}: {module_name}:{lineno}"
+    else:
+        head = f"{symbol_type}: {module_name}.{name}:{lineno}"
+
+    if include_path:
+        return f"{head} ({file_path})"
+    return head
 
 
 def context_for(root: Path, query: str) -> str:
     """
     Build a structured context block for a given query.
 
-    The output is optimized for LLM consumption (Codex).
+    The output is optimized for LLM consumption.
     """
 
     lines: list[str] = []
 
-    # --- SYMBOL MATCHES ---
     matches = find_symbol(root, query)
 
-    scored: list[tuple[int, tuple[str, str, str, int]]] = []
+    all_candidates: list[SymbolRow]
+    if matches:
+        all_candidates = matches
+    else:
+        conn = sqlite3.connect(get_db_path(root))
+        try:
+            rows = conn.execute("""
+                SELECT type, module_name, name, file_path, lineno
+                FROM symbol_index
+                LIMIT 200
+                """).fetchall()
+        finally:
+            conn.close()
 
-    for match in matches:
-        typ, module, file_path, lineno = match
+        all_candidates = [
+            (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
+        ]
 
-        score = 0
+    scored: list[tuple[int, SymbolRow]] = []
 
-        if query == module:
-            score += 3
-        elif query in module:
-            score += 2
-
-        if query in typ:
-            score += 1
-
-        scored.append((score, match))
+    for candidate in all_candidates:
+        score = _score_match(query, candidate)
+        if score > 0:
+            scored.append((score, candidate))
 
     scored.sort(reverse=True)
-    top_matches: list[tuple[str, str, str, int]] = [m for _, m in scored[:10]]
-
-    expanded: list[tuple[str, str, str, int]] = []
-
-    seen_modules: set[str] = set()
-
-    for typ, module, file_path, lineno in top_matches:
-        if module in seen_modules:
-            continue
-
-        seen_modules.add(module)
-
-        symbols = _symbols_in_module(root, module)
-
-        for s in symbols:
-            if s not in expanded:
-                expanded.append(s)
-
-    expanded = expanded[:20]
-
-    symbol_names: set[str] = set()
-
-    for typ, module, file_path, lineno in top_matches:
-        # extract last part of module or function name
-        name = module.split(".")[-1]
-        symbol_names.add(name)
-
-    references: list[tuple[str, str, int]] = []
-
-    for name in symbol_names:
-        refs = _find_references(root, name)
-
-        for file_path, lineno in refs:
-            # drop self-reference (same file as top match)
-            if any(file_path == f for _, _, f, _ in top_matches):
-                continue
-
-            references.append((file_path, lineno))
-
-    # deduplicate
-    seen_refs = set()
-    unique_refs = []
-
-    for file_path, lineno in references:
-        # remove exact definition matches
-        if any(file_path == f and lineno == lin for _, _, f, lin in top_matches):
-            continue
-
-        r = (file_path, lineno)
-
-        if r not in seen_refs:
-            seen_refs.add(r)
-            unique_refs.append(r)
-
-    unique_refs = unique_refs[:20]
-
-    external_refs = []
-    internal_refs = []
-
-    top_files = {f for _, _, f, _ in top_matches}
-
-    for r in unique_refs:
-        file_path, _ = r
-
-        if file_path in top_files:
-            internal_refs.append(r)
-        else:
-            external_refs.append(r)
-
-    unique_refs = (external_refs + internal_refs)[:20]
-
-    # --- DOCSTRING ISSUES ---
+    top_matches: list[SymbolRow] = [match for _, match in scored[:10]]
 
     conn = sqlite3.connect(get_db_path(root))
     try:
@@ -170,60 +173,86 @@ def context_for(root: Path, query: str) -> str:
     finally:
         conn.close()
 
-    # --- BUILD RELATED SYMBOLS FROM ISSUES ---
-    related_symbols: list[tuple[str, str, str, int]] = []
+    related_symbols: list[SymbolRow] = []
 
-    for issue_type, message in rows:
+    for _, message in rows:
         parts = message.split(":")[0].split()
-
         if len(parts) >= 2:
             symbol_name = parts[-1]
-            matches = find_symbol(root, symbol_name)
-            related_symbols.extend(matches)
+            related_symbols.extend(find_symbol(root, symbol_name))
 
-    # --- MERGE SYMBOLS ---
-    for m in related_symbols:
-        if m not in top_matches:
-            top_matches.append(m)
+    for match in related_symbols:
+        if match not in top_matches:
+            top_matches.append(match)
 
     top_matches = top_matches[:10]
 
-    # --- OUTPUT: TOP MATCHES ---
-    lines.append("=== TOP MATCHES ===")
+    expanded: list[SymbolRow] = []
+    seen_modules: set[str] = set()
 
+    for _, module_name, _, _, _ in top_matches:
+        if module_name in seen_modules:
+            continue
+
+        seen_modules.add(module_name)
+
+        for symbol in _symbols_in_module(root, module_name):
+            if symbol not in expanded:
+                expanded.append(symbol)
+
+    expanded = expanded[:20]
+
+    symbol_names = {name for _, _, name, _, _ in top_matches if name}
+
+    references: list[ReferenceRow] = []
+    top_files = {file_path for _, _, _, file_path, _ in top_matches}
+
+    for name in symbol_names:
+        for file_path, lineno in _find_references(root, name):
+            if file_path not in top_files:
+                references.append((file_path, lineno))
+
+    seen_refs: set[ReferenceRow] = set()
+    unique_refs: list[ReferenceRow] = []
+
+    for ref in references:
+        if ref not in seen_refs:
+            seen_refs.add(ref)
+            unique_refs.append(ref)
+
+    unique_refs = unique_refs[:20]
+
+    lines.append("=== TOP MATCHES ===")
     if not top_matches:
         lines.append("No direct symbol matches found.")
     else:
-        for typ, module, file_path, lineno in top_matches:
-            lines.append(f"{typ}: {module}:{lineno} ({file_path})")
+        for symbol in top_matches:
+            lines.append(_format_symbol(symbol, include_path=True))
 
-    # --- OUTPUT: DOCSTRING ISSUES ---
     lines.append("\n=== RELATED DOCSTRING ISSUES ===")
-
     if not rows:
         lines.append("No related docstring issues.")
     else:
         for issue_type, message in rows:
             lines.append(f"{issue_type}: {message}")
 
-    # --- OUTPUT: SUGGESTED CONTEXT ---
     lines.append("\n=== SUGGESTED CONTEXT ===")
-
-    for typ, module, file_path, lineno in top_matches[:5]:
-        lines.append(f"{typ} in {module}")
+    for symbol_type, module_name, name, file_path, lineno in top_matches[:5]:
+        if symbol_type == "module":
+            lines.append(f"{symbol_type} {module_name}")
+        else:
+            lines.append(f"{symbol_type} {name} in {module_name}")
         lines.append(f"  File: {file_path}")
         lines.append(f"  Line: {lineno}")
 
     lines.append("\n=== MODULE EXPANSION ===")
-
     if not expanded:
         lines.append("No module expansion available.")
     else:
-        for typ, module, file_path, lineno in expanded:
-            lines.append(f"{typ}: {module}:{lineno}")
+        for symbol in expanded:
+            lines.append(_format_symbol(symbol, include_path=False))
 
     lines.append("\n=== CROSS-MODULE REFERENCES ===")
-
     if not unique_refs:
         lines.append("No cross-module references found.")
     else:
