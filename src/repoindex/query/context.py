@@ -231,29 +231,82 @@ def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
         (str(t), str(m), str(n), str(f), int(lineno)) for t, m, n, f, lineno in rows
     ]
 
-
-def _find_references(root: Path, symbol_name: str) -> list[ReferenceRow]:
+def _iter_python_files(root: Path) -> list[Path]:
     """
-    Find files referencing a symbol name using symbol_index entries.
+    Return Python files tracked by git.
 
-    This is a deterministic, lightweight approximation of cross-module usage.
+    Falls back to filesystem scan if git is unavailable.
     """
+    import subprocess
 
-    conn = sqlite3.connect(get_db_path(root))
     try:
-        rows = conn.execute(
-            """
-            SELECT file_path, lineno
-            FROM symbol_index
-            WHERE name LIKE ?
-            LIMIT 20
-            """,
-            (f"%{symbol_name}%",),
-        ).fetchall()
-    finally:
-        conn.close()
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.py"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
 
-    return [(str(file_path), int(lineno)) for file_path, lineno in rows]
+        return [root / line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+    except Exception:
+        # fallback: filesystem scan
+        return list(root.rglob("*.py"))
+
+
+def _find_references(
+    root: Path,
+    name: str,
+    project_files: list[Path],
+) -> list[ReferenceRow]:
+    """
+    Find references to a symbol name across Python files.
+
+    This is a simple string-based search:
+    - scans all `.py` files under root
+    - returns (file_path, lineno)
+    - excludes hidden directories (e.g., .venv, .git)
+    - skips import statements
+    - limits results to avoid explosion
+    """
+
+    results: list[ReferenceRow] = []
+
+    try:
+        for path in project_files:
+
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            try:
+                rel = path.relative_to(root)
+                file_path = str(rel)
+            except Exception:
+                file_path = str(path)
+
+            for lineno, line in enumerate(lines, start=1):
+
+                stripped = line.strip()
+
+                # --- FILTER: skip imports ---
+                if stripped.startswith(("import ", "from ")):
+                    continue
+
+                # simple containment check
+                if name in line:
+                    results.append((file_path, lineno))
+
+                    # hard cap (global)
+                    if len(results) >= 100:
+                        return results
+
+    except Exception:
+        return []
+
+    return results
 
 
 def _tokenize(text: str) -> set[str]:
@@ -380,6 +433,8 @@ def context_for(root: Path, query: str) -> str:
 
     matches = find_symbol(root, query)
 
+    project_files = _iter_python_files(root)
+
     all_candidates: list[SymbolRow]
     if matches:
         all_candidates = matches
@@ -457,7 +512,7 @@ def context_for(root: Path, query: str) -> str:
     top_files = {file_path for _, _, _, file_path, _ in top_matches}
 
     for name in symbol_names:
-        for file_path, lineno in _find_references(root, name):
+        for file_path, lineno in _find_references(root, name, project_files):
             if file_path not in top_files:
                 references.append((file_path, lineno))
 
