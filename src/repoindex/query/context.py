@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 import sqlite3
 from pathlib import Path
@@ -9,6 +10,202 @@ from repoindex.storage import get_db_path
 
 SymbolRow = tuple[str, str, str, str, int]
 ReferenceRow = tuple[str, int]
+CodeContext = tuple[str | None, str | None, list[str]]
+
+
+def _render_signature(
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+    source: str,
+) -> str:
+    if isinstance(node, ast.ClassDef):
+        return f"{node.name}"
+
+    try:
+        params = ast.get_source_segment(source, node.args)
+    except ValueError:
+        params = None
+
+    if not params:
+        arg_names = [arg.arg for arg in node.args.args]
+        if node.args.vararg is not None:
+            arg_names.append(f"*{node.args.vararg.arg}")
+        if node.args.kwarg is not None:
+            arg_names.append(f"**{node.args.kwarg.arg}")
+        params = ", ".join(arg_names)
+
+    returns = ""
+    if node.returns is not None:
+        try:
+            ret = ast.get_source_segment(source, node.returns)
+        except ValueError:
+            ret = None
+        if ret:
+            returns = f" -> {ret}"
+
+    prefix = "async " if isinstance(node, ast.AsyncFunctionDef) else ""
+    return f"{prefix}{node.name}({params}){returns}"
+
+
+def _truncate_lines(text: str | None, limit: int) -> str | None:
+    if not text:
+        return None
+
+    lines = text.strip().splitlines()
+    if len(lines) <= limit:
+        return "\n".join(lines)
+
+    kept = lines[:limit]
+    kept.append("...")
+    return "\n".join(kept)
+
+
+def _snippet_from_lines(source_lines: list[str], lineno: int, limit: int = 5) -> list[str]:
+    start = max(lineno - 1, 0)
+    end = min(start + limit, len(source_lines))
+    return [line.rstrip() for line in source_lines[start:end]]
+
+
+def _snippet_from_node(
+    node: ast.AST,
+    source_lines: list[str],
+    limit: int = 5,
+) -> list[str]:
+    """
+    Extract a compact snippet for a node using AST positions.
+
+    Includes:
+    - decorators (if present)
+    - definition line
+    - first body lines
+
+    Truncated to `limit` lines.
+    """
+    # Determine start (include decorators if present)
+    start = getattr(node, "lineno", 1) - 1
+
+    if hasattr(node, "decorator_list") and node.decorator_list:
+        try:
+            start = min(d.lineno for d in node.decorator_list) - 1
+        except Exception:
+            pass
+
+    # Determine end (best-effort)
+    end = getattr(node, "end_lineno", None)
+    if end is None:
+        end = getattr(node, "lineno", 1)
+
+    # Slice and truncate
+    snippet = source_lines[start:end]
+
+    # --- remove docstring if present ---
+    body = getattr(node, "body", None)
+    if body:
+        doc = ast.get_docstring(node, clean=False)
+        if doc is not None and isinstance(body[0], ast.Expr):
+            doc_node = body[0]
+
+            # absolute positions
+            doc_start = doc_node.lineno - 1
+            doc_end = getattr(doc_node, "end_lineno", doc_start + 1)
+
+            # snippet base offset
+            snippet_start = start
+
+            # convert to snippet-local indices
+            local_start = doc_start - snippet_start
+            local_end = doc_end - snippet_start
+
+            snippet = [
+                line for i, line in enumerate(snippet)
+                if not (local_start <= i < local_end)
+            ]
+
+    # --- truncate ---
+    snippet = snippet[:limit]
+
+    return [line.rstrip() for line in snippet]
+
+def _extract_code_context(
+    root: Path,
+    symbol: SymbolRow,
+    cache: dict[Path, tuple[str, list[str], ast.Module]],
+) -> CodeContext:
+    symbol_type, _module_name, name, file_path, lineno = symbol
+    path = root / file_path
+
+    if path in cache:
+        source, source_lines, tree = cache[path]
+    else:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return (None, None, [])
+
+        source_lines = source.splitlines()
+
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return (None, None, _snippet_from_lines(source_lines, lineno))
+
+        cache[path] = (source, source_lines, tree)
+
+    if symbol_type == "module":
+        module_doc = ast.get_docstring(tree, clean=True)
+        snippet = _snippet_from_lines(source_lines, lineno)
+        return (None, _truncate_lines(module_doc, 10), snippet)
+
+    # --- CLASS MATCH ---
+    if symbol_type == "class":
+        candidates: list[ast.ClassDef] = []
+
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name == name:
+                candidates.append(node)
+
+        if candidates:
+            node = min(candidates, key=lambda n: abs(n.lineno - lineno))
+            signature = _render_signature(node, source)
+            docstring = ast.get_docstring(node, clean=True)
+            snippet = _snippet_from_node(node, source_lines)
+            return (signature, _truncate_lines(docstring, 10), snippet)
+
+    # --- FUNCTION MATCH ---
+    if symbol_type == "function":
+        candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name == name:
+                    candidates.append(node)
+
+        if candidates:
+            node = min(candidates, key=lambda n: abs(n.lineno - lineno))
+            signature = _render_signature(node, source)
+            docstring = ast.get_docstring(node, clean=True)
+            snippet = _snippet_from_node(node, source_lines)
+            return (signature, _truncate_lines(docstring, 10), snippet)
+
+    # --- METHOD MATCH ---
+    if symbol_type == "method":
+        candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                for child in node.body:
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if child.name == name:
+                            candidates.append(child)
+
+        if candidates:
+            node = min(candidates, key=lambda n: abs(n.lineno - lineno))
+            signature = _render_signature(node, source)
+            docstring = ast.get_docstring(node, clean=True)
+            snippet = _snippet_from_node(node, source_lines)
+            return (signature, _truncate_lines(docstring, 10), snippet)
+
+    # --- FALLBACK ---
+    return (None, None, _snippet_from_lines(source_lines, lineno))
 
 
 def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
@@ -118,6 +315,38 @@ def _format_symbol(symbol: SymbolRow, *, include_path: bool) -> str:
     if include_path:
         return f"{head} ({file_path})"
     return head
+
+def _format_enriched_symbol(
+    root: Path,
+    symbol: SymbolRow,
+    cache: dict[Path, tuple[str, list[str], ast.Module]],
+) -> list[str]:
+    symbol_type, module_name, name, file_path, lineno = symbol
+    signature, docstring, snippet = _extract_code_context(root, symbol, cache)
+
+    lines: list[str] = []
+
+    if symbol_type == "module":
+        lines.append(f"module {module_name}")
+    elif signature:
+        lines.append(f"{symbol_type} {signature}")
+    else:
+        lines.append(f"{symbol_type} {name} in {module_name}")
+
+    lines.append(f"  File: {file_path}")
+    lines.append(f"  Line: {lineno}")
+
+    if snippet:
+        lines.append("  Snippet:")
+        for line in snippet:
+            lines.append(f"    {line}")
+
+    if docstring:
+        lines.append("  Docstring:")
+        for line in docstring.splitlines():
+            lines.append(f"    {line}")
+
+    return lines
 
 
 def context_for(root: Path, query: str) -> str:
@@ -237,13 +466,9 @@ def context_for(root: Path, query: str) -> str:
             lines.append(f"{issue_type}: {message}")
 
     lines.append("\n=== SUGGESTED CONTEXT ===")
-    for symbol_type, module_name, name, file_path, lineno in top_matches[:5]:
-        if symbol_type == "module":
-            lines.append(f"{symbol_type} {module_name}")
-        else:
-            lines.append(f"{symbol_type} {name} in {module_name}")
-        lines.append(f"  File: {file_path}")
-        lines.append(f"  Line: {lineno}")
+    cache: dict[Path, tuple[str, list[str], ast.Module]] = {}
+    for symbol in top_matches[:5]:
+        lines.extend(_format_enriched_symbol(root, symbol, cache))
 
     lines.append("\n=== MODULE EXPANSION ===")
     if not expanded:
