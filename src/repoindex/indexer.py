@@ -38,7 +38,8 @@ def index_repo(root: Path) -> None:
             parsed = parse_file(path, root)
 
             cur = conn.execute(
-                "INSERT INTO modules(file_id, name, docstring, has_docstring) VALUES (?, ?, ?, ?)",
+                "INSERT INTO modules"
+                "(file_id, name, docstring, has_docstring) VALUES (?, ?, ?, ?)",
                 (
                     file_id,
                     parsed["module"]["name"],
@@ -49,7 +50,9 @@ def index_repo(root: Path) -> None:
             module_id = cur.lastrowid
 
             conn.execute(
-                "INSERT INTO symbol_index(name, type, module_name, file_path, lineno) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO symbol_index"
+                "(name, type, module_name, file_path, lineno) "
+                "VALUES (?, ?, ?, ?, ?)",
                 (
                     parsed["module"]["name"],
                     "module",
@@ -66,7 +69,9 @@ def index_repo(root: Path) -> None:
 
             for issue_type, message in issues:
                 conn.execute(
-                    "INSERT INTO docstring_issues(function_id, class_id, module_id, issue_type, message) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO docstring_issues"
+                    "(function_id, class_id, module_id, issue_type, message) "
+                    "VALUES (?, ?, ?, ?, ?)",
                     (
                         None,
                         None,
@@ -78,7 +83,9 @@ def index_repo(root: Path) -> None:
 
             for cls in parsed["classes"]:
                 cur = conn.execute(
-                    "INSERT INTO classes(module_id, name, lineno, end_lineno, docstring, has_docstring) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO classes"
+                    "(module_id, name, lineno, end_lineno, docstring, has_docstring) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         module_id,
                         cls["name"],
@@ -91,7 +98,9 @@ def index_repo(root: Path) -> None:
                 class_id = cur.lastrowid
 
                 conn.execute(
-                    "INSERT INTO symbol_index(name, type, module_name, file_path, lineno) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO symbol_index"
+                    "(name, type, module_name, file_path, lineno) "
+                    "VALUES (?, ?, ?, ?, ?)",
                     (
                         cls["name"],
                         "class",
@@ -105,7 +114,9 @@ def index_repo(root: Path) -> None:
 
                 for issue_type, message in issues:
                     conn.execute(
-                        "INSERT INTO docstring_issues(function_id, class_id, module_id, issue_type, message) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO docstring_issues"
+                        "(function_id, class_id, module_id, issue_type, message) "
+                        "VALUES (?, ?, ?, ?, ?)",
                         (
                             None,
                             class_id,
@@ -117,7 +128,10 @@ def index_repo(root: Path) -> None:
 
                 for method in cls["methods"]:
                     cur = conn.execute(
-                        "INSERT INTO functions(module_id, class_id, name, lineno, end_lineno, signature, docstring, has_docstring, is_method, is_public) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO functions"
+                        "(module_id, class_id, name, lineno, end_lineno, signature, "
+                        "docstring, has_docstring, is_method, is_public) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             module_id,
                             class_id,
@@ -134,7 +148,9 @@ def index_repo(root: Path) -> None:
                     function_id = cur.lastrowid
 
                     conn.execute(
-                        "INSERT INTO symbol_index(name, type, module_name, file_path, lineno) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO symbol_index"
+                        "(name, type, module_name, file_path, lineno) "
+                        "VALUES (?, ?, ?, ?, ?)",
                         (
                             method["name"],
                             "method",
@@ -150,7 +166,9 @@ def index_repo(root: Path) -> None:
 
                     for issue_type, message in issues:
                         conn.execute(
-                            "INSERT INTO docstring_issues(function_id, class_id, module_id, issue_type, message) VALUES (?, ?, ?, ?, ?)",
+                            "INSERT INTO docstring_issues"
+                            "(function_id, class_id, module_id, issue_type, message) "
+                            "VALUES (?, ?, ?, ?, ?)",
                             (
                                 function_id,
                                 None,
@@ -162,7 +180,10 @@ def index_repo(root: Path) -> None:
 
             for fn in parsed["functions"]:
                 cur = conn.execute(
-                    "INSERT INTO functions(module_id, class_id, name, lineno, end_lineno, signature, docstring, has_docstring, is_method, is_public) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO functions"
+                    "(module_id, class_id, name, lineno, end_lineno, signature, "
+                    "docstring, has_docstring, is_method, is_public) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         module_id,
                         None,
@@ -179,7 +200,9 @@ def index_repo(root: Path) -> None:
                 function_id = cur.lastrowid
 
                 conn.execute(
-                    "INSERT INTO symbol_index(name, type, module_name, file_path, lineno) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO symbol_index"
+                    "(name, type, module_name, file_path, lineno) "
+                    "VALUES (?, ?, ?, ?, ?)",
                     (
                         fn["name"],
                         "function",
@@ -193,7 +216,9 @@ def index_repo(root: Path) -> None:
 
                 for issue_type, message in issues:
                     conn.execute(
-                        "INSERT INTO docstring_issues(function_id, class_id, module_id, issue_type, message) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO docstring_issues"
+                        "(function_id, class_id, module_id, issue_type, message) "
+                        "VALUES (?, ?, ?, ?, ?)",
                         (
                             function_id,
                             None,
@@ -205,7 +230,8 @@ def index_repo(root: Path) -> None:
 
             for imp in parsed["imports"]:
                 conn.execute(
-                    "INSERT INTO imports(module_id, name, alias, lineno) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO imports(module_id, name, alias, lineno) "
+                    "VALUES (?, ?, ?, ?)",
                     (
                         module_id,
                         imp["name"],

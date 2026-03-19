@@ -5,12 +5,37 @@ build/
 
 # Virtual environments
 .venv/
+venv/
 
 # Repoindex internal DB
 .repoindex/
 
 # Python caches
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
 .mypy_cache/
 .pytest_cache/
+.ruff_cache/
+
+# Virtual Studio Code configuration
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Coverage
+.coverage
+htmlcov/
+
+# --- Node (semantic-release) ---
+node_modules/
+package-lock.json
+
+# --- OS ---
+.DS_Store
+Thumbs.db

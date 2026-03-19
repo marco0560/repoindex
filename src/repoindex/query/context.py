@@ -60,7 +60,9 @@ def _truncate_lines(text: str | None, limit: int) -> str | None:
     return "\n".join(kept)
 
 
-def _snippet_from_lines(source_lines: list[str], lineno: int, limit: int = 5) -> list[str]:
+def _snippet_from_lines(
+    source_lines: list[str], lineno: int, limit: int = 5
+) -> list[str]:
     start = max(lineno - 1, 0)
     end = min(start + limit, len(source_lines))
     return [line.rstrip() for line in source_lines[start:end]]
@@ -84,11 +86,13 @@ def _snippet_from_node(
     # Determine start (include decorators if present)
     start = getattr(node, "lineno", 1) - 1
 
-    if hasattr(node, "decorator_list") and node.decorator_list:
-        try:
-            start = min(d.lineno for d in node.decorator_list) - 1
-        except Exception:
-            pass
+    # --- include decorators if present ---
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if node.decorator_list:
+            try:
+                start = min(d.lineno for d in node.decorator_list) - 1
+            except (AttributeError, ValueError):
+                pass
 
     # Determine end (best-effort)
     end = getattr(node, "end_lineno", None)
@@ -102,7 +106,9 @@ def _snippet_from_node(
     body = getattr(node, "body", None)
     if body:
         doc = ast.get_docstring(
-            cast(ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Module, node),
+            cast(
+                ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Module, node
+            ),
             clean=False,
         )
         if doc is not None and isinstance(body[0], ast.Expr):
@@ -120,7 +126,8 @@ def _snippet_from_node(
             local_end = doc_end - snippet_start
 
             snippet = [
-                line for i, line in enumerate(snippet)
+                line
+                for i, line in enumerate(snippet)
                 if not (local_start <= i < local_end)
             ]
 
@@ -128,6 +135,7 @@ def _snippet_from_node(
     snippet = snippet[:limit]
 
     return [line.rstrip() for line in snippet]
+
 
 def _extract_code_context(
     root: Path,
@@ -231,6 +239,7 @@ def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
         (str(t), str(m), str(n), str(f), int(lineno)) for t, m, n, f, lineno in rows
     ]
 
+
 def _iter_python_files(root: Path) -> list[Path]:
     """
     Return Python files tracked by git.
@@ -248,7 +257,9 @@ def _iter_python_files(root: Path) -> list[Path]:
             check=True,
         )
 
-        return [root / line.strip() for line in result.stdout.splitlines() if line.strip()]
+        return [
+            root / line.strip() for line in result.stdout.splitlines() if line.strip()
+        ]
 
     except Exception:
         # fallback: filesystem scan
@@ -275,7 +286,6 @@ def _find_references(
 
     try:
         for path in project_files:
-
             try:
                 lines = path.read_text(encoding="utf-8").splitlines()
             except (OSError, UnicodeDecodeError):
@@ -288,7 +298,6 @@ def _find_references(
                 file_path = str(path)
 
             for lineno, line in enumerate(lines, start=1):
-
                 stripped = line.strip()
 
                 # --- FILTER: skip imports ---
@@ -388,6 +397,7 @@ def _format_symbol(symbol: SymbolRow, *, include_path: bool) -> str:
     if include_path:
         return f"{head} ({file_path})"
     return head
+
 
 def _format_enriched_symbol(
     root: Path,
