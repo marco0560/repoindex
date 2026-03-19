@@ -4,6 +4,7 @@ import ast
 import re
 import sqlite3
 from pathlib import Path
+from typing import cast
 
 from repoindex.query.exact import find_symbol
 from repoindex.storage import get_db_path
@@ -100,7 +101,10 @@ def _snippet_from_node(
     # --- remove docstring if present ---
     body = getattr(node, "body", None)
     if body:
-        doc = ast.get_docstring(node, clean=False)
+        doc = ast.get_docstring(
+            cast(ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Module, node),
+            clean=False,
+        )
         if doc is not None and isinstance(body[0], ast.Expr):
             doc_node = body[0]
 
@@ -157,14 +161,14 @@ def _extract_code_context(
 
     # --- CLASS MATCH ---
     if symbol_type == "class":
-        candidates: list[ast.ClassDef] = []
+        class_candidates: list[ast.ClassDef] = []
 
         for node in tree.body:
             if isinstance(node, ast.ClassDef) and node.name == name:
-                candidates.append(node)
+                class_candidates.append(node)
 
-        if candidates:
-            node = min(candidates, key=lambda n: abs(n.lineno - lineno))
+        if class_candidates:
+            node = min(class_candidates, key=lambda n: abs(n.lineno - lineno))
             signature = _render_signature(node, source)
             docstring = ast.get_docstring(node, clean=True)
             snippet = _snippet_from_node(node, source_lines)
@@ -172,15 +176,15 @@ def _extract_code_context(
 
     # --- FUNCTION MATCH ---
     if symbol_type == "function":
-        candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+        func_candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
 
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if node.name == name:
-                    candidates.append(node)
+                    func_candidates.append(node)
 
-        if candidates:
-            node = min(candidates, key=lambda n: abs(n.lineno - lineno))
+        if func_candidates:
+            node = min(func_candidates, key=lambda n: abs(n.lineno - lineno))
             signature = _render_signature(node, source)
             docstring = ast.get_docstring(node, clean=True)
             snippet = _snippet_from_node(node, source_lines)
@@ -188,17 +192,17 @@ def _extract_code_context(
 
     # --- METHOD MATCH ---
     if symbol_type == "method":
-        candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+        method_candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
 
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 for child in node.body:
                     if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         if child.name == name:
-                            candidates.append(child)
+                            method_candidates.append(child)
 
-        if candidates:
-            node = min(candidates, key=lambda n: abs(n.lineno - lineno))
+        if method_candidates:
+            node = min(method_candidates, key=lambda n: abs(n.lineno - lineno))
             signature = _render_signature(node, source)
             docstring = ast.get_docstring(node, clean=True)
             snippet = _snippet_from_node(node, source_lines)
@@ -268,38 +272,54 @@ def _tokenize(text: str) -> set[str]:
     return tokens
 
 
-def _score_match(query: str, match: SymbolRow) -> int:
-    symbol_type, module_name, name, file_path, lineno = match
-    del file_path, lineno
+def _score_match(query_tokens: list[str], symbol: SymbolRow) -> int:
+    symbol_type, module_name, name, _file_path, _lineno = symbol
 
     score = 0
 
-    query_l = query.lower()
-    module_l = module_name.lower()
-    name_l = name.lower()
-    type_l = symbol_type.lower()
+    query = " ".join(query_tokens)
 
-    query_tokens = _tokenize(query_l)
-    module_tokens = _tokenize(module_l)
-    name_tokens = _tokenize(name_l)
+    # --- Exact match (very strong) ---
+    if query == name:
+        score += 100
 
-    if query_l in name_l:
-        score += 10
-    if query_l in module_l:
-        score += 4
-    if query_l in type_l:
-        score += 1
+    # --- Substring match ---
+    elif query in name:
+        score += 50
 
-    score += len(query_tokens & name_tokens) * 3
-    score += len(query_tokens & module_tokens)
+    # --- Token overlap ---
+    name_tokens = _tokenize(name)
+    overlap = set(query_tokens) & set(name_tokens)
+    score += 10 * len(overlap)
 
-    for qt in query_tokens:
-        for nt in name_tokens:
-            if qt in nt or nt in qt:
-                score += 2
-                continue
-            if qt[:5] == nt[:5]:
-                score += 2
+    # --- Module signal (light) ---
+    module_tokens = _tokenize(module_name)
+    module_overlap = set(query_tokens) & set(module_tokens)
+    score += 3 * len(module_overlap)
+
+    # --- Type bias (very small) ---
+    if symbol_type == "function":
+        score += 5
+
+    # --- Penalize private symbols ---
+    if name.startswith("_"):
+        score -= 20
+
+    # --- Penalize tests ---
+    if "tests" in module_name:
+        score -= 15
+
+    # --- Query intent: module (strong override) ---
+    if "module" in query_tokens:
+        if symbol_type == "module":
+            score += 120
+        else:
+            score -= 40
+
+    # --- Prefer central modules (shorter paths) ---
+    if symbol_type == "module":
+        depth = module_name.count(".")
+        score -= depth * 5
 
     return score
 
@@ -381,7 +401,7 @@ def context_for(root: Path, query: str) -> str:
     scored: list[tuple[int, SymbolRow]] = []
 
     for candidate in all_candidates:
-        score = _score_match(query, candidate)
+        score = _score_match(list(_tokenize(query)), candidate)
         if score > 0:
             scored.append((score, candidate))
 
