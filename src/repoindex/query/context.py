@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import sqlite3
 from pathlib import Path
@@ -454,7 +455,22 @@ def _retrieve_and_score_candidates(
     """
     Retrieve candidate symbols and apply scoring + filtering.
     """
-    all_candidates: list[SymbolRow] = find_symbol(root, query, conn=conn)
+    matches = find_symbol(root, query, conn=conn)
+
+    if matches:
+        all_candidates: list[SymbolRow] = matches
+    else:
+        rows = conn.execute(
+            """
+            SELECT type, module_name, name, file_path, lineno
+            FROM symbol_index
+            LIMIT 200
+            """
+        ).fetchall()
+
+        all_candidates = [
+            (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
+        ]
 
     query_tokens = list(_tokenize(query))
     token_cache: dict[str, list[str]] = {}
@@ -464,6 +480,11 @@ def _retrieve_and_score_candidates(
     for candidate in all_candidates:
         base_score = _score_match(query_tokens, candidate)
         score = base_score + _path_bias(candidate[3])
+
+        # --- INTERNAL SYMBOL PENALTY ---
+        symbol_name = candidate[2]
+        if symbol_name.startswith("_"):
+            score -= 2
 
         symbol_name = candidate[2]
         if symbol_name not in token_cache:
@@ -531,8 +552,18 @@ def _expand_and_collect_references(
         seen_modules.add(module_name)
 
         for symbol in _symbols_in_module(root, module_name):
+            name = symbol[2]
+
+            # --- FILTER: skip internal helpers ---
+            if name.startswith("_"):
+                continue
+
             if symbol not in expanded:
                 expanded.append(symbol)
+
+    # --- REMOVE duplicates already in top_matches ---
+    top_set = set(top_matches)
+    expanded = [s for s in expanded if s not in top_set]
 
     expanded = expanded[:20]
 
@@ -574,10 +605,47 @@ def _render_context(
     doc_issues: list[tuple[str, str]],
     expanded: list[SymbolRow],
     unique_refs: list[ReferenceRow],
+    *,
+    as_json: bool = False,
 ) -> str:
     """
     Render final structured context output.
     """
+    if as_json:
+        status = "ok" if top_matches else "no_matches"
+
+        return json.dumps(
+            {
+                "schema_version": "1.0",
+                "status": status,
+                "top_matches": [
+                    {
+                        "type": t,
+                        "module": m,
+                        "name": n,
+                        "file": f,
+                        "lineno": lin,
+                    }
+                    for t, m, n, f, lin in top_matches
+                ],
+                "doc_issues": [{"type": t, "message": m} for t, m in doc_issues],
+                "context": [
+                    _format_enriched_symbol(root, s, {}) for s in top_matches[:5]
+                ],
+                "module_expansion": [
+                    {
+                        "type": t,
+                        "module": m,
+                        "name": n,
+                        "file": f,
+                        "lineno": lin,
+                    }
+                    for t, m, n, f, lin in expanded
+                ],
+                "references": [{"file": f, "lineno": lin} for f, lin in unique_refs],
+            },
+            indent=2,
+        )
     lines: list[str] = []
 
     lines.append("=== TOP MATCHES ===")
@@ -658,6 +726,18 @@ def context_for(root: Path, query: str, *, as_json: bool = False) -> str:
     top_matches = _retrieve_and_score_candidates(root, query, conn)
 
     if not top_matches:
+        if as_json:
+            result = _render_context(
+                root,
+                [],
+                [],
+                [],
+                [],
+                as_json=True,
+            )
+            conn.close()
+            return result
+
         conn.close()
         return "No relevant matches found."
 
@@ -688,6 +768,7 @@ def context_for(root: Path, query: str, *, as_json: bool = False) -> str:
         doc_issues,
         expanded,
         unique_refs,
+        as_json=as_json,
     )
     conn.close()
     return result

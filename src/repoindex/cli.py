@@ -27,6 +27,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     context_parser = sub.add_parser("context-for")
     context_parser.add_argument("query", type=str)
+    context_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON (agent mode)",
+    )
 
     return parser
 
@@ -85,17 +90,17 @@ def _get_head_commit(root: Path) -> str | None:
         return None
 
 
-def _read_index_metadata(root: Path) -> dict:
+def _read_index_metadata(root: Path) -> dict[str, str]:
     path = get_repoindex_dir(root) / "metadata.json"
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return dict(json.loads(path.read_text(encoding="utf-8")))
     except Exception:
         return {}
 
 
-def _write_index_metadata(root: Path, data: dict) -> None:
+def _write_index_metadata(root: Path, data: dict[str, str]) -> None:
     path = get_repoindex_dir(root) / "metadata.json"
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -205,7 +210,7 @@ def main() -> int:
         return _run_audit_docstrings(root)
     elif args.command == "context-for":
         _ensure_index(root)
-        result = context_for(root, args.query)
+        result = context_for(root, args.query, as_json=args.json)
         print(result)
         return 0
 
