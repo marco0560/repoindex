@@ -272,48 +272,53 @@ def _find_references(
     project_files: list[Path],
 ) -> list[ReferenceRow]:
     """
-    Find references to a symbol name across Python files.
+    Find references to a symbol name across indexed Python files.
 
     This is a simple string-based search:
-    - scans all `.py` files under root
+    - scans only files provided in ``project_files``
     - returns (file_path, lineno)
-    - excludes hidden directories (e.g., .venv, .git)
     - skips import statements
     - limits results to avoid explosion
+
+    Notes
+    -----
+    The function relies on the indexing phase to define the set of
+    project files, ensuring consistency between indexing and querying.
     """
-
     results: list[ReferenceRow] = []
+    file_cache: dict[Path, list[str]] = {}
 
-    try:
-        for path in project_files:
+    for path in project_files:
+        if path in file_cache:
+            lines = file_cache[path]
+        else:
             try:
                 lines = path.read_text(encoding="utf-8").splitlines()
             except (OSError, UnicodeDecodeError):
                 continue
+            file_cache[path] = lines
+        try:
+            rel = path.relative_to(root)
+            file_path = str(rel)
+        except ValueError:
+            file_path = str(path)
 
-            try:
-                rel = path.relative_to(root)
-                file_path = str(rel)
-            except Exception:
-                file_path = str(path)
+        for lineno, line in enumerate(lines, start=1):
+            stripped = line.strip()
 
-            for lineno, line in enumerate(lines, start=1):
-                stripped = line.strip()
+            # --- FILTER: skip imports ---
+            if stripped.startswith(("import ", "from ")):
+                continue
 
-                # --- FILTER: skip imports ---
-                if stripped.startswith(("import ", "from ")):
-                    continue
+            # simple containment check
+            if name not in line:
+                continue
 
-                # simple containment check
-                if name in line:
-                    results.append((file_path, lineno))
+            results.append((file_path, lineno))
 
-                    # hard cap (global)
-                    if len(results) >= 100:
-                        return results
-
-    except Exception:
-        return []
+            # hard cap (global)
+            if len(results) >= 50:
+                return results
 
     return results
 
@@ -395,7 +400,11 @@ def _format_symbol(symbol: SymbolRow, *, include_path: bool) -> str:
         head = f"{symbol_type}: {module_name}.{name}:{lineno}"
 
     if include_path:
-        return f"{head} ({file_path})"
+        try:
+            rel_path = str(Path(file_path).relative_to(Path.cwd()))
+        except ValueError:
+            rel_path = str(file_path)
+        return f"{head} ({rel_path})"
     return head
 
 
@@ -416,7 +425,12 @@ def _format_enriched_symbol(
     else:
         lines.append(f"{symbol_type} {name} in {module_name}")
 
-    lines.append(f"  File: {file_path}")
+    try:
+        rel_path = str(Path(file_path).relative_to(root))
+    except ValueError:
+        rel_path = str(file_path)
+
+    lines.append(f"  File: {rel_path}")
     lines.append(f"  Line: {lineno}")
 
     if snippet:
@@ -426,8 +440,15 @@ def _format_enriched_symbol(
 
     if docstring:
         lines.append("  Docstring:")
-        for line in docstring.splitlines():
+        doc_lines = docstring.splitlines()
+
+        MAX_DOC_LINES = 12
+
+        for line in doc_lines[:MAX_DOC_LINES]:
             lines.append(f"    {line}")
+
+        if len(doc_lines) > MAX_DOC_LINES:
+            lines.append("    [...]")
 
     return lines
 
@@ -436,35 +457,56 @@ def context_for(root: Path, query: str) -> str:
     """
     Build a structured context block for a given query.
 
-    The output is optimized for LLM consumption.
+    Parameters
+    ----------
+    root : pathlib.Path
+        Root directory of the indexed repository.
+    query : str
+        Query string used to retrieve relevant symbols and context.
+
+    Returns
+    -------
+    str
+        Structured text block containing:
+        - top symbol matches
+        - related docstring issues
+        - enriched code context
+        - module expansion
+        - cross-module references
+
+    Notes
+    -----
+    The output is optimized for LLM consumption and follows a
+    deterministic section-based layout.
     """
 
     lines: list[str] = []
 
+    # --- PHASE 1: candidate retrieval ---
     matches = find_symbol(root, query)
 
-    project_files = _iter_python_files(root)
-
-    all_candidates: list[SymbolRow]
     if matches:
-        all_candidates = matches
+        all_candidates: list[SymbolRow] = matches
     else:
         conn = sqlite3.connect(get_db_path(root))
         try:
-            rows = conn.execute("""
+            symbol_rows = conn.execute(
+                """
                 SELECT type, module_name, name, file_path, lineno
                 FROM symbol_index
                 LIMIT 200
-                """).fetchall()
+                """
+            ).fetchall()
         finally:
             conn.close()
 
         all_candidates = [
-            (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
+            (str(t), str(m), str(n), str(f), int(lin))
+            for t, m, n, f, lin in symbol_rows
         ]
 
+    # --- PHASE 2: scoring ---
     scored: list[tuple[int, SymbolRow]] = []
-
     for candidate in all_candidates:
         score = _score_match(list(_tokenize(query)), candidate)
         if score > 0:
@@ -473,23 +515,33 @@ def context_for(root: Path, query: str) -> str:
     scored.sort(reverse=True)
     top_matches: list[SymbolRow] = [match for _, match in scored[:10]]
 
+    # --- PHASE 3: related docstring issues ---
+    query_tokens = list(_tokenize(query))
+
     conn = sqlite3.connect(get_db_path(root))
     try:
-        rows = conn.execute(
+        issue_rows = conn.execute(
             """
             SELECT issue_type, message
             FROM docstring_issues
-            WHERE message LIKE ?
-            LIMIT 20
-            """,
-            (f"%{query}%",),
+            LIMIT 100
+            """
         ).fetchall()
     finally:
         conn.close()
 
+    issue_rows_filtered: list[tuple[str, str]] = []
+
+    for issue_type, message in issue_rows:
+        message_tokens = list(_tokenize(message))
+        if any(token in message_tokens for token in query_tokens):
+            issue_rows_filtered.append((issue_type, message))
+
+    doc_issues: list[tuple[str, str]] = issue_rows_filtered[:20]
+
     related_symbols: list[SymbolRow] = []
 
-    for _, message in rows:
+    for _, message in doc_issues:
         parts = message.split(":")[0].split()
         if len(parts) >= 2:
             symbol_name = parts[-1]
@@ -501,6 +553,7 @@ def context_for(root: Path, query: str) -> str:
 
     top_matches = top_matches[:10]
 
+    # --- PHASE 4: module expansion ---
     expanded: list[SymbolRow] = []
     seen_modules: set[str] = set()
 
@@ -518,6 +571,9 @@ def context_for(root: Path, query: str) -> str:
 
     symbol_names = {name for _, _, name, _, _ in top_matches if name}
 
+    project_files = _iter_python_files(root)
+
+    # --- PHASE 5: cross-module references ---
     references: list[ReferenceRow] = []
     top_files = {file_path for _, _, _, file_path, _ in top_matches}
 
@@ -536,6 +592,7 @@ def context_for(root: Path, query: str) -> str:
 
     unique_refs = unique_refs[:20]
 
+    # --- PHASE 6: rendering ---
     lines.append("=== TOP MATCHES ===")
     if not top_matches:
         lines.append("No direct symbol matches found.")
@@ -544,10 +601,10 @@ def context_for(root: Path, query: str) -> str:
             lines.append(_format_symbol(symbol, include_path=True))
 
     lines.append("\n=== RELATED DOCSTRING ISSUES ===")
-    if not rows:
+    if not doc_issues:
         lines.append("No related docstring issues.")
     else:
-        for issue_type, message in rows:
+        for issue_type, message in doc_issues:
             lines.append(f"{issue_type}: {message}")
 
     lines.append("\n=== SUGGESTED CONTEXT ===")
@@ -567,6 +624,11 @@ def context_for(root: Path, query: str) -> str:
         lines.append("No cross-module references found.")
     else:
         for file_path, lineno in unique_refs:
-            lines.append(f"{file_path}:{lineno}")
+            try:
+                rel_path = str(Path(file_path).relative_to(root))
+            except ValueError:
+                rel_path = str(file_path)
+
+            lines.append(f"{rel_path}:{lineno}")
 
     return "\n".join(lines)
