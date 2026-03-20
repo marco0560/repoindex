@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import subprocess
 from pathlib import Path
 from typing import Iterator
 
@@ -61,6 +62,32 @@ def iter_python_files(root: Path) -> Iterator[Path]:
         if _is_excluded(path, root, patterns):
             continue
         yield path
+
+
+def iter_project_files(root: Path) -> Iterator[Path]:
+    """
+    Return Python files tracked by Git (Source of Truth).
+
+    This function defines the canonical project boundary.
+
+    Notes
+    -----
+    - Requires Git to be available.
+    - No fallback is provided: failures are explicit.
+    - Output is deterministic (sorted).
+    """
+    result = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.py"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    files = [root / line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+    # Deterministic ordering
+    return iter(sorted(files))
 
 
 def file_metadata(path: Path) -> dict[str, object]:

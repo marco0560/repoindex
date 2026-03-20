@@ -1,0 +1,131 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RepoIndex Context Output",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "status",
+        "top_matches",
+        "doc_issues",
+        "context",
+        "module_expansion",
+        "references"
+    ],
+    "properties": {
+        "schema_version": {
+            "type": "string"
+        },
+        "status": {
+            "type": "string",
+            "enum": [
+                "ok",
+                "no_matches"
+            ]
+        },
+        "top_matches": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "type",
+                    "module",
+                    "name",
+                    "file",
+                    "lineno"
+                ],
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    },
+                    "module": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "file": {
+                        "type": "string"
+                    },
+                    "lineno": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "doc_issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "type",
+                    "message"
+                ],
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "context": {
+            "type": "array",
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            }
+        },
+        "module_expansion": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "type",
+                    "module",
+                    "name",
+                    "file",
+                    "lineno"
+                ],
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    },
+                    "module": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "file": {
+                        "type": "string"
+                    },
+                    "lineno": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "references": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "file",
+                    "lineno"
+                ],
+                "properties": {
+                    "file": {
+                        "type": "string"
+                    },
+                    "lineno": {
+                        "type": "integer"
+                    }
+                }
+            }
+        }
+    }
+}

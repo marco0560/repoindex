@@ -6,12 +6,14 @@ import sqlite3
 from pathlib import Path
 from typing import cast
 
-from repoindex.query.exact import find_symbol
+from repoindex.query.exact import docstring_issues, find_symbol
+from repoindex.scanner import iter_project_files
 from repoindex.storage import get_db_path
 
 SymbolRow = tuple[str, str, str, str, int]
 ReferenceRow = tuple[str, int]
 CodeContext = tuple[str | None, str | None, list[str]]
+_MIN_SCORE = 1
 
 
 def _render_signature(
@@ -240,36 +242,11 @@ def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
     ]
 
 
-def _iter_python_files(root: Path) -> list[Path]:
-    """
-    Return Python files tracked by git.
-
-    Falls back to filesystem scan if git is unavailable.
-    """
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.py"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        return [
-            root / line.strip() for line in result.stdout.splitlines() if line.strip()
-        ]
-
-    except Exception:
-        # fallback: filesystem scan
-        return list(root.rglob("*.py"))
-
-
 def _find_references(
     root: Path,
     name: str,
     project_files: list[Path],
+    file_cache: dict[Path, list[str]] | None = None,
 ) -> list[ReferenceRow]:
     """
     Find references to a symbol name across indexed Python files.
@@ -286,7 +263,8 @@ def _find_references(
     project files, ensuring consistency between indexing and querying.
     """
     results: list[ReferenceRow] = []
-    file_cache: dict[Path, list[str]] = {}
+    if file_cache is None:
+        file_cache = {}
 
     for path in project_files:
         if path in file_cache:
@@ -337,6 +315,21 @@ def _tokenize(text: str) -> set[str]:
                 tokens.add(sub)
 
     return tokens
+
+
+def _path_bias(file_path: str) -> int:
+    """
+    Lightweight ranking bias based on file location.
+
+    Favors core source code over scripts/tests without hiding results.
+    """
+    if file_path.startswith("src/"):
+        return 2
+    if file_path.startswith("scripts/"):
+        return -2
+    if file_path.startswith("tests/"):
+        return -1
+    return 0
 
 
 def _score_match(query_tokens: list[str], symbol: SymbolRow) -> int:
@@ -453,88 +446,58 @@ def _format_enriched_symbol(
     return lines
 
 
-def context_for(root: Path, query: str) -> str:
+def _retrieve_and_score_candidates(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+) -> list[SymbolRow]:
     """
-    Build a structured context block for a given query.
-
-    Parameters
-    ----------
-    root : pathlib.Path
-        Root directory of the indexed repository.
-    query : str
-        Query string used to retrieve relevant symbols and context.
-
-    Returns
-    -------
-    str
-        Structured text block containing:
-        - top symbol matches
-        - related docstring issues
-        - enriched code context
-        - module expansion
-        - cross-module references
-
-    Notes
-    -----
-    The output is optimized for LLM consumption and follows a
-    deterministic section-based layout.
+    Retrieve candidate symbols and apply scoring + filtering.
     """
+    all_candidates: list[SymbolRow] = find_symbol(root, query, conn=conn)
 
-    lines: list[str] = []
+    query_tokens = list(_tokenize(query))
+    token_cache: dict[str, list[str]] = {}
 
-    # --- PHASE 1: candidate retrieval ---
-    matches = find_symbol(root, query)
-
-    if matches:
-        all_candidates: list[SymbolRow] = matches
-    else:
-        conn = sqlite3.connect(get_db_path(root))
-        try:
-            symbol_rows = conn.execute(
-                """
-                SELECT type, module_name, name, file_path, lineno
-                FROM symbol_index
-                LIMIT 200
-                """
-            ).fetchall()
-        finally:
-            conn.close()
-
-        all_candidates = [
-            (str(t), str(m), str(n), str(f), int(lin))
-            for t, m, n, f, lin in symbol_rows
-        ]
-
-    # --- PHASE 2: scoring ---
     scored: list[tuple[int, SymbolRow]] = []
+
     for candidate in all_candidates:
-        score = _score_match(list(_tokenize(query)), candidate)
-        if score > 0:
+        base_score = _score_match(query_tokens, candidate)
+        score = base_score + _path_bias(candidate[3])
+
+        symbol_name = candidate[2]
+        if symbol_name not in token_cache:
+            token_cache[symbol_name] = list(_tokenize(symbol_name))
+        candidate_tokens = token_cache[symbol_name]
+
+        if score >= _MIN_SCORE and any(t in candidate_tokens for t in query_tokens):
             scored.append((score, candidate))
 
     scored.sort(reverse=True)
-    top_matches: list[SymbolRow] = [match for _, match in scored[:10]]
 
-    # --- PHASE 3: related docstring issues ---
-    query_tokens = list(_tokenize(query))
+    if not scored:
+        return []
 
-    conn = sqlite3.connect(get_db_path(root))
-    try:
-        issue_rows = conn.execute(
-            """
-            SELECT issue_type, message
-            FROM docstring_issues
-            LIMIT 100
-            """
-        ).fetchall()
-    finally:
-        conn.close()
+    return [match for _, match in scored[:10]]
+
+
+def _collect_doc_issues_and_related(
+    root: Path,
+    query: str,
+    top_matches: list[SymbolRow],
+    conn: sqlite3.Connection,
+) -> tuple[list[tuple[str, str]], list[SymbolRow]]:
+    """
+    Collect related docstring issues and derive additional related symbols.
+    """
+    issue_rows = docstring_issues(root, conn=conn)
 
     issue_rows_filtered: list[tuple[str, str]] = []
 
+    symbol_names = {name for _, _, name, _, _ in top_matches if name}
+
     for issue_type, message in issue_rows:
-        message_tokens = list(_tokenize(message))
-        if any(token in message_tokens for token in query_tokens):
+        if any(name in message for name in symbol_names):
             issue_rows_filtered.append((issue_type, message))
 
     doc_issues: list[tuple[str, str]] = issue_rows_filtered[:20]
@@ -545,14 +508,18 @@ def context_for(root: Path, query: str) -> str:
         parts = message.split(":")[0].split()
         if len(parts) >= 2:
             symbol_name = parts[-1]
-            related_symbols.extend(find_symbol(root, symbol_name))
+            related_symbols.extend(find_symbol(root, symbol_name, conn=conn))
 
-    for match in related_symbols:
-        if match not in top_matches:
-            top_matches.append(match)
+    return doc_issues, related_symbols
 
-    top_matches = top_matches[:10]
 
+def _expand_and_collect_references(
+    root: Path,
+    top_matches: list[SymbolRow],
+) -> tuple[list[SymbolRow], list[ReferenceRow]]:
+    """
+    Perform module expansion and collect cross-module references.
+    """
     # --- PHASE 4: module expansion ---
     expanded: list[SymbolRow] = []
     seen_modules: set[str] = set()
@@ -570,15 +537,21 @@ def context_for(root: Path, query: str) -> str:
     expanded = expanded[:20]
 
     symbol_names = {name for _, _, name, _, _ in top_matches if name}
-
-    project_files = _iter_python_files(root)
+    project_files = list(iter_project_files(root))
 
     # --- PHASE 5: cross-module references ---
     references: list[ReferenceRow] = []
     top_files = {file_path for _, _, _, file_path, _ in top_matches}
 
+    file_cache: dict[Path, list[str]] = {}
+
     for name in symbol_names:
-        for file_path, lineno in _find_references(root, name, project_files):
+        for file_path, lineno in _find_references(
+            root,
+            name,
+            project_files,
+            file_cache=file_cache,
+        ):
             if file_path not in top_files:
                 references.append((file_path, lineno))
 
@@ -592,7 +565,21 @@ def context_for(root: Path, query: str) -> str:
 
     unique_refs = unique_refs[:20]
 
-    # --- PHASE 6: rendering ---
+    return expanded, unique_refs
+
+
+def _render_context(
+    root: Path,
+    top_matches: list[SymbolRow],
+    doc_issues: list[tuple[str, str]],
+    expanded: list[SymbolRow],
+    unique_refs: list[ReferenceRow],
+) -> str:
+    """
+    Render final structured context output.
+    """
+    lines: list[str] = []
+
     lines.append("=== TOP MATCHES ===")
     if not top_matches:
         lines.append("No direct symbol matches found.")
@@ -605,6 +592,11 @@ def context_for(root: Path, query: str) -> str:
         lines.append("No related docstring issues.")
     else:
         for issue_type, message in doc_issues:
+            if message.startswith("Module ") and message.endswith("Missing docstring"):
+                message = message.replace(
+                    "Missing docstring",
+                    "Missing module-level docstring",
+                )
             lines.append(f"{issue_type}: {message}")
 
     lines.append("\n=== SUGGESTED CONTEXT ===")
@@ -632,3 +624,70 @@ def context_for(root: Path, query: str) -> str:
             lines.append(f"{rel_path}:{lineno}")
 
     return "\n".join(lines)
+
+
+def context_for(root: Path, query: str, *, as_json: bool = False) -> str:
+    """
+    Build a structured context block for a given query.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Root directory of the indexed repository.
+    query : str
+        Query string used to retrieve relevant symbols and context.
+
+    Returns
+    -------
+    str
+        Structured text block containing:
+        - top symbol matches
+        - related docstring issues
+        - enriched code context
+        - module expansion
+        - cross-module references
+
+    Notes
+    -----
+    The output is optimized for LLM consumption and follows a
+    deterministic section-based layout.
+    """
+    conn = sqlite3.connect(get_db_path(root))
+
+    # --- PHASE 1+2: candidate retrieval + scoring ---
+    top_matches = _retrieve_and_score_candidates(root, query, conn)
+
+    if not top_matches:
+        conn.close()
+        return "No relevant matches found."
+
+    # --- PHASE 3: related docstring issues ---
+    doc_issues, related_symbols = _collect_doc_issues_and_related(
+        root,
+        query,
+        top_matches,
+        conn,
+    )
+
+    for match in related_symbols:
+        if match not in top_matches:
+            top_matches.append(match)
+
+    top_matches = top_matches[:10]
+
+    # --- PHASE 4+5: module expansion + references ---
+    expanded, unique_refs = _expand_and_collect_references(
+        root,
+        top_matches,
+    )
+
+    # --- PHASE 6: rendering ---
+    result = _render_context(
+        root,
+        top_matches,
+        doc_issues,
+        expanded,
+        unique_refs,
+    )
+    conn.close()
+    return result
