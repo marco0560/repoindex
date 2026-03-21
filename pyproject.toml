@@ -13,6 +13,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools_scm]
 version_scheme = "no-guess-dev"
 local_scheme = "no-local-version"
+write_to = "src/repoindex/_version.py"
 
 [project.scripts]
 repoindex = "repoindex.cli:main"

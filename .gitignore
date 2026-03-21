@@ -27,6 +27,7 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+src/repoindex/_version.py
 
 # Coverage
 .coverage
