@@ -18,7 +18,12 @@ from collections.abc import Iterable
 from pathlib import Path
 
 # Paths that should never be removed, even if ignored by git
-PROTECTED_PATHS = {".venv", ".vscode", "node_modules", "src/repoindex/_version.py"}
+PROTECTED_PATHS = {
+    Path(".venv"),
+    Path(".vscode"),
+    Path("node_modules"),
+    Path("src/repoindex/_version.py"),
+}
 
 
 def git_ignored_paths() -> Iterable[Path]:
@@ -60,11 +65,15 @@ def main() -> None:
 
     repo_root = Path.cwd()
 
-    ignored = [
-        path
-        for path in git_ignored_paths()
-        if path.parts and path.parts[0] not in PROTECTED_PATHS
-    ]
+    ignored = []
+
+    for path in git_ignored_paths():
+        if any(
+            path == protected or protected in path.parents
+            for protected in PROTECTED_PATHS
+        ):
+            continue
+        ignored.append(path)
 
     if not ignored:
         print("Nothing to clean.")

@@ -660,9 +660,17 @@ def _retrieve_and_score_candidates(
         freq = sum(1 for t in query_tokens if t in symbol_name.lower())
         score += freq * 2
 
+        # module-level ranking adjustments
+        if module_name.startswith("tests."):
+            score -= 8
+        elif module_name.startswith("scripts."):
+            score -= 4
+        else:
+            score += 1
+
         # infra penalty (reduce non-core modules)
         lowered_module = module_name.lower()
-        if any(x in lowered_module for x in ("cli", "scanner", "storage", "script")):
+        if any(x in lowered_module for x in ("cli", "scanner", "storage")):
             score -= 2
 
         # tokenize candidate name (cached)
