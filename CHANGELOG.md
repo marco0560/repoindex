@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/marco0560/repoindex/compare/v0.2.0...v0.3.0) (2026-03-21)
+
+
+### Features
+
+* **context:** add structured JSON output and improve context quality ([f5c784a](https://github.com/marco0560/repoindex/commit/f5c784ac17884a51424a076b8cda673971499e1c))
+
 # [0.2.0](https://github.com/marco0560/repoindex/compare/v0.1.0...v0.2.0) (2026-03-21)
 
 
