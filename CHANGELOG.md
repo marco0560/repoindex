@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/marco0560/repoindex/compare/v0.5.0...v0.6.0) (2026-03-21)
+
+
+### Features
+
+* **query:** add issue-driven context enrichment ([2dcefad](https://github.com/marco0560/repoindex/commit/2dcefadb998764ca99bdf446ce612d706db35fe0))
+
 # [0.5.0](https://github.com/marco0560/repoindex/compare/v0.4.0...v0.5.0) (2026-03-21)
 
 
