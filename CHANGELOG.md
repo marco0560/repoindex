@@ -1,3 +1,10 @@
+# [0.5.0](https://github.com/marco0560/repoindex/compare/v0.4.0...v0.5.0) (2026-03-21)
+
+
+### Features
+
+* **index:** add lightweight unresolved call graph extraction ([a51a558](https://github.com/marco0560/repoindex/commit/a51a558be4737d0ee5b9491beaec2c8ccfee799e))
+
 # [0.4.0](https://github.com/marco0560/repoindex/compare/v0.3.0...v0.4.0) (2026-03-21)
 
 
