@@ -247,130 +247,6 @@ def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
     ]
 
 
-def _symbols_in_file(root: Path, file_path: str) -> list[SymbolRow]:
-    conn = sqlite3.connect(get_db_path(root))
-    try:
-        rows = conn.execute(
-            """
-            SELECT type, module_name, name, file_path, lineno
-            FROM symbol_index
-            WHERE file_path = ?
-            LIMIT 50
-            """,
-            (file_path,),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    return [
-        (str(t), str(m), str(n), str(f), int(lineno)) for t, m, n, f, lineno in rows
-    ]
-
-
-def _node_source_without_docstring(
-    node: ast.AST,
-    source_lines: list[str],
-) -> str:
-    start = getattr(node, "lineno", 1) - 1
-    end = getattr(node, "end_lineno", getattr(node, "lineno", 1))
-    snippet = source_lines[start:end]
-
-    body = getattr(node, "body", None)
-    if body:
-        doc = ast.get_docstring(
-            cast(
-                ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Module,
-                node,
-            ),
-            clean=False,
-        )
-        if doc is not None and isinstance(body[0], ast.Expr):
-            doc_node = body[0]
-            doc_start = doc_node.lineno - 1
-            doc_end = getattr(doc_node, "end_lineno", doc_start + 1)
-            local_start = doc_start - start
-            local_end = doc_end - start
-            snippet = [
-                line
-                for i, line in enumerate(snippet)
-                if not (local_start <= i < local_end)
-            ]
-
-    return "\n".join(snippet)
-
-
-def _extract_symbol_source_region(
-    root: Path,
-    symbol: SymbolRow,
-    cache: dict[Path, tuple[str, list[str], ast.Module]],
-) -> str | None:
-    symbol_type, _module_name, name, file_path, lineno = symbol
-    path = root / file_path
-
-    if path in cache:
-        _source, source_lines, tree = cache[path]
-    else:
-        try:
-            source = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            return None
-
-        source_lines = source.splitlines()
-
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            return None
-
-        cache[path] = (source, source_lines, tree)
-
-    if symbol_type == "module":
-        return None
-
-    # --- CLASS ---
-    if symbol_type == "class":
-        class_candidates: list[ast.ClassDef] = [
-            node
-            for node in tree.body
-            if isinstance(node, ast.ClassDef) and node.name == name
-        ]
-        if class_candidates:
-            class_node = min(class_candidates, key=lambda n: abs(n.lineno - lineno))
-            return _node_source_without_docstring(class_node, source_lines)
-        return None
-
-    # --- FUNCTION ---
-    if symbol_type == "function":
-        func_candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = [
-            node
-            for node in tree.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == name
-        ]
-        if func_candidates:
-            func_node = min(func_candidates, key=lambda n: abs(n.lineno - lineno))
-            return _node_source_without_docstring(func_node, source_lines)
-        return None
-
-    # --- METHOD ---
-    if symbol_type == "method":
-        method_candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
-
-        for node in tree.body:
-            if isinstance(node, ast.ClassDef):
-                for child in node.body:
-                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        if child.name == name:
-                            method_candidates.append(child)
-
-        if method_candidates:
-            method_node = min(method_candidates, key=lambda n: abs(n.lineno - lineno))
-            return _node_source_without_docstring(method_node, source_lines)
-        return None
-
-    return None
-
-
 def _find_references(
     root: Path,
     name: str,
@@ -575,44 +451,6 @@ def _format_enriched_symbol(
     return lines
 
 
-def _retrieve_multi_query_candidates(
-    root: Path,
-    query: str,
-    conn: sqlite3.Connection,
-) -> list[SymbolRow]:
-    tokens = list(_tokenize(query))
-
-    if len(tokens) <= 1:
-        return _retrieve_and_score_candidates(root, query, conn)
-
-    aggregated: dict[SymbolRow, int] = {}
-
-    for token in tokens:
-        results = _retrieve_and_score_candidates(root, token, conn)
-
-        for rank, symbol in enumerate(results):
-            # higher score for earlier rank
-            score = len(results) - rank
-
-            if symbol in aggregated:
-                aggregated[symbol] += score
-            else:
-                aggregated[symbol] = score
-
-    # deterministic ordering
-    merged = sorted(
-        aggregated,
-        key=lambda s: (
-            -aggregated[s],
-            s[3],  # file_path
-            s[4],  # lineno
-            s[2],  # name
-        ),
-    )
-
-    return merged[:10]
-
-
 def _retrieve_and_score_candidates(
     root: Path,
     query: str,
@@ -626,13 +464,11 @@ def _retrieve_and_score_candidates(
     if matches:
         all_candidates: list[SymbolRow] = matches
     else:
-        rows = conn.execute(
-            """
+        rows = conn.execute("""
             SELECT type, module_name, name, file_path, lineno
             FROM symbol_index
             LIMIT 200
-            """
-        ).fetchall()
+            """).fetchall()
 
         all_candidates = [
             (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
@@ -788,8 +624,14 @@ def _collect_doc_issues_and_related(
     symbol_names = {name for _, _, name, _, _ in top_matches if name}
 
     for issue_type, message in issue_rows:
-        if any(name in message for name in symbol_names):
-            issue_rows_filtered.append((issue_type, message))
+        if not any(name in message for name in symbol_names):
+            continue
+
+        # --- FILTER NOISE: skip tests and scripts ---
+        if "tests." in message or "scripts." in message:
+            continue
+
+        issue_rows_filtered.append((issue_type, message))
 
     doc_issues: list[tuple[str, str]] = issue_rows_filtered[:20]
 
@@ -884,7 +726,15 @@ def _expand_and_collect_references(
         seen_keys.add(key)
         deduped.append((t, m, n, f, lin))
 
-    expanded = deduped[:20]
+    # --- FILTER NOISE: remove test and script modules ---
+    filtered: list[SymbolRow] = []
+
+    for t, m, n, f, lin in deduped:
+        if m.startswith("tests.") or m.startswith("scripts."):
+            continue
+        filtered.append((t, m, n, f, lin))
+
+    expanded = filtered[:20]
 
     symbol_names = {name for _, _, name, _, _ in top_matches if name}
     project_files = list(iter_project_files(root))
