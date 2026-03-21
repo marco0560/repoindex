@@ -15,6 +15,10 @@ SymbolRow = tuple[str, str, str, str, int]
 ReferenceRow = tuple[str, int]
 CodeContext = tuple[str | None, str | None, list[str]]
 _MIN_SCORE = 1
+# --- token-capped context construction ---
+MAX_TOKENS = 1200
+# --- cap doc issues to avoid prompt bloat ---
+MAX_ISSUES = 20
 
 
 def _render_signature(
@@ -1029,6 +1033,10 @@ def _render_agent_prompt(
     return "\n".join(lines)
 
 
+def _approx_token_count(lines: list[str]) -> int:
+    return sum(len(line.split()) for line in lines)
+
+
 def _render_context(
     root: Path,
     query: str,
@@ -1046,6 +1054,18 @@ def _render_context(
     """
     if as_json:
         status = "ok" if top_matches else "no_matches"
+        _context_blocks: list[list[str]] = []
+        _current_tokens = 0
+
+        for s in top_matches[:5]:
+            block = _format_enriched_symbol(root, s, {})
+            block_tokens = _approx_token_count(block)
+
+            if _current_tokens + block_tokens > MAX_TOKENS:
+                break
+
+            _context_blocks.append(block)
+            _current_tokens += block_tokens
 
         return json.dumps(
             {
@@ -1067,9 +1087,7 @@ def _render_context(
                     for t, m, n, f, lin in top_matches
                 ],
                 "doc_issues": [{"type": t, "message": m} for t, m in doc_issues],
-                "context": [
-                    _format_enriched_symbol(root, s, {}) for s in top_matches[:5]
-                ],
+                "context": _context_blocks,
                 "module_expansion": [
                     {
                         "type": t,
@@ -1262,6 +1280,8 @@ def context_for(
         top_matches,
         conn,
     )
+
+    doc_issues = doc_issues[:MAX_ISSUES]
 
     for match in related_symbols:
         if match not in top_matches:
