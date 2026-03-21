@@ -1,3 +1,10 @@
+# [0.12.0](https://github.com/marco0560/repoindex/compare/v0.11.1...v0.12.0) (2026-03-21)
+
+
+### Features
+
+* **context:** stabilize retrieval quality, packaging, and cleanup behavior ([bc4fee7](https://github.com/marco0560/repoindex/commit/bc4fee741acf1e7a872c91cfa9ae9795902ee649))
+
 ## [0.11.1](https://github.com/marco0560/repoindex/compare/v0.11.0...v0.11.1) (2026-03-21)
 
 
