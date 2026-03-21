@@ -571,6 +571,44 @@ def _format_enriched_symbol(
     return lines
 
 
+def _retrieve_multi_query_candidates(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+) -> list[SymbolRow]:
+    tokens = list(_tokenize(query))
+
+    if len(tokens) <= 1:
+        return _retrieve_and_score_candidates(root, query, conn)
+
+    aggregated: dict[SymbolRow, int] = {}
+
+    for token in tokens:
+        results = _retrieve_and_score_candidates(root, token, conn)
+
+        for rank, symbol in enumerate(results):
+            # higher score for earlier rank
+            score = len(results) - rank
+
+            if symbol in aggregated:
+                aggregated[symbol] += score
+            else:
+                aggregated[symbol] = score
+
+    # deterministic ordering
+    merged = sorted(
+        aggregated,
+        key=lambda s: (
+            -aggregated[s],
+            s[3],  # file_path
+            s[4],  # lineno
+            s[2],  # name
+        ),
+    )
+
+    return merged[:10]
+
+
 def _retrieve_and_score_candidates(
     root: Path,
     query: str,
@@ -637,6 +675,64 @@ def _retrieve_and_score_candidates(
         return []
 
     return [match for _, match in scored[:10]]
+
+
+def _is_issue_query(query: str) -> bool:
+    query_tokens = _tokenize(query)
+    issue_tokens = {
+        "doc",
+        "docstring",
+        "docs",
+        "issue",
+        "issues",
+        "missing",
+        "numpy",
+        "section",
+        "returns",
+        "parameters",
+    }
+    return any(token in issue_tokens for token in query_tokens)
+
+
+def _issue_driven_symbols(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+) -> list[SymbolRow]:
+    issue_rows = docstring_issues(root, conn=conn)
+    query_tokens = _tokenize(query)
+    scored: dict[SymbolRow, int] = {}
+
+    for issue_type, message in issue_rows:
+        message_lower = message.lower()
+
+        if not any(token in message_lower for token in query_tokens):
+            continue
+
+        parts = message.split(":")[0].split()
+        if len(parts) < 2:
+            continue
+
+        symbol_name = parts[-1]
+
+        for symbol in find_symbol(root, symbol_name, conn=conn):
+            bonus = 3 if issue_type == "missing" else 1
+            if symbol in scored:
+                scored[symbol] += bonus
+            else:
+                scored[symbol] = bonus
+
+    ranked = sorted(
+        scored,
+        key=lambda symbol: (
+            -scored[symbol],
+            symbol[3],
+            symbol[4],
+            symbol[2],
+        ),
+    )
+
+    return ranked[:10]
 
 
 def _collect_doc_issues_and_related(
@@ -992,6 +1088,14 @@ def context_for(
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
     top_matches = _retrieve_and_score_candidates(root, query, conn)
+
+    # --- PHASE 2B: issue-driven candidate enrichment ---
+    if _is_issue_query(query):
+        for symbol in _issue_driven_symbols(root, query, conn):
+            if symbol not in top_matches:
+                top_matches.append(symbol)
+
+    top_matches = top_matches[:10]
 
     if not top_matches:
         if as_json:
