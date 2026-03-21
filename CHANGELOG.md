@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/marco0560/repoindex/compare/v0.9.0...v0.10.0) (2026-03-21)
+
+
+### Features
+
+* **context:** add token-based cap to JSON context rendering ([8c5e816](https://github.com/marco0560/repoindex/commit/8c5e816f94f64e57f27f93da42bb837ed68d4212))
+
 # [0.9.0](https://github.com/marco0560/repoindex/compare/v0.8.0...v0.9.0) (2026-03-21)
 
 
