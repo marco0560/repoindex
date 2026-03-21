@@ -1,3 +1,10 @@
+# [0.11.0](https://github.com/marco0560/repoindex/compare/v0.10.1...v0.11.0) (2026-03-21)
+
+
+### Features
+
+* **build:** added automatic git tags-based version number ([eb2ef18](https://github.com/marco0560/repoindex/commit/eb2ef18bd203b73f12bd2f3a724756cc167332bd))
+
 ## [0.10.1](https://github.com/marco0560/repoindex/compare/v0.10.0...v0.10.1) (2026-03-21)
 
 
