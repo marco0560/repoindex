@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/marco0560/repoindex/compare/v0.3.0...v0.4.0) (2026-03-21)
+
+
+### Features
+
+* **agent:** add Codex-ready prompt output for context-for ([e56083a](https://github.com/marco0560/repoindex/commit/e56083ad04b4c04340b2491a8537e332a15be694))
+
 # [0.3.0](https://github.com/marco0560/repoindex/compare/v0.2.0...v0.3.0) (2026-03-21)
 
 
