@@ -1,3 +1,10 @@
+# [0.9.0](https://github.com/marco0560/repoindex/compare/v0.8.0...v0.9.0) (2026-03-21)
+
+
+### Features
+
+* **context:** add confidence scores to top matches ([d19f77a](https://github.com/marco0560/repoindex/commit/d19f77a2d46f5e7a620f831b48a066d59b055bf4))
+
 # [0.8.0](https://github.com/marco0560/repoindex/compare/v0.7.0...v0.8.0) (2026-03-21)
 
 
