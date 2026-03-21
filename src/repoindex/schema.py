@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DDL = [
     """
@@ -82,6 +82,15 @@ DDL = [
     );
     """,
     """
+    CREATE TABLE IF NOT EXISTS call_edges (
+        id INTEGER PRIMARY KEY,
+        caller_file_path TEXT NOT NULL,
+        caller_lineno INTEGER NOT NULL,
+        caller_name TEXT NOT NULL,
+        callee_name TEXT NOT NULL
+    );
+    """,
+    """
     CREATE TABLE IF NOT EXISTS embeddings (
         id INTEGER PRIMARY KEY,
         object_type TEXT NOT NULL,
@@ -100,5 +109,13 @@ DDL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_symbol_name ON symbol_index(name);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_call_edges_caller
+    ON call_edges(caller_file_path, caller_lineno);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_call_edges_callee
+    ON call_edges(callee_name);
     """,
 ]

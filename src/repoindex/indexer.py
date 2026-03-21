@@ -11,6 +11,7 @@ from repoindex.storage import get_db_path
 
 def _clear_index_tables(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM docstring_issues")
+    conn.execute("DELETE FROM call_edges")
     conn.execute("DELETE FROM symbol_index")
     conn.execute("DELETE FROM imports")
     conn.execute("DELETE FROM functions")
@@ -164,6 +165,20 @@ def index_repo(root: Path) -> None:
                         method["docstring"], method["is_public"]
                     )
 
+                    for callee_name in method["calls"]:
+                        conn.execute(
+                            "INSERT INTO call_edges"
+                            "(caller_file_path, caller_lineno, "
+                            "caller_name, callee_name) "
+                            "VALUES (?, ?, ?, ?)",
+                            (
+                                meta["path"],
+                                method["lineno"],
+                                method["name"],
+                                callee_name,
+                            ),
+                        )
+
                     for issue_type, message in issues:
                         conn.execute(
                             "INSERT INTO docstring_issues"
@@ -213,6 +228,19 @@ def index_repo(root: Path) -> None:
                 )
 
                 issues = validate_docstring(fn["docstring"], fn["is_public"])
+
+                for callee_name in fn["calls"]:
+                    conn.execute(
+                        "INSERT INTO call_edges"
+                        "(caller_file_path, caller_lineno, caller_name, callee_name) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            meta["path"],
+                            fn["lineno"],
+                            fn["name"],
+                            callee_name,
+                        ),
+                    )
 
                 for issue_type, message in issues:
                     conn.execute(

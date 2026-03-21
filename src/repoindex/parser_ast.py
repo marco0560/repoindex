@@ -31,6 +31,23 @@ def _module_name_from_path(path: Path, root: Path) -> str:
     return ".".join(parts)
 
 
+def _extract_call_names(node: ast.AST) -> list[str]:
+    calls: list[str] = []
+
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Call):
+            continue
+
+        func = child.func
+
+        if isinstance(func, ast.Name):
+            calls.append(func.id)
+        elif isinstance(func, ast.Attribute):
+            calls.append(func.attr)
+
+    return calls
+
+
 def parse_file(path: Path, root: Path) -> dict[str, Any]:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -73,6 +90,7 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                             "has_docstring": int(method_doc is not None),
                             "is_method": 1,
                             "is_public": _is_public(child.name),
+                            "calls": _extract_call_names(child),
                         }
                     )
 
@@ -90,6 +108,7 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                     "has_docstring": int(func_doc is not None),
                     "is_method": 0,
                     "is_public": _is_public(node.name),
+                    "calls": _extract_call_names(node),
                 }
             )
 
