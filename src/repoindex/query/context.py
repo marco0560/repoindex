@@ -464,17 +464,22 @@ def _retrieve_and_score_candidates(
     if matches:
         all_candidates: list[SymbolRow] = matches
     else:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT type, module_name, name, file_path, lineno
             FROM symbol_index
             LIMIT 200
-            """).fetchall()
+            """
+        ).fetchall()
 
         all_candidates = [
             (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
         ]
 
     query_tokens = list(_tokenize(query))
+
+    # --- target symbol heuristic (last token) ---
+    target_symbol = query_tokens[-1] if query_tokens else None
     token_cache: dict[str, list[str]] = {}
 
     scored: list[tuple[int, SymbolRow]] = []
@@ -483,10 +488,18 @@ def _retrieve_and_score_candidates(
         base_score = _score_match(query_tokens, candidate)
         score = base_score + _path_bias(candidate[3])
 
+        # --- boost target symbol match ---
+        if target_symbol and candidate[2] == target_symbol:
+            score += 10
+
+        # --- boost exact name match ---
+        if candidate[2] == query:
+            score += 5
+
         symbol_name = candidate[2]
         module_name = candidate[1]
 
-        # --- INTERNAL SYMBOL PENALTY ---
+        # --- internal symbol penalty ---
         if symbol_name.startswith("_"):
             score -= 2
 
@@ -514,14 +527,34 @@ def _retrieve_and_score_candidates(
             token_cache[symbol_name] = list(_tokenize(symbol_name))
         candidate_tokens = token_cache[symbol_name]
 
-        if score >= _MIN_SCORE and any(t in candidate_tokens for t in query_tokens):
+        # --- require strong token match ---
+        strong_tokens = [t for t in query_tokens if len(t) >= 4]
+
+        # --- normalize tokens for matching (handle underscores) ---
+        normalized_strong_tokens: list[str] = []
+        for t in strong_tokens:
+            normalized_strong_tokens.append(t)
+            if "_" in t:
+                normalized_strong_tokens.extend(t.split("_"))
+
+        if not any(t in candidate_tokens for t in normalized_strong_tokens):
+            continue
+
+        if score >= _MIN_SCORE:
             scored.append((score, candidate))
 
     scored.sort(reverse=True)
 
-    # --- FALLBACK: avoid empty result set ---
     if not scored:
-        return all_candidates[:10]
+        # fallback: return best-effort candidates without strong token filtering
+        fallback_scored: list[tuple[int, SymbolRow]] = []
+
+        for candidate in all_candidates:
+            score = _score_match(query_tokens, candidate) + _path_bias(candidate[3])
+            fallback_scored.append((score, candidate))
+
+        fallback_scored.sort(reverse=True)
+        return [match for _, match in fallback_scored[:10]]
 
     return [match for _, match in scored[:10]]
 
@@ -585,8 +618,12 @@ def _issue_driven_symbols(
         for symbol in find_symbol(root, symbol_name, conn=conn):
             module_name = symbol[1]
 
-            # Reject non-core modules (scripts, etc.)
-            if not module_name.startswith("repoindex."):
+            # Reject obvious noise
+            if (
+                module_name.startswith("tests.")
+                or module_name.startswith("scripts.")
+                or module_name.startswith(".")
+            ):
                 continue
 
             bonus = 3 if issue_type == "missing" else 1

@@ -49,6 +49,13 @@ def _run_help(parser: argparse.ArgumentParser) -> int:
 def _run_index(root: Path) -> int:
     init_db(root)
     index_repo(root)
+
+    commit = _get_head_commit(root)
+    if commit:
+        metadata = _read_index_metadata(root)
+        metadata["commit"] = commit
+        _write_index_metadata(root, metadata)
+
     print("Repository indexed")
     return 0
 
