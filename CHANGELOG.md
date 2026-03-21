@@ -1,3 +1,10 @@
+## [0.12.1](https://github.com/marco0560/repoindex/compare/v0.12.0...v0.12.1) (2026-03-21)
+
+
+### Bug Fixes
+
+* **query:** prevent empty retrieval results with deterministic fallback ([16551ed](https://github.com/marco0560/repoindex/commit/16551ed38f0a32b2bb86be17da5d2b163f7da636))
+
 # [0.12.0](https://github.com/marco0560/repoindex/compare/v0.11.1...v0.12.0) (2026-03-21)
 
 
