@@ -1037,6 +1037,7 @@ def _render_context(
     expanded: list[SymbolRow],
     unique_refs: list[ReferenceRow],
     *,
+    confidence_map: dict[SymbolRow, float] | None = None,
     as_json: bool = False,
     as_prompt: bool = False,
 ) -> str:
@@ -1057,6 +1058,11 @@ def _render_context(
                         "name": n,
                         "file": f,
                         "lineno": lin,
+                        "confidence": (
+                            confidence_map.get((t, m, n, f, lin), 1.0)
+                            if confidence_map
+                            else 1.0
+                        ),
                     }
                     for t, m, n, f, lin in top_matches
                 ],
@@ -1174,6 +1180,27 @@ def context_for(
     # --- PHASE 1+2: candidate retrieval + scoring ---
     top_matches = _retrieve_and_score_candidates(root, query, conn)
 
+    # --- confidence estimation (lightweight, deterministic) ---
+    confidence_map: dict[SymbolRow, float] = {}
+
+    query_tokens = list(_tokenize(query))
+
+    for rank, symbol in enumerate(top_matches):
+        # simple proxy: earlier rank = higher confidence
+        base = 1.0 - (rank / max(len(top_matches), 1))
+
+        # token overlap boost
+        name = symbol[2].lower()
+        overlap = sum(1 for t in query_tokens if t in name)
+
+        confidence = base + (0.1 * overlap)
+
+        # clamp
+        if confidence > 1.0:
+            confidence = 1.0
+
+        confidence_map[symbol] = confidence
+
     # --- PHASE 2B: issue-driven candidate enrichment ---
     if _is_issue_query(query):
         for symbol in _issue_driven_symbols(root, query, conn):
@@ -1256,6 +1283,7 @@ def context_for(
         doc_issues,
         expanded,
         unique_refs,
+        confidence_map=confidence_map,
         as_json=as_json,
         as_prompt=as_prompt,
     )
