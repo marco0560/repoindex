@@ -243,6 +243,130 @@ def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
     ]
 
 
+def _symbols_in_file(root: Path, file_path: str) -> list[SymbolRow]:
+    conn = sqlite3.connect(get_db_path(root))
+    try:
+        rows = conn.execute(
+            """
+            SELECT type, module_name, name, file_path, lineno
+            FROM symbol_index
+            WHERE file_path = ?
+            LIMIT 50
+            """,
+            (file_path,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return [
+        (str(t), str(m), str(n), str(f), int(lineno)) for t, m, n, f, lineno in rows
+    ]
+
+
+def _node_source_without_docstring(
+    node: ast.AST,
+    source_lines: list[str],
+) -> str:
+    start = getattr(node, "lineno", 1) - 1
+    end = getattr(node, "end_lineno", getattr(node, "lineno", 1))
+    snippet = source_lines[start:end]
+
+    body = getattr(node, "body", None)
+    if body:
+        doc = ast.get_docstring(
+            cast(
+                ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Module,
+                node,
+            ),
+            clean=False,
+        )
+        if doc is not None and isinstance(body[0], ast.Expr):
+            doc_node = body[0]
+            doc_start = doc_node.lineno - 1
+            doc_end = getattr(doc_node, "end_lineno", doc_start + 1)
+            local_start = doc_start - start
+            local_end = doc_end - start
+            snippet = [
+                line
+                for i, line in enumerate(snippet)
+                if not (local_start <= i < local_end)
+            ]
+
+    return "\n".join(snippet)
+
+
+def _extract_symbol_source_region(
+    root: Path,
+    symbol: SymbolRow,
+    cache: dict[Path, tuple[str, list[str], ast.Module]],
+) -> str | None:
+    symbol_type, _module_name, name, file_path, lineno = symbol
+    path = root / file_path
+
+    if path in cache:
+        _source, source_lines, tree = cache[path]
+    else:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+
+        source_lines = source.splitlines()
+
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return None
+
+        cache[path] = (source, source_lines, tree)
+
+    if symbol_type == "module":
+        return None
+
+    # --- CLASS ---
+    if symbol_type == "class":
+        class_candidates: list[ast.ClassDef] = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == name
+        ]
+        if class_candidates:
+            class_node = min(class_candidates, key=lambda n: abs(n.lineno - lineno))
+            return _node_source_without_docstring(class_node, source_lines)
+        return None
+
+    # --- FUNCTION ---
+    if symbol_type == "function":
+        func_candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = [
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == name
+        ]
+        if func_candidates:
+            func_node = min(func_candidates, key=lambda n: abs(n.lineno - lineno))
+            return _node_source_without_docstring(func_node, source_lines)
+        return None
+
+    # --- METHOD ---
+    if symbol_type == "method":
+        method_candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                for child in node.body:
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if child.name == name:
+                            method_candidates.append(child)
+
+        if method_candidates:
+            method_node = min(method_candidates, key=lambda n: abs(n.lineno - lineno))
+            return _node_source_without_docstring(method_node, source_lines)
+        return None
+
+    return None
+
+
 def _find_references(
     root: Path,
     name: str,
@@ -481,12 +605,25 @@ def _retrieve_and_score_candidates(
         base_score = _score_match(query_tokens, candidate)
         score = base_score + _path_bias(candidate[3])
 
-        # --- INTERNAL SYMBOL PENALTY ---
         symbol_name = candidate[2]
+        module_name = candidate[1]
+
+        # --- INTERNAL SYMBOL PENALTY ---
         if symbol_name.startswith("_"):
             score -= 2
 
-        symbol_name = candidate[2]
+        # --- C.2: lightweight relevance tuning (deterministic) ---
+
+        # frequency boost (token overlap count)
+        freq = sum(1 for t in query_tokens if t in symbol_name.lower())
+        score += freq * 2
+
+        # infra penalty (reduce non-core modules)
+        lowered_module = module_name.lower()
+        if any(x in lowered_module for x in ("cli", "scanner", "storage", "script")):
+            score -= 2
+
+        # tokenize candidate name (cached)
         if symbol_name not in token_cache:
             token_cache[symbol_name] = list(_tokenize(symbol_name))
         candidate_tokens = token_cache[symbol_name]
@@ -539,33 +676,62 @@ def _expand_and_collect_references(
     top_matches: list[SymbolRow],
 ) -> tuple[list[SymbolRow], list[ReferenceRow]]:
     """
-    Perform module expansion and collect cross-module references.
+    Perform reference-driven expansion and collect cross-module references.
     """
-    # --- PHASE 4: module expansion ---
-    expanded: list[SymbolRow] = []
-    seen_modules: set[str] = set()
+    top_set = set(top_matches)
+    source_cache: dict[Path, tuple[str, list[str], ast.Module]] = {}
+    expansion_stats: dict[SymbolRow, tuple[int, int, int]] = {}
 
-    for _, module_name, _, _, _ in top_matches:
-        if module_name in seen_modules:
+    for top_match in top_matches:
+        region = _extract_symbol_source_region(root, top_match, source_cache)
+        if not region:
             continue
 
-        seen_modules.add(module_name)
+        top_module = top_match[1]
+        top_file = top_match[3]
+        candidates: list[tuple[SymbolRow, int]] = []
+        seen_candidates: set[SymbolRow] = set()
 
-        for symbol in _symbols_in_module(root, module_name):
+        for symbol in _symbols_in_file(root, top_file):
+            if symbol in top_set or symbol in seen_candidates:
+                continue
+            seen_candidates.add(symbol)
+            candidates.append((symbol, 0))
+
+        for symbol in _symbols_in_module(root, top_module):
+            if symbol in top_set or symbol in seen_candidates:
+                continue
+            seen_candidates.add(symbol)
+            candidates.append((symbol, 1))
+
+        for symbol, scope_rank in candidates:
             name = symbol[2]
-
-            # --- FILTER: skip internal helpers ---
-            if name.startswith("_"):
+            pattern = re.compile(rf"\b{re.escape(name)}\b")
+            mention_count = len(pattern.findall(region))
+            if mention_count == 0:
                 continue
 
-            if symbol not in expanded:
-                expanded.append(symbol)
+            if symbol in expansion_stats:
+                prev_used_by, prev_mentions, prev_scope = expansion_stats[symbol]
+                expansion_stats[symbol] = (
+                    prev_used_by + 1,
+                    prev_mentions + mention_count,
+                    min(prev_scope, scope_rank),
+                )
+            else:
+                expansion_stats[symbol] = (1, mention_count, scope_rank)
 
-    # --- REMOVE duplicates already in top_matches ---
-    top_set = set(top_matches)
-    expanded = [s for s in expanded if s not in top_set]
-
-    expanded = expanded[:20]
+    expanded = sorted(
+        expansion_stats,
+        key=lambda symbol: (
+            -expansion_stats[symbol][0],
+            -expansion_stats[symbol][1],
+            expansion_stats[symbol][2],
+            symbol[3],
+            symbol[4],
+            symbol[2],
+        ),
+    )[:20]
 
     symbol_names = {name for _, _, name, _, _ in top_matches if name}
     project_files = list(iter_project_files(root))
