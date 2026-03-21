@@ -1,3 +1,10 @@
+## [0.12.2](https://github.com/marco0560/repoindex/compare/v0.12.1...v0.12.2) (2026-03-21)
+
+
+### Bug Fixes
+
+* **query:** add fallback retrieval when strong token filtering yields no results ([2d0ca92](https://github.com/marco0560/repoindex/commit/2d0ca92a382dce80a5cbe1c34173ed9e75bf0607))
+
 ## [0.12.1](https://github.com/marco0560/repoindex/compare/v0.12.0...v0.12.1) (2026-03-21)
 
 
