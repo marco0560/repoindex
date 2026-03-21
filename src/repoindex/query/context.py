@@ -519,8 +519,9 @@ def _retrieve_and_score_candidates(
 
     scored.sort(reverse=True)
 
+    # --- FALLBACK: avoid empty result set ---
     if not scored:
-        return []
+        return all_candidates[:10]
 
     return [match for _, match in scored[:10]]
 
