@@ -703,20 +703,45 @@ def _issue_driven_symbols(
     query_tokens = _tokenize(query)
     scored: dict[SymbolRow, int] = {}
 
+    GENERIC_NAMES = {"main", "__init__", "run"}
+
     for issue_type, message in issue_rows:
         message_lower = message.lower()
 
         if not any(token in message_lower for token in query_tokens):
             continue
 
-        parts = message.split(":")[0].split()
-        if len(parts) < 2:
+        head = message.split(":", 1)[0]
+
+        # Extract symbol name deterministically
+        symbol_name: str | None = None
+
+        if head.startswith("Function "):
+            symbol_name = head[len("Function ") :]
+
+        elif head.startswith("Module "):
+            symbol_name = head[len("Module ") :].split(".")[-1]
+
+        elif head.startswith("Method "):
+            parts = head[len("Method ") :].split(".")
+            if len(parts) == 2:
+                symbol_name = parts[1]
+
+        if not symbol_name:
             continue
 
-        symbol_name = parts[-1]
+        if symbol_name in GENERIC_NAMES:
+            continue
 
         for symbol in find_symbol(root, symbol_name, conn=conn):
+            module_name = symbol[1]
+
+            # Reject non-core modules (scripts, etc.)
+            if not module_name.startswith("repoindex."):
+                continue
+
             bonus = 3 if issue_type == "missing" else 1
+
             if symbol in scored:
                 scored[symbol] += bonus
             else:
@@ -732,7 +757,7 @@ def _issue_driven_symbols(
         ),
     )
 
-    return ranked[:10]
+    return ranked[:5]
 
 
 def _collect_doc_issues_and_related(
@@ -765,6 +790,10 @@ def _collect_doc_issues_and_related(
             related_symbols.extend(find_symbol(root, symbol_name, conn=conn))
 
     return doc_issues, related_symbols
+
+
+def _is_test_file(path: str) -> bool:
+    return "/tests/" in path or Path(path).name.startswith("test_")
 
 
 def _expand_and_collect_references(
@@ -804,10 +833,12 @@ def _expand_and_collect_references(
     project_files = list(iter_project_files(root))
 
     # --- PHASE 5: cross-module references ---
-    references: list[ReferenceRow] = []
     top_files = {file_path for _, _, _, file_path, _ in top_matches}
 
     file_cache: dict[Path, list[str]] = {}
+
+    test_refs: list[ReferenceRow] = []
+    other_refs: list[ReferenceRow] = []
 
     for name in symbol_names:
         for file_path, lineno in _find_references(
@@ -816,13 +847,21 @@ def _expand_and_collect_references(
             project_files,
             file_cache=file_cache,
         ):
-            if file_path not in top_files:
-                references.append((file_path, lineno))
+            if file_path in top_files:
+                continue
+
+            ref = (file_path, lineno)
+
+            if _is_test_file(file_path):
+                test_refs.append(ref)
+            else:
+                other_refs.append(ref)
 
     seen_refs: set[ReferenceRow] = set()
     unique_refs: list[ReferenceRow] = []
 
-    for ref in references:
+    # prioritize test references first
+    for ref in test_refs + other_refs:
         if ref not in seen_refs:
             seen_refs.add(ref)
             unique_refs.append(ref)
