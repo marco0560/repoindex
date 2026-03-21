@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/marco0560/repoindex/compare/v0.6.0...v0.7.0) (2026-03-21)
+
+
+### Features
+
+* **context:** add test-aware reference prioritization ([9c43f97](https://github.com/marco0560/repoindex/commit/9c43f97a29ac609f959cde45d4acfec891566220))
+
 # [0.6.0](https://github.com/marco0560/repoindex/compare/v0.5.0...v0.6.0) (2026-03-21)
 
 
