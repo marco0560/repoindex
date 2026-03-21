@@ -796,6 +796,40 @@ def _is_test_file(path: str) -> bool:
     return "/tests/" in path or Path(path).name.startswith("test_")
 
 
+def _dedupe_and_cap_references(
+    refs: list[ReferenceRow],
+    *,
+    max_per_file: int = 3,
+    min_line_gap: int = 5,
+) -> list[ReferenceRow]:
+    # group by file
+    by_file: dict[str, list[int]] = {}
+
+    for file_path, lineno in refs:
+        by_file.setdefault(file_path, []).append(lineno)
+
+    result: list[ReferenceRow] = []
+
+    for file_path in sorted(by_file):
+        lines = sorted(by_file[file_path])
+
+        kept: list[int] = []
+        last_kept: int | None = None
+
+        for ln in lines:
+            if last_kept is None or abs(ln - last_kept) >= min_line_gap:
+                kept.append(ln)
+                last_kept = ln
+
+            if len(kept) >= max_per_file:
+                break
+
+        for ln in kept:
+            result.append((file_path, ln))
+
+    return result
+
+
 def _expand_and_collect_references(
     root: Path,
     top_matches: list[SymbolRow],
@@ -827,7 +861,18 @@ def _expand_and_collect_references(
     top_set = set(top_matches)
     expanded = [s for s in expanded if s not in top_set]
 
-    expanded = expanded[:20]
+    # remove duplicates by (module, name)
+    seen_keys: set[tuple[str, str]] = set()
+    deduped: list[SymbolRow] = []
+
+    for t, m, n, f, lin in expanded:
+        key = (m, n)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append((t, m, n, f, lin))
+
+    expanded = deduped[:20]
 
     symbol_names = {name for _, _, name, _, _ in top_matches if name}
     project_files = list(iter_project_files(root))
@@ -866,6 +911,7 @@ def _expand_and_collect_references(
             seen_refs.add(ref)
             unique_refs.append(ref)
 
+    unique_refs = _dedupe_and_cap_references(unique_refs)
     unique_refs = unique_refs[:20]
 
     return expanded, unique_refs
@@ -1135,6 +1181,22 @@ def context_for(
                 top_matches.append(symbol)
 
     top_matches = top_matches[:10]
+
+    # --- PHASE 2C: remove module entries
+    # if same module already represented by functions ---
+    modules_with_functions = {
+        module for t, module, name, _, _ in top_matches if t != "module"
+    }
+
+    filtered_matches: list[SymbolRow] = []
+
+    for sym in top_matches:
+        t, module, _, _, _ = sym
+        if t == "module" and module in modules_with_functions:
+            continue
+        filtered_matches.append(sym)
+
+    top_matches = filtered_matches
 
     if not top_matches:
         if as_json:
