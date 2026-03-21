@@ -1,3 +1,10 @@
+# [0.8.0](https://github.com/marco0560/repoindex/compare/v0.7.0...v0.8.0) (2026-03-21)
+
+
+### Features
+
+* **context:** deduplicate symbols and references for cleaner agent context ([a555d8b](https://github.com/marco0560/repoindex/commit/a555d8b9fad847888f7e17d294e694edd717044f))
+
 # [0.7.0](https://github.com/marco0560/repoindex/compare/v0.6.0...v0.7.0) (2026-03-21)
 
 
