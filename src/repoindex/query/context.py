@@ -676,62 +676,33 @@ def _expand_and_collect_references(
     top_matches: list[SymbolRow],
 ) -> tuple[list[SymbolRow], list[ReferenceRow]]:
     """
-    Perform reference-driven expansion and collect cross-module references.
+    Perform module expansion and collect cross-module references.
     """
-    top_set = set(top_matches)
-    source_cache: dict[Path, tuple[str, list[str], ast.Module]] = {}
-    expansion_stats: dict[SymbolRow, tuple[int, int, int]] = {}
+    # --- PHASE 4: module expansion ---
+    expanded: list[SymbolRow] = []
+    seen_modules: set[str] = set()
 
-    for top_match in top_matches:
-        region = _extract_symbol_source_region(root, top_match, source_cache)
-        if not region:
+    for _, module_name, _, _, _ in top_matches:
+        if module_name in seen_modules:
             continue
 
-        top_module = top_match[1]
-        top_file = top_match[3]
-        candidates: list[tuple[SymbolRow, int]] = []
-        seen_candidates: set[SymbolRow] = set()
+        seen_modules.add(module_name)
 
-        for symbol in _symbols_in_file(root, top_file):
-            if symbol in top_set or symbol in seen_candidates:
-                continue
-            seen_candidates.add(symbol)
-            candidates.append((symbol, 0))
-
-        for symbol in _symbols_in_module(root, top_module):
-            if symbol in top_set or symbol in seen_candidates:
-                continue
-            seen_candidates.add(symbol)
-            candidates.append((symbol, 1))
-
-        for symbol, scope_rank in candidates:
+        for symbol in _symbols_in_module(root, module_name):
             name = symbol[2]
-            pattern = re.compile(rf"\b{re.escape(name)}\b")
-            mention_count = len(pattern.findall(region))
-            if mention_count == 0:
+
+            # --- FILTER: skip internal helpers ---
+            if name.startswith("_"):
                 continue
 
-            if symbol in expansion_stats:
-                prev_used_by, prev_mentions, prev_scope = expansion_stats[symbol]
-                expansion_stats[symbol] = (
-                    prev_used_by + 1,
-                    prev_mentions + mention_count,
-                    min(prev_scope, scope_rank),
-                )
-            else:
-                expansion_stats[symbol] = (1, mention_count, scope_rank)
+            if symbol not in expanded:
+                expanded.append(symbol)
 
-    expanded = sorted(
-        expansion_stats,
-        key=lambda symbol: (
-            -expansion_stats[symbol][0],
-            -expansion_stats[symbol][1],
-            expansion_stats[symbol][2],
-            symbol[3],
-            symbol[4],
-            symbol[2],
-        ),
-    )[:20]
+    # --- REMOVE duplicates already in top_matches ---
+    top_set = set(top_matches)
+    expanded = [s for s in expanded if s not in top_set]
+
+    expanded = expanded[:20]
 
     symbol_names = {name for _, _, name, _, _ in top_matches if name}
     project_files = list(iter_project_files(root))
@@ -765,14 +736,128 @@ def _expand_and_collect_references(
     return expanded, unique_refs
 
 
+def _prompt_symbol_line(root: Path, symbol: SymbolRow) -> str:
+    symbol_type, module_name, name, file_path, lineno = symbol
+
+    try:
+        rel_path = str(Path(file_path).relative_to(root))
+    except ValueError:
+        rel_path = str(file_path)
+
+    if symbol_type == "module":
+        return f"- {symbol_type} {module_name} ({rel_path}:{lineno})"
+
+    return f"- {symbol_type} {module_name}.{name} ({rel_path}:{lineno})"
+
+
+def _render_agent_prompt(
+    root: Path,
+    query: str,
+    top_matches: list[SymbolRow],
+    doc_issues: list[tuple[str, str]],
+    expanded: list[SymbolRow],
+    unique_refs: list[ReferenceRow],
+) -> str:
+    cache: dict[Path, tuple[str, list[str], ast.Module]] = {}
+    lines: list[str] = []
+
+    lines.append("TASK")
+    lines.append("----")
+    lines.append(f"Use the repoindex context below to work on query: {query}")
+    lines.append("")
+    lines.append("MODE")
+    lines.append("----")
+    lines.append("Deterministic code assistant")
+    lines.append("")
+    lines.append("RULES")
+    lines.append("-----")
+    lines.append("- Work only with the symbols and files listed below.")
+    lines.append("- Do not invent modules, files, or functions.")
+    lines.append("- Prefer PRIMARY TARGETS over supporting symbols.")
+    lines.append("- Keep changes minimal and localized.")
+    lines.append("- If required information is missing, say so explicitly.")
+    lines.append("")
+    lines.append("PRIMARY TARGETS")
+    lines.append("---------------")
+
+    if not top_matches:
+        lines.append("None.")
+    else:
+        for symbol in top_matches:
+            lines.append(_prompt_symbol_line(root, symbol))
+
+    lines.append("")
+    lines.append("SUPPORTING SYMBOLS")
+    lines.append("------------------")
+
+    if not expanded:
+        lines.append("None.")
+    else:
+        for symbol in expanded:
+            lines.append(_prompt_symbol_line(root, symbol))
+
+    lines.append("")
+    lines.append("ENRICHED CONTEXT")
+    lines.append("----------------")
+
+    if not top_matches:
+        lines.append("None.")
+    else:
+        for symbol in top_matches[:5]:
+            lines.extend(_format_enriched_symbol(root, symbol, cache))
+            lines.append("")
+
+        if lines[-1] == "":
+            lines.pop()
+
+    lines.append("")
+    lines.append("CROSS-REFERENCES")
+    lines.append("----------------")
+
+    if not unique_refs:
+        lines.append("None.")
+    else:
+        for file_path, lineno in unique_refs:
+            try:
+                rel_path = str(Path(file_path).relative_to(root))
+            except ValueError:
+                rel_path = str(file_path)
+
+            lines.append(f"- {rel_path}:{lineno}")
+
+    lines.append("")
+    lines.append("DOCSTRING ISSUES")
+    lines.append("----------------")
+
+    if not doc_issues:
+        lines.append("None.")
+    else:
+        for issue_type, message in doc_issues:
+            lines.append(f"- {issue_type}: {message}")
+
+    lines.append("")
+    lines.append("OUTPUT FORMAT")
+    lines.append("-------------")
+    lines.append("Follow strict patch discipline:")
+    lines.append("- FILE path")
+    lines.append("- exact OLD block")
+    lines.append("- exact NEW block")
+    lines.append("- no partial edits")
+    lines.append("- no invented code outside visible scope")
+
+    return "\n".join(lines)
+
+
 def _render_context(
     root: Path,
+    query: str,
     top_matches: list[SymbolRow],
     doc_issues: list[tuple[str, str]],
     expanded: list[SymbolRow],
     unique_refs: list[ReferenceRow],
     *,
     as_json: bool = False,
+    as_prompt: bool = False,
 ) -> str:
     """
     Render final structured context output.
@@ -812,6 +897,17 @@ def _render_context(
             },
             indent=2,
         )
+
+    if as_prompt:
+        return _render_agent_prompt(
+            root,
+            query,
+            top_matches,
+            doc_issues,
+            expanded,
+            unique_refs,
+        )
+
     lines: list[str] = []
 
     lines.append("=== TOP MATCHES ===")
@@ -860,7 +956,13 @@ def _render_context(
     return "\n".join(lines)
 
 
-def context_for(root: Path, query: str, *, as_json: bool = False) -> str:
+def context_for(
+    root: Path,
+    query: str,
+    *,
+    as_json: bool = False,
+    as_prompt: bool = False,
+) -> str:
     """
     Build a structured context block for a given query.
 
@@ -895,11 +997,25 @@ def context_for(root: Path, query: str, *, as_json: bool = False) -> str:
         if as_json:
             result = _render_context(
                 root,
+                query,
                 [],
                 [],
                 [],
                 [],
                 as_json=True,
+            )
+            conn.close()
+            return result
+
+        if as_prompt:
+            result = _render_context(
+                root,
+                query,
+                [],
+                [],
+                [],
+                [],
+                as_prompt=True,
             )
             conn.close()
             return result
@@ -930,11 +1046,13 @@ def context_for(root: Path, query: str, *, as_json: bool = False) -> str:
     # --- PHASE 6: rendering ---
     result = _render_context(
         root,
+        query,
         top_matches,
         doc_issues,
         expanded,
         unique_refs,
         as_json=as_json,
+        as_prompt=as_prompt,
     )
     conn.close()
     return result

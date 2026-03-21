@@ -32,6 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Output structured JSON (agent mode)",
     )
+    context_parser.add_argument(
+        "--prompt",
+        action="store_true",
+        help="Output a Codex-ready deterministic prompt",
+    )
 
     return parser
 
@@ -210,7 +215,12 @@ def main() -> int:
         return _run_audit_docstrings(root)
     elif args.command == "context-for":
         _ensure_index(root)
-        result = context_for(root, args.query, as_json=args.json)
+        result = context_for(
+            root,
+            args.query,
+            as_json=args.json,
+            as_prompt=args.prompt,
+        )
         print(result)
         return 0
 
