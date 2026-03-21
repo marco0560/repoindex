@@ -1,3 +1,10 @@
+## [0.10.1](https://github.com/marco0560/repoindex/compare/v0.10.0...v0.10.1) (2026-03-21)
+
+
+### Bug Fixes
+
+* **build:** enforced repoindex version coherent with git tags ([2e2b598](https://github.com/marco0560/repoindex/commit/2e2b59895004ef66d08bf728a6e9ff8255ed62a7))
+
 # [0.10.0](https://github.com/marco0560/repoindex/compare/v0.9.0...v0.10.0) (2026-03-21)
 
 
