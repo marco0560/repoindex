@@ -1,3 +1,10 @@
+# [0.18.0](https://github.com/marco0560/repoindex/compare/v0.17.0...v0.18.0) (2026-03-22)
+
+
+### Features
+
+* **retrieval:** activate test and script channels in pipeline (phase 1 completion) ([474ee2b](https://github.com/marco0560/repoindex/commit/474ee2bf2b8fc000b42bccc4f7bcfd1a6dd87094))
+
 # [0.17.0](https://github.com/marco0560/repoindex/compare/v0.16.0...v0.17.0) (2026-03-22)
 
 
