@@ -17,6 +17,7 @@ SymbolRow = tuple[str, str, str, str, int]
 ScoredSymbol = tuple[float, SymbolRow]
 ChannelResults = list[ScoredSymbol]
 ChannelName = str
+ChannelBundle = tuple[ChannelName, ChannelResults]
 ReferenceRow = tuple[str, int]
 CodeContext = tuple[str | None, str | None, list[str]]
 _MIN_SCORE = 1
@@ -693,12 +694,12 @@ def _select_retrieval_channels(
     conn: sqlite3.Connection,
     intent: QueryIntent,
 ) -> list[ChannelResults]:
-    channels: list[tuple[ChannelName, ChannelResults]] = [
+    bundles: list[ChannelBundle] = [
         ("symbol", _retrieve_symbol_candidates(root, query, conn, intent)),
         ("test", _retrieve_test_candidates(root, query, conn, intent)),
         ("script", _retrieve_script_candidates(root, query, conn, intent)),
     ]
-    return [results for _, results in channels]
+    return [results for _, results in bundles]
 
 
 def _retrieve_and_score_candidates(
