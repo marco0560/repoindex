@@ -762,12 +762,24 @@ def _filter_channels_by_intent(
 ]:
     priority = _channel_priority(intent)
 
+    enabled = _enabled_channels(intent)
+
+    filtered = [item for item in channels if item[0] in enabled]
+
     ordered = sorted(
-        channels,
+        filtered,
         key=lambda item: priority.get(item[0], 100),
     )
 
     return ordered
+
+
+def _enabled_channels(intent: QueryIntent) -> set[ChannelName]:
+    return {
+        "symbol",
+        "test",
+        "script",
+    }
 
 
 def _channel_priority(intent: QueryIntent) -> dict[ChannelName, int]:
