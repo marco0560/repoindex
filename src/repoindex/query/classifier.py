@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -18,6 +19,8 @@ class QueryIntent:
         Whether the query contains multiple whitespace-separated terms.
     is_test_related : bool
         Whether the query explicitly targets tests.
+    is_script_related : bool
+        Whether the query explicitly targets scripts.
 
     Returns
     -------
@@ -33,6 +36,7 @@ class QueryIntent:
     is_identifier_query: bool
     is_multi_term: bool
     is_test_related: bool
+    is_script_related: bool
 
 
 def classify_query(query: str) -> QueryIntent:
@@ -54,13 +58,24 @@ def classify_query(query: str) -> QueryIntent:
     Classification is deterministic and repository-agnostic. It avoids
     domain-specific keywords and relies only on query structure.
     """
-    raw = query.strip()
-    lowered = raw.lower()
-    tokens = lowered.split()
+    q = query.strip()
+    tokens = [t for t in q.split() if t]
+
+    is_identifier_query = bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", q))
+    is_multi_term = len(tokens) >= 2
+
+    lowered = q.lower()
+
+    is_test_related = any(kw in lowered for kw in ("test", "tests", "pytest"))
+
+    is_script_related = any(
+        kw in lowered for kw in ("script", "scripts", "cli", "command")
+    )
 
     return QueryIntent(
-        raw=raw,
-        is_identifier_query=("_" in raw) or raw.isidentifier(),
-        is_multi_term=len(tokens) > 1,
-        is_test_related=("test" in lowered) or ("tests" in lowered),
+        raw=q,
+        is_identifier_query=is_identifier_query,
+        is_multi_term=is_multi_term,
+        is_test_related=is_test_related,
+        is_script_related=is_script_related,
     )

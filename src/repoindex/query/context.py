@@ -520,14 +520,12 @@ def _retrieve_and_score_candidates(
             key=lambda symbol: (symbol[1], symbol[2], symbol[3], symbol[4]),
         )
     else:
-        rows = conn.execute(
-            """
+        rows = conn.execute("""
             SELECT type, module_name, name, file_path, lineno
             FROM symbol_index
             ORDER BY module_name, name, file_path, lineno
             LIMIT 200
-            """
-        ).fetchall()
+            """).fetchall()
 
         all_candidates = [
             (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
@@ -563,9 +561,15 @@ def _retrieve_and_score_candidates(
         score += freq * 2
 
         if module_name.startswith("tests."):
-            score -= 20
+            if intent.is_test_related:
+                score += 8
+            else:
+                score -= 20
         elif module_name.startswith("scripts."):
-            score -= 6
+            if intent.is_script_related:
+                score += 6
+            else:
+                score -= 6
         else:
             score += 2
 
