@@ -675,12 +675,17 @@ def _merge_ranked_channels(
     weights = _channel_weights()
 
     merged: dict[SymbolRow, float] = {}
+    contributions: dict[SymbolRow, list[tuple[int, float]]] = {}
 
     for idx, channel in enumerate(channels):
         weight = weights.get(idx, 1.0)
 
         for score, symbol in channel:
             weighted_score = score * weight
+
+            if symbol not in contributions:
+                contributions[symbol] = []
+            contributions[symbol].append((idx, weighted_score))
 
             if symbol not in merged or weighted_score > merged[symbol]:
                 merged[symbol] = weighted_score
