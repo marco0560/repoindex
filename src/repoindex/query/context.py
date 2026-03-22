@@ -718,15 +718,6 @@ def _channel_order() -> list[ChannelName]:
     return ["symbol", "test", "script"]
 
 
-def _select_retrieval_channels(
-    root: Path,
-    query: str,
-    conn: sqlite3.Connection,
-    intent: QueryIntent,
-) -> list[ChannelBundle]:
-    return _build_channel_bundles(root, query, conn, intent)
-
-
 def _build_channel_bundles(
     root: Path,
     query: str,
@@ -1280,7 +1271,7 @@ def context_for(
     intent: QueryIntent = classify_query(query)
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
-    bundles = _select_retrieval_channels(root, query, conn, intent)
+    bundles = _build_channel_bundles(root, query, conn, intent)
     top_matches = _merge_ranked_channels(bundles)
 
     # --- confidence estimation (lightweight, deterministic) ---
