@@ -709,12 +709,14 @@ def _channel_weights() -> dict[ChannelName, float]:
 
 
 def _channel_name_from_index(idx: int) -> ChannelName:
-    mapping = {
-        0: "symbol",
-        1: "test",
-        2: "script",
-    }
-    return mapping.get(idx, "unknown")
+    order = _channel_order()
+    if 0 <= idx < len(order):
+        return order[idx]
+    return "unknown"
+
+
+def _channel_order() -> list[ChannelName]:
+    return ["symbol", "test", "script"]
 
 
 def _select_retrieval_channels(
