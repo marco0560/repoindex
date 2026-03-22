@@ -1,3 +1,10 @@
+# [0.16.0](https://github.com/marco0560/repoindex/compare/v0.15.0...v0.16.0) (2026-03-22)
+
+
+### Features
+
+* **query:** add script-intent symmetry in classifier and scoring ([182563d](https://github.com/marco0560/repoindex/commit/182563d6601bd5349676c08044ccd59d2f30b5dc))
+
 # [0.15.0](https://github.com/marco0560/repoindex/compare/v0.14.0...v0.15.0) (2026-03-22)
 
 
