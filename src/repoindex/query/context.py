@@ -754,24 +754,27 @@ def _get_channel_functions(
     ]
 ]:
     order = _channel_order()
-
-    registry: dict[
-        ChannelName,
-        Callable[
-            [Path, str, sqlite3.Connection, QueryIntent],
-            ChannelResults,
-        ],
-    ] = {
-        "symbol": _retrieve_symbol_candidates,
-        "test": _retrieve_test_candidates,
-        "script": _retrieve_script_candidates,
-    }
+    registry = _channel_registry()
 
     all_channels = [(name, registry[name]) for name in order if name in registry]
 
     selected = _filter_channels_by_intent(intent, all_channels)
 
     return selected
+
+
+def _channel_registry() -> dict[
+    ChannelName,
+    Callable[
+        [Path, str, sqlite3.Connection, QueryIntent],
+        ChannelResults,
+    ],
+]:
+    return {
+        "symbol": _retrieve_symbol_candidates,
+        "test": _retrieve_test_candidates,
+        "script": _retrieve_script_candidates,
+    }
 
 
 def _filter_channels_by_intent(
