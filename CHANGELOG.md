@@ -1,3 +1,10 @@
+# [0.14.0](https://github.com/marco0560/repoindex/compare/v0.13.0...v0.14.0) (2026-03-22)
+
+
+### Features
+
+* **repoindex:** extract agent prompt rendering into prompts module ([534f63e](https://github.com/marco0560/repoindex/commit/534f63e92280a0151873956b1e0f7eba7b7cadb2))
+
 # [0.13.0](https://github.com/marco0560/repoindex/compare/v0.12.2...v0.13.0) (2026-03-22)
 
 
