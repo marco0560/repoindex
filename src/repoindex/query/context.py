@@ -760,7 +760,22 @@ def _filter_channels_by_intent(
         ],
     ]
 ]:
-    return channels
+    priority = _channel_priority(intent)
+
+    ordered = sorted(
+        channels,
+        key=lambda item: priority.get(item[0], 100),
+    )
+
+    return ordered
+
+
+def _channel_priority(intent: QueryIntent) -> dict[ChannelName, int]:
+    return {
+        "symbol": 0,
+        "test": 1,
+        "script": 2,
+    }
 
 
 def _retrieve_and_score_candidates(
