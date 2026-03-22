@@ -694,12 +694,21 @@ def _select_retrieval_channels(
     conn: sqlite3.Connection,
     intent: QueryIntent,
 ) -> list[ChannelResults]:
-    bundles: list[ChannelBundle] = [
+    bundles = _build_channel_bundles(root, query, conn, intent)
+    return [results for _, results in bundles]
+
+
+def _build_channel_bundles(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+    intent: QueryIntent,
+) -> list[ChannelBundle]:
+    return [
         ("symbol", _retrieve_symbol_candidates(root, query, conn, intent)),
         ("test", _retrieve_test_candidates(root, query, conn, intent)),
         ("script", _retrieve_script_candidates(root, query, conn, intent)),
     ]
-    return [results for _, results in bundles]
 
 
 def _retrieve_and_score_candidates(
