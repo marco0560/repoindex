@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import cast
 
+from repoindex.prompts.default import build_prompt
 from repoindex.query.exact import docstring_issues, find_symbol
 from repoindex.scanner import iter_project_files
 from repoindex.storage import get_db_path
@@ -502,14 +503,12 @@ def _retrieve_and_score_candidates(
             key=lambda symbol: (symbol[1], symbol[2], symbol[3], symbol[4]),
         )
     else:
-        rows = conn.execute(
-            """
+        rows = conn.execute("""
             SELECT type, module_name, name, file_path, lineno
             FROM symbol_index
             ORDER BY module_name, name, file_path, lineno
             LIMIT 200
-            """
-        ).fetchall()
+            """).fetchall()
 
         all_candidates = [
             (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
@@ -867,94 +866,16 @@ def _render_agent_prompt(
     expanded: list[SymbolRow],
     unique_refs: list[ReferenceRow],
 ) -> str:
-    cache: dict[Path, tuple[str, list[str], ast.Module]] = {}
-    lines: list[str] = []
-
-    lines.append("TASK")
-    lines.append("----")
-    lines.append(f"Use the repoindex context below to work on query: {query}")
-    lines.append("")
-    lines.append("MODE")
-    lines.append("----")
-    lines.append("Deterministic code assistant")
-    lines.append("")
-    lines.append("RULES")
-    lines.append("-----")
-    lines.append("- Work only with the symbols and files listed below.")
-    lines.append("- Do not invent modules, files, or functions.")
-    lines.append("- Prefer PRIMARY TARGETS over supporting symbols.")
-    lines.append("- Keep changes minimal and localized.")
-    lines.append("- If required information is missing, say so explicitly.")
-    lines.append("")
-    lines.append("PRIMARY TARGETS")
-    lines.append("---------------")
-
-    if not top_matches:
-        lines.append("None.")
-    else:
-        for symbol in top_matches:
-            lines.append(_prompt_symbol_line(root, symbol))
-
-    lines.append("")
-    lines.append("SUPPORTING SYMBOLS")
-    lines.append("------------------")
-
-    if not expanded:
-        lines.append("None.")
-    else:
-        for symbol in expanded:
-            lines.append(_prompt_symbol_line(root, symbol))
-
-    lines.append("")
-    lines.append("ENRICHED CONTEXT")
-    lines.append("----------------")
-
-    if not top_matches:
-        lines.append("None.")
-    else:
-        for symbol in top_matches[:5]:
-            lines.extend(_format_enriched_symbol(root, symbol, cache))
-            lines.append("")
-
-        if lines[-1] == "":
-            lines.pop()
-
-    lines.append("")
-    lines.append("CROSS-REFERENCES")
-    lines.append("----------------")
-
-    if not unique_refs:
-        lines.append("None.")
-    else:
-        for file_path, lineno in unique_refs:
-            try:
-                rel_path = str(Path(file_path).relative_to(root))
-            except ValueError:
-                rel_path = str(file_path)
-
-            lines.append(f"- {rel_path}:{lineno}")
-
-    lines.append("")
-    lines.append("DOCSTRING ISSUES")
-    lines.append("----------------")
-
-    if not doc_issues:
-        lines.append("None.")
-    else:
-        for issue_type, message in doc_issues:
-            lines.append(f"- {issue_type}: {message}")
-
-    lines.append("")
-    lines.append("OUTPUT FORMAT")
-    lines.append("-------------")
-    lines.append("Follow strict patch discipline:")
-    lines.append("- FILE path")
-    lines.append("- exact OLD block")
-    lines.append("- exact NEW block")
-    lines.append("- no partial edits")
-    lines.append("- no invented code outside visible scope")
-
-    return "\n".join(lines)
+    return build_prompt(
+        root,
+        query,
+        top_matches,
+        doc_issues,
+        expanded,
+        unique_refs,
+        prompt_symbol_line=_prompt_symbol_line,
+        format_enriched_symbol=_format_enriched_symbol,
+    )
 
 
 def _approx_token_count(lines: list[str]) -> int:
@@ -1162,14 +1083,13 @@ def context_for(
             return result
 
         if as_prompt:
-            result = _render_context(
+            result = _render_agent_prompt(
                 root,
                 query,
                 [],
                 [],
                 [],
                 [],
-                as_prompt=True,
             )
             conn.close()
             return result
