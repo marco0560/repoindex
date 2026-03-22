@@ -2,23 +2,21 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import Callable
 
-SymbolRow = Tuple[str, str, str, str, int]
-ReferenceRow = Tuple[str, int]
-CacheType = dict[Path, tuple[str, list[str], ast.Module]]
+from repoindex.types import CacheType, ReferenceRow, SymbolRow
 
 
 def build_prompt(
     root: Path,
     query: str,
-    top_matches: List[SymbolRow],
-    doc_issues: List[Tuple[str, str]],
-    expanded: List[SymbolRow],
-    unique_refs: List[ReferenceRow],
+    top_matches: list[SymbolRow],
+    doc_issues: list[tuple[str, str]],
+    expanded: list[SymbolRow],
+    unique_refs: list[ReferenceRow],
     *,
     prompt_symbol_line: Callable[[Path, SymbolRow], str],
-    format_enriched_symbol: Callable[[Path, SymbolRow, CacheType], List[str]],
+    format_enriched_symbol: Callable[[Path, SymbolRow, CacheType], list[str]],
 ) -> str:
     """
     Deterministic agent prompt builder (full fidelity).

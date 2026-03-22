@@ -566,28 +566,15 @@ def _retrieve_symbol_candidates(
         score += freq * 2
 
         if module_name.startswith("tests."):
-            if intent.is_test_related:
-                score += 8
-            else:
-                score -= 20
+            pass
         elif module_name.startswith("scripts."):
-            if intent.is_script_related:
-                score += 6
-            else:
-                score -= 6
+            pass
         else:
             score += 2
 
         lowered_module = module_name.lower()
         if any(x in lowered_module for x in ("cli", "scanner", "storage")):
             score -= 2
-
-        if intent.is_test_related:
-            if module_name.startswith("tests."):
-                score += 8
-        else:
-            if module_name.startswith("tests."):
-                score -= 8
 
         if intent.is_identifier_query:
             if symbol_name == intent.raw:
@@ -627,13 +614,6 @@ def _retrieve_symbol_candidates(
             symbol_name = candidate[2]
             module_name = candidate[1]
             symbol_type = candidate[0]
-
-            if intent.is_test_related:
-                if module_name.startswith("tests."):
-                    score += 8
-            else:
-                if module_name.startswith("tests."):
-                    score -= 8
 
             if intent.is_identifier_query:
                 if symbol_name == intent.raw:
@@ -794,14 +774,34 @@ def _filter_channels_by_intent(
 
 
 def _enabled_channels(intent: QueryIntent) -> set[ChannelName]:
+    if intent.is_test_related:
+        return {
+            "test",
+            "symbol",
+        }
+    if intent.is_script_related:
+        return {
+            "script",
+            "symbol",
+        }
     return {
         "symbol",
-        "test",
-        "script",
     }
 
 
 def _channel_priority(intent: QueryIntent) -> dict[ChannelName, int]:
+    if intent.is_test_related:
+        return {
+            "test": 0,
+            "symbol": 1,
+            "script": 2,
+        }
+    if intent.is_script_related:
+        return {
+            "script": 0,
+            "symbol": 1,
+            "test": 2,
+        }
     return {
         "symbol": 0,
         "test": 1,
