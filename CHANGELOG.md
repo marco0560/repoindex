@@ -1,3 +1,10 @@
+# [0.15.0](https://github.com/marco0560/repoindex/compare/v0.14.0...v0.15.0) (2026-03-22)
+
+
+### Features
+
+* **query:** introduce QueryIntent classification, integrate intent-aware scoring ([c9b7e59](https://github.com/marco0560/repoindex/commit/c9b7e593df529126333b558428849469c762630f))
+
 # [0.14.0](https://github.com/marco0560/repoindex/compare/v0.13.0...v0.14.0) (2026-03-22)
 
 
