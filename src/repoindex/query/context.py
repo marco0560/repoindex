@@ -677,8 +677,10 @@ def _merge_ranked_channels(
     merged: dict[SymbolRow, float] = {}
     contributions: dict[SymbolRow, list[tuple[str, float]]] = {}
 
+    order = _channel_order()
+
     for idx, channel in enumerate(channels):
-        channel_name = _channel_name_from_index(idx)
+        channel_name = order[idx] if idx < len(order) else "unknown"
         weight = weights.get(channel_name, 1.0)
 
         for score, symbol in channel:
