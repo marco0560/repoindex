@@ -1,3 +1,10 @@
+# [0.17.0](https://github.com/marco0560/repoindex/compare/v0.16.0...v0.17.0) (2026-03-22)
+
+
+### Features
+
+* **retrieval:** introduce multi-channel retrieval (phase 1, symbol channel extraction) ([5785474](https://github.com/marco0560/repoindex/commit/578547499878fa88bf34561d1901718e6daa3705))
+
 # [0.16.0](https://github.com/marco0560/repoindex/compare/v0.15.0...v0.16.0) (2026-03-22)
 
 
