@@ -672,15 +672,20 @@ def _retrieve_script_candidates(
 def _merge_ranked_channels(
     channels: list[ChannelResults],
 ) -> list[SymbolRow]:
+    return _merge_ranked_channel_bundles(
+        [(name, results) for name, results in zip(_channel_order(), channels)]
+    )
+
+
+def _merge_ranked_channel_bundles(
+    bundles: list[ChannelBundle],
+) -> list[SymbolRow]:
     weights = _channel_weights()
 
     merged: dict[SymbolRow, float] = {}
     contributions: dict[SymbolRow, list[tuple[str, float]]] = {}
 
-    order = _channel_order()
-
-    for idx, channel in enumerate(channels):
-        channel_name = order[idx] if idx < len(order) else "unknown"
+    for channel_name, channel in bundles:
         weight = weights.get(channel_name, 1.0)
 
         for score, symbol in channel:
