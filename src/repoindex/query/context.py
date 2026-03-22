@@ -5,7 +5,7 @@ import json
 import re
 import sqlite3
 from pathlib import Path
-from typing import cast
+from typing import Callable, cast
 
 from repoindex.prompts.default import build_prompt
 from repoindex.query.classifier import QueryIntent, classify_query
@@ -704,10 +704,26 @@ def _build_channel_bundles(
     conn: sqlite3.Connection,
     intent: QueryIntent,
 ) -> list[ChannelBundle]:
+    channel_fns = _get_channel_functions(intent)
+
+    return [(name, fn(root, query, conn, intent)) for name, fn in channel_fns]
+
+
+def _get_channel_functions(
+    intent: QueryIntent,
+) -> list[
+    tuple[
+        ChannelName,
+        Callable[
+            [Path, str, sqlite3.Connection, QueryIntent],
+            ChannelResults,
+        ],
+    ]
+]:
     return [
-        ("symbol", _retrieve_symbol_candidates(root, query, conn, intent)),
-        ("test", _retrieve_test_candidates(root, query, conn, intent)),
-        ("script", _retrieve_script_candidates(root, query, conn, intent)),
+        ("symbol", _retrieve_symbol_candidates),
+        ("test", _retrieve_test_candidates),
+        ("script", _retrieve_script_candidates),
     ]
 
 
