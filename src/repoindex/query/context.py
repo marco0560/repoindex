@@ -686,6 +686,19 @@ def _merge_ranked_channels(
     return [symbol for symbol, _ in ranked[:10]]
 
 
+def _select_retrieval_channels(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+    intent: QueryIntent,
+) -> list[ChannelResults]:
+    return [
+        _retrieve_symbol_candidates(root, query, conn, intent),
+        _retrieve_test_candidates(root, query, conn, intent),
+        _retrieve_script_candidates(root, query, conn, intent),
+    ]
+
+
 def _retrieve_and_score_candidates(
     root: Path,
     query: str,
@@ -695,11 +708,7 @@ def _retrieve_and_score_candidates(
     """
     Deprecated wrapper retained for backward compatibility.
     """
-    channels = [
-        _retrieve_symbol_candidates(root, query, conn, intent),
-        _retrieve_test_candidates(root, query, conn, intent),
-        _retrieve_script_candidates(root, query, conn, intent),
-    ]
+    channels = _select_retrieval_channels(root, query, conn, intent)
     return _merge_ranked_channels(channels)
 
 
@@ -1160,11 +1169,7 @@ def context_for(
     intent: QueryIntent = classify_query(query)
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
-    channels = [
-        _retrieve_symbol_candidates(root, query, conn, intent),
-        _retrieve_test_candidates(root, query, conn, intent),
-        _retrieve_script_candidates(root, query, conn, intent),
-    ]
+    channels = _select_retrieval_channels(root, query, conn, intent)
     top_matches = _merge_ranked_channels(channels)
 
     # --- confidence estimation (lightweight, deterministic) ---
