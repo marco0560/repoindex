@@ -720,11 +720,47 @@ def _get_channel_functions(
         ],
     ]
 ]:
-    return [
+    all_channels: list[
+        tuple[
+            ChannelName,
+            Callable[
+                [Path, str, sqlite3.Connection, QueryIntent],
+                ChannelResults,
+            ],
+        ]
+    ] = [
         ("symbol", _retrieve_symbol_candidates),
         ("test", _retrieve_test_candidates),
         ("script", _retrieve_script_candidates),
     ]
+
+    # Phase 2: routing hook (currently no filtering)
+    selected = _filter_channels_by_intent(intent, all_channels)
+
+    return selected
+
+
+def _filter_channels_by_intent(
+    intent: QueryIntent,
+    channels: list[
+        tuple[
+            ChannelName,
+            Callable[
+                [Path, str, sqlite3.Connection, QueryIntent],
+                ChannelResults,
+            ],
+        ]
+    ],
+) -> list[
+    tuple[
+        ChannelName,
+        Callable[
+            [Path, str, sqlite3.Connection, QueryIntent],
+            ChannelResults,
+        ],
+    ]
+]:
+    return channels
 
 
 def _retrieve_and_score_candidates(
