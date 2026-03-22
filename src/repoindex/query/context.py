@@ -691,31 +691,12 @@ def _retrieve_and_score_candidates(
     intent: QueryIntent,
 ) -> list[SymbolRow]:
     """
-    Retrieve and score candidate symbols for a query.
-
-    Parameters
-    ----------
-    root : pathlib.Path
-        Root directory of the indexed repository.
-    query : str
-        User query string.
-    conn : sqlite3.Connection
-        Active database connection.
-    intent : QueryIntent
-        Structured classification of the query.
-
-    Returns
-    -------
-    list[SymbolRow]
-        Ranked candidate symbols sorted by descending score.
-
-    Notes
-    -----
-    This phase applies deterministic scoring only. It does not perform
-    final deduplication or pruning.
+    Deprecated wrapper retained for backward compatibility.
     """
     channels = [
         _retrieve_symbol_candidates(root, query, conn, intent),
+        _retrieve_test_candidates(root, query, conn, intent),
+        _retrieve_script_candidates(root, query, conn, intent),
     ]
     return _merge_ranked_channels(channels)
 
