@@ -675,17 +675,18 @@ def _merge_ranked_channels(
     weights = _channel_weights()
 
     merged: dict[SymbolRow, float] = {}
-    contributions: dict[SymbolRow, list[tuple[int, float]]] = {}
+    contributions: dict[SymbolRow, list[tuple[str, float]]] = {}
 
     for idx, channel in enumerate(channels):
-        weight = weights.get(idx, 1.0)
+        channel_name = _channel_name_from_index(idx)
+        weight = weights.get(channel_name, 1.0)
 
         for score, symbol in channel:
             weighted_score = score * weight
 
             if symbol not in contributions:
                 contributions[symbol] = []
-            contributions[symbol].append((idx, weighted_score))
+            contributions[symbol].append((channel_name, weighted_score))
 
             if symbol not in merged or weighted_score > merged[symbol]:
                 merged[symbol] = weighted_score
@@ -699,12 +700,21 @@ def _merge_ranked_channels(
     return [symbol for symbol, _ in ranked[:10]]
 
 
-def _channel_weights() -> dict[int, float]:
+def _channel_weights() -> dict[ChannelName, float]:
     return {
-        0: 1.0,
-        1: 1.0,
-        2: 1.0,
+        "symbol": 1.0,
+        "test": 1.0,
+        "script": 1.0,
     }
+
+
+def _channel_name_from_index(idx: int) -> ChannelName:
+    mapping = {
+        0: "symbol",
+        1: "test",
+        2: "script",
+    }
+    return mapping.get(idx, "unknown")
 
 
 def _select_retrieval_channels(
