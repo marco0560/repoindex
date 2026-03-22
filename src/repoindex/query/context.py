@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from repoindex.prompts.default import build_prompt
+from repoindex.query.classifier import QueryIntent, classify_query
 from repoindex.query.exact import docstring_issues, find_symbol
 from repoindex.scanner import iter_project_files
 from repoindex.storage import get_db_path
@@ -456,15 +457,31 @@ def _retrieve_and_score_candidates(
     root: Path,
     query: str,
     conn: sqlite3.Connection,
+    intent: QueryIntent,
 ) -> list[SymbolRow]:
     """
-    Retrieve candidate symbols and apply scoring + filtering.
+    Retrieve and score candidate symbols for a query.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Root directory of the indexed repository.
+    query : str
+        User query string.
+    conn : sqlite3.Connection
+        Active database connection.
+    intent : QueryIntent
+        Structured classification of the query.
+
+    Returns
+    -------
+    list[SymbolRow]
+        Ranked candidate symbols sorted by descending score.
 
     Notes
     -----
-    This function returns the full deterministic ranked candidate stream.
-    Final pruning is performed later by ``context_for`` after all enrichment
-    phases have completed.
+    This phase applies deterministic scoring only. It does not perform
+    final deduplication or pruning.
     """
     matches = find_symbol(root, query, conn=conn)
     query_tokens = sorted(_tokenize(query))
@@ -503,12 +520,14 @@ def _retrieve_and_score_candidates(
             key=lambda symbol: (symbol[1], symbol[2], symbol[3], symbol[4]),
         )
     else:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT type, module_name, name, file_path, lineno
             FROM symbol_index
             ORDER BY module_name, name, file_path, lineno
             LIMIT 200
-            """).fetchall()
+            """
+        ).fetchall()
 
         all_candidates = [
             (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
@@ -535,6 +554,7 @@ def _retrieve_and_score_candidates(
 
         symbol_name = candidate[2]
         module_name = candidate[1]
+        symbol_type = candidate[0]
 
         if symbol_name.startswith("_"):
             score -= 2
@@ -552,6 +572,22 @@ def _retrieve_and_score_candidates(
         lowered_module = module_name.lower()
         if any(x in lowered_module for x in ("cli", "scanner", "storage")):
             score -= 2
+
+        if intent.is_test_related:
+            if module_name.startswith("tests."):
+                score += 8
+        else:
+            if module_name.startswith("tests."):
+                score -= 8
+
+        if intent.is_identifier_query:
+            if symbol_name == intent.raw:
+                score += 25
+            elif module_name.endswith(intent.raw):
+                score += 8
+
+        if intent.is_multi_term and symbol_type == "module":
+            score += 1
 
         if symbol_name not in token_cache:
             token_cache[symbol_name] = list(_tokenize(symbol_name))
@@ -578,6 +614,27 @@ def _retrieve_and_score_candidates(
 
         for candidate in all_candidates:
             score = _score_match(query_tokens, candidate) + _path_bias(candidate[3])
+
+            symbol_name = candidate[2]
+            module_name = candidate[1]
+            symbol_type = candidate[0]
+
+            if intent.is_test_related:
+                if module_name.startswith("tests."):
+                    score += 8
+            else:
+                if module_name.startswith("tests."):
+                    score -= 8
+
+            if intent.is_identifier_query:
+                if symbol_name == intent.raw:
+                    score += 25
+                elif module_name.endswith(intent.raw):
+                    score += 8
+
+            if intent.is_multi_term and symbol_type == "module":
+                score += 1
+
             fallback_scored.append((score, candidate))
 
         fallback_scored.sort(reverse=True)
@@ -1036,39 +1093,57 @@ def context_for(
     Notes
     -----
     The output is optimized for LLM consumption and follows a
-    deterministic section-based layout.
-
-    Pipeline
-    --------
-    The function performs multiple accumulation phases first and applies a
-    single final dedupe/sort/prune phase before rendering.
+    deterministic section-based layout. Query classification is
+    performed before retrieval and passed into the scoring phase.
     """
     conn = sqlite3.connect(get_db_path(root))
+    intent: QueryIntent = classify_query(query)
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
-    accumulated_matches = _retrieve_and_score_candidates(root, query, conn)
+    top_matches = _retrieve_and_score_candidates(root, query, conn, intent)
+
+    # --- confidence estimation (lightweight, deterministic) ---
+    confidence_map: dict[SymbolRow, float] = {}
+
+    query_tokens = list(_tokenize(query))
+
+    for rank, symbol in enumerate(top_matches):
+        base = 1.0 - (rank / max(len(top_matches), 1))
+        name = symbol[2].lower()
+        overlap = sum(1 for t in query_tokens if t in name)
+
+        confidence = base + (0.1 * overlap)
+
+        if confidence > 1.0:
+            confidence = 1.0
+
+        confidence_map[symbol] = confidence
 
     # --- PHASE 2B: issue-driven candidate enrichment ---
     if _is_issue_query(query):
         for symbol in _issue_driven_symbols(root, query, conn):
-            if symbol not in accumulated_matches:
-                accumulated_matches.append(symbol)
+            if symbol not in top_matches:
+                top_matches.append(symbol)
+
+    top_matches = top_matches[:10]
 
     # --- PHASE 2C: remove module entries
     # if same module already represented by functions ---
     modules_with_functions = {
-        module for t, module, _, _, _ in accumulated_matches if t != "module"
+        module for t, module, name, _, _ in top_matches if t != "module"
     }
 
     filtered_matches: list[SymbolRow] = []
 
-    for sym in accumulated_matches:
+    for sym in top_matches:
         t, module, _, _, _ = sym
         if t == "module" and module in modules_with_functions:
             continue
         filtered_matches.append(sym)
 
-    if not filtered_matches:
+    top_matches = filtered_matches
+
+    if not top_matches:
         if as_json:
             result = _render_context(
                 root,
@@ -1083,13 +1158,14 @@ def context_for(
             return result
 
         if as_prompt:
-            result = _render_agent_prompt(
+            result = _render_context(
                 root,
                 query,
                 [],
                 [],
                 [],
                 [],
+                as_prompt=True,
             )
             conn.close()
             return result
@@ -1101,47 +1177,17 @@ def context_for(
     doc_issues, related_symbols = _collect_doc_issues_and_related(
         root,
         query,
-        filtered_matches,
+        top_matches,
         conn,
     )
 
     doc_issues = doc_issues[:MAX_ISSUES]
 
     for match in related_symbols:
-        if match not in filtered_matches:
-            filtered_matches.append(match)
+        if match not in top_matches:
+            top_matches.append(match)
 
-    # --- FINAL PHASE: authoritative dedupe + ranking + pruning ---
-    deduped_matches: list[SymbolRow] = []
-    seen_matches: set[SymbolRow] = set()
-
-    for match in filtered_matches:
-        if match in seen_matches:
-            continue
-        seen_matches.add(match)
-        deduped_matches.append(match)
-
-    ranked_matches = sorted(
-        deduped_matches,
-        key=lambda s: (s[1].startswith("tests.") or s[1].startswith("scripts."),),
-    )
-
-    top_matches = ranked_matches[:10]
-
-    # --- confidence estimation (lightweight, deterministic) ---
-    confidence_map: dict[SymbolRow, float] = {}
-    query_tokens = list(_tokenize(query))
-
-    for rank, symbol in enumerate(top_matches):
-        base = 1.0 - (rank / max(len(top_matches), 1))
-        name = symbol[2].lower()
-        overlap = sum(1 for t in query_tokens if t in name)
-
-        confidence = base + (0.1 * overlap)
-        if confidence > 1.0:
-            confidence = 1.0
-
-        confidence_map[symbol] = confidence
+    top_matches = top_matches[:10]
 
     # --- PHASE 4+5: module expansion + references ---
     expanded, unique_refs = _expand_and_collect_references(
