@@ -753,21 +753,22 @@ def _get_channel_functions(
         ],
     ]
 ]:
-    all_channels: list[
-        tuple[
-            ChannelName,
-            Callable[
-                [Path, str, sqlite3.Connection, QueryIntent],
-                ChannelResults,
-            ],
-        ]
-    ] = [
-        ("symbol", _retrieve_symbol_candidates),
-        ("test", _retrieve_test_candidates),
-        ("script", _retrieve_script_candidates),
-    ]
+    order = _channel_order()
 
-    # Phase 2: routing hook (currently no filtering)
+    registry: dict[
+        ChannelName,
+        Callable[
+            [Path, str, sqlite3.Connection, QueryIntent],
+            ChannelResults,
+        ],
+    ] = {
+        "symbol": _retrieve_symbol_candidates,
+        "test": _retrieve_test_candidates,
+        "script": _retrieve_script_candidates,
+    }
+
+    all_channels = [(name, registry[name]) for name in order if name in registry]
+
     selected = _filter_channels_by_intent(intent, all_channels)
 
     return selected
