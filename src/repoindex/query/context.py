@@ -1179,6 +1179,8 @@ def context_for(
     # --- PHASE 1+2: candidate retrieval + scoring ---
     channels = [
         _retrieve_symbol_candidates(root, query, conn, intent),
+        _retrieve_test_candidates(root, query, conn, intent),
+        _retrieve_script_candidates(root, query, conn, intent),
     ]
     top_matches = _merge_ranked_channels(channels)
 
