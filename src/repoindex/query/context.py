@@ -453,14 +453,14 @@ def _format_enriched_symbol(
     return lines
 
 
-def _retrieve_and_score_candidates(
+def _retrieve_symbol_candidates(
     root: Path,
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
-) -> list[SymbolRow]:
+) -> list[tuple[float, SymbolRow]]:
     """
-    Retrieve and score candidate symbols for a query.
+    Retrieve and score symbol-channel candidates for a query.
 
     Parameters
     ----------
@@ -475,8 +475,8 @@ def _retrieve_and_score_candidates(
 
     Returns
     -------
-    list[SymbolRow]
-        Ranked candidate symbols sorted by descending score.
+    list[tuple[float, SymbolRow]]
+        Ranked candidate symbols with scores sorted by descending score.
 
     Notes
     -----
@@ -538,7 +538,7 @@ def _retrieve_and_score_candidates(
             break
 
     token_cache: dict[str, list[str]] = {}
-    scored: list[tuple[int, SymbolRow]] = []
+    scored: list[tuple[float, SymbolRow]] = []
 
     for candidate in all_candidates:
         base_score = _score_match(query_tokens, candidate)
@@ -609,12 +609,12 @@ def _retrieve_and_score_candidates(
             continue
 
         if score >= _MIN_SCORE:
-            scored.append((score, candidate))
+            scored.append((float(score), candidate))
 
     scored.sort(reverse=True)
 
     if not scored:
-        fallback_scored: list[tuple[int, SymbolRow]] = []
+        fallback_scored: list[tuple[float, SymbolRow]] = []
 
         for candidate in all_candidates:
             score = _score_match(query_tokens, candidate) + _path_bias(candidate[3])
@@ -639,12 +639,85 @@ def _retrieve_and_score_candidates(
             if intent.is_multi_term and symbol_type == "module":
                 score += 1
 
-            fallback_scored.append((score, candidate))
+            fallback_scored.append((float(score), candidate))
 
         fallback_scored.sort(reverse=True)
-        return [match for _, match in fallback_scored]
+        return fallback_scored
 
-    return [match for _, match in scored]
+    return scored
+
+
+def _retrieve_test_candidates(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+    intent: QueryIntent,
+) -> list[tuple[float, SymbolRow]]:
+    return []
+
+
+def _retrieve_script_candidates(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+    intent: QueryIntent,
+) -> list[tuple[float, SymbolRow]]:
+    return []
+
+
+def _merge_ranked_channels(
+    channels: list[list[tuple[float, SymbolRow]]],
+) -> list[SymbolRow]:
+    merged: dict[SymbolRow, float] = {}
+
+    for channel in channels:
+        for score, symbol in channel:
+            if symbol not in merged or score > merged[symbol]:
+                merged[symbol] = score
+
+    ranked = sorted(
+        merged.items(),
+        key=lambda item: (item[1], item[0][1], item[0][2], item[0][3], item[0][4]),
+        reverse=True,
+    )
+
+    return [symbol for symbol, _ in ranked[:10]]
+
+
+def _retrieve_and_score_candidates(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+    intent: QueryIntent,
+) -> list[SymbolRow]:
+    """
+    Retrieve and score candidate symbols for a query.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Root directory of the indexed repository.
+    query : str
+        User query string.
+    conn : sqlite3.Connection
+        Active database connection.
+    intent : QueryIntent
+        Structured classification of the query.
+
+    Returns
+    -------
+    list[SymbolRow]
+        Ranked candidate symbols sorted by descending score.
+
+    Notes
+    -----
+    This phase applies deterministic scoring only. It does not perform
+    final deduplication or pruning.
+    """
+    channels = [
+        _retrieve_symbol_candidates(root, query, conn, intent),
+    ]
+    return _merge_ranked_channels(channels)
 
 
 def _is_issue_query(query: str) -> bool:
@@ -1104,7 +1177,10 @@ def context_for(
     intent: QueryIntent = classify_query(query)
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
-    top_matches = _retrieve_and_score_candidates(root, query, conn, intent)
+    channels = [
+        _retrieve_symbol_candidates(root, query, conn, intent),
+    ]
+    top_matches = _merge_ranked_channels(channels)
 
     # --- confidence estimation (lightweight, deterministic) ---
     confidence_map: dict[SymbolRow, float] = {}
@@ -1208,8 +1284,6 @@ def context_for(
         expanded,
         unique_refs,
         confidence_map=confidence_map,
-        as_json=as_json,
-        as_prompt=as_prompt,
     )
     conn.close()
     return result
