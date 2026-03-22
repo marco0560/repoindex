@@ -458,16 +458,55 @@ def _retrieve_and_score_candidates(
 ) -> list[SymbolRow]:
     """
     Retrieve candidate symbols and apply scoring + filtering.
+
+    Notes
+    -----
+    This function returns the full deterministic ranked candidate stream.
+    Final pruning is performed later by ``context_for`` after all enrichment
+    phases have completed.
     """
     matches = find_symbol(root, query, conn=conn)
+    query_tokens = sorted(_tokenize(query))
 
-    if matches:
-        all_candidates: list[SymbolRow] = matches
+    candidate_map: dict[SymbolRow, None] = {match: None for match in matches}
+
+    search_terms = sorted({token for token in query_tokens if len(token) >= 4})
+
+    for term in search_terms:
+        rows = conn.execute(
+            """
+            SELECT type, module_name, name, file_path, lineno
+            FROM symbol_index
+            WHERE name = ?
+               OR name LIKE ?
+               OR module_name LIKE ?
+            ORDER BY type, module_name, file_path, lineno
+            LIMIT 50
+            """,
+            (term, f"%{term}%", f"%{term}%"),
+        ).fetchall()
+
+        for row in rows:
+            candidate = (
+                str(row[0]),
+                str(row[1]),
+                str(row[2]),
+                str(row[3]),
+                int(row[4]),
+            )
+            candidate_map[candidate] = None
+
+    if candidate_map:
+        all_candidates = sorted(
+            candidate_map,
+            key=lambda symbol: (symbol[1], symbol[2], symbol[3], symbol[4]),
+        )
     else:
         rows = conn.execute(
             """
             SELECT type, module_name, name, file_path, lineno
             FROM symbol_index
+            ORDER BY module_name, name, file_path, lineno
             LIMIT 200
             """
         ).fetchall()
@@ -476,61 +515,51 @@ def _retrieve_and_score_candidates(
             (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
         ]
 
-    query_tokens = list(_tokenize(query))
+    target_symbol = None
+    for token in sorted(query_tokens, key=len, reverse=True):
+        if "_" in token or token.isidentifier():
+            target_symbol = token
+            break
 
-    # --- target symbol heuristic (last token) ---
-    target_symbol = query_tokens[-1] if query_tokens else None
     token_cache: dict[str, list[str]] = {}
-
     scored: list[tuple[int, SymbolRow]] = []
 
     for candidate in all_candidates:
         base_score = _score_match(query_tokens, candidate)
         score = base_score + _path_bias(candidate[3])
 
-        # --- boost target symbol match ---
         if target_symbol and candidate[2] == target_symbol:
             score += 10
 
-        # --- boost exact name match ---
         if candidate[2] == query:
             score += 5
 
         symbol_name = candidate[2]
         module_name = candidate[1]
 
-        # --- internal symbol penalty ---
         if symbol_name.startswith("_"):
             score -= 2
 
-        # --- C.2: lightweight relevance tuning (deterministic) ---
-
-        # frequency boost (token overlap count)
         freq = sum(1 for t in query_tokens if t in symbol_name.lower())
         score += freq * 2
 
-        # module-level ranking adjustments
         if module_name.startswith("tests."):
-            score -= 8
+            score -= 20
         elif module_name.startswith("scripts."):
-            score -= 4
+            score -= 6
         else:
-            score += 1
+            score += 2
 
-        # infra penalty (reduce non-core modules)
         lowered_module = module_name.lower()
         if any(x in lowered_module for x in ("cli", "scanner", "storage")):
             score -= 2
 
-        # tokenize candidate name (cached)
         if symbol_name not in token_cache:
             token_cache[symbol_name] = list(_tokenize(symbol_name))
         candidate_tokens = token_cache[symbol_name]
 
-        # --- require strong token match ---
         strong_tokens = [t for t in query_tokens if len(t) >= 4]
 
-        # --- normalize tokens for matching (handle underscores) ---
         normalized_strong_tokens: list[str] = []
         for t in strong_tokens:
             normalized_strong_tokens.append(t)
@@ -546,7 +575,6 @@ def _retrieve_and_score_candidates(
     scored.sort(reverse=True)
 
     if not scored:
-        # fallback: return best-effort candidates without strong token filtering
         fallback_scored: list[tuple[int, SymbolRow]] = []
 
         for candidate in all_candidates:
@@ -554,9 +582,9 @@ def _retrieve_and_score_candidates(
             fallback_scored.append((score, candidate))
 
         fallback_scored.sort(reverse=True)
-        return [match for _, match in fallback_scored[:10]]
+        return [match for _, match in fallback_scored]
 
-    return [match for _, match in scored[:10]]
+    return [match for _, match in scored]
 
 
 def _is_issue_query(query: str) -> bool:
@@ -1088,58 +1116,38 @@ def context_for(
     -----
     The output is optimized for LLM consumption and follows a
     deterministic section-based layout.
+
+    Pipeline
+    --------
+    The function performs multiple accumulation phases first and applies a
+    single final dedupe/sort/prune phase before rendering.
     """
     conn = sqlite3.connect(get_db_path(root))
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
-    top_matches = _retrieve_and_score_candidates(root, query, conn)
-
-    # --- confidence estimation (lightweight, deterministic) ---
-    confidence_map: dict[SymbolRow, float] = {}
-
-    query_tokens = list(_tokenize(query))
-
-    for rank, symbol in enumerate(top_matches):
-        # simple proxy: earlier rank = higher confidence
-        base = 1.0 - (rank / max(len(top_matches), 1))
-
-        # token overlap boost
-        name = symbol[2].lower()
-        overlap = sum(1 for t in query_tokens if t in name)
-
-        confidence = base + (0.1 * overlap)
-
-        # clamp
-        if confidence > 1.0:
-            confidence = 1.0
-
-        confidence_map[symbol] = confidence
+    accumulated_matches = _retrieve_and_score_candidates(root, query, conn)
 
     # --- PHASE 2B: issue-driven candidate enrichment ---
     if _is_issue_query(query):
         for symbol in _issue_driven_symbols(root, query, conn):
-            if symbol not in top_matches:
-                top_matches.append(symbol)
-
-    top_matches = top_matches[:10]
+            if symbol not in accumulated_matches:
+                accumulated_matches.append(symbol)
 
     # --- PHASE 2C: remove module entries
     # if same module already represented by functions ---
     modules_with_functions = {
-        module for t, module, name, _, _ in top_matches if t != "module"
+        module for t, module, _, _, _ in accumulated_matches if t != "module"
     }
 
     filtered_matches: list[SymbolRow] = []
 
-    for sym in top_matches:
+    for sym in accumulated_matches:
         t, module, _, _, _ = sym
         if t == "module" and module in modules_with_functions:
             continue
         filtered_matches.append(sym)
 
-    top_matches = filtered_matches
-
-    if not top_matches:
+    if not filtered_matches:
         if as_json:
             result = _render_context(
                 root,
@@ -1173,17 +1181,47 @@ def context_for(
     doc_issues, related_symbols = _collect_doc_issues_and_related(
         root,
         query,
-        top_matches,
+        filtered_matches,
         conn,
     )
 
     doc_issues = doc_issues[:MAX_ISSUES]
 
     for match in related_symbols:
-        if match not in top_matches:
-            top_matches.append(match)
+        if match not in filtered_matches:
+            filtered_matches.append(match)
 
-    top_matches = top_matches[:10]
+    # --- FINAL PHASE: authoritative dedupe + ranking + pruning ---
+    deduped_matches: list[SymbolRow] = []
+    seen_matches: set[SymbolRow] = set()
+
+    for match in filtered_matches:
+        if match in seen_matches:
+            continue
+        seen_matches.add(match)
+        deduped_matches.append(match)
+
+    ranked_matches = sorted(
+        deduped_matches,
+        key=lambda s: (s[1].startswith("tests.") or s[1].startswith("scripts."),),
+    )
+
+    top_matches = ranked_matches[:10]
+
+    # --- confidence estimation (lightweight, deterministic) ---
+    confidence_map: dict[SymbolRow, float] = {}
+    query_tokens = list(_tokenize(query))
+
+    for rank, symbol in enumerate(top_matches):
+        base = 1.0 - (rank / max(len(top_matches), 1))
+        name = symbol[2].lower()
+        overlap = sum(1 for t in query_tokens if t in name)
+
+        confidence = base + (0.1 * overlap)
+        if confidence > 1.0:
+            confidence = 1.0
+
+        confidence_map[symbol] = confidence
 
     # --- PHASE 4+5: module expansion + references ---
     expanded, unique_refs = _expand_and_collect_references(

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from repoindex.docstring import validate_docstring
 from repoindex.parser_ast import parse_file
-from repoindex.scanner import file_metadata, iter_python_files
+from repoindex.scanner import file_metadata, iter_project_files
 from repoindex.storage import get_db_path
 
 
@@ -27,7 +27,7 @@ def index_repo(root: Path) -> None:
     try:
         _clear_index_tables(conn)
 
-        for path in sorted(iter_python_files(root)):
+        for path in iter_project_files(root):
             meta = file_metadata(path)
 
             cur = conn.execute(

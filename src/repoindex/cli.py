@@ -4,6 +4,7 @@ import argparse
 import json
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
 from repoindex.indexer import index_repo
@@ -144,7 +145,7 @@ def _ensure_index(root: Path) -> None:
             print(f"Details: {e}")
             raise SystemExit(1)
 
-        print("[repoindex] Index ready")
+        print("[repoindex] Index ready", file=sys.stderr)
         return
 
     # --- CASE 2: DB exists → canary check ---
@@ -168,14 +169,17 @@ def _ensure_index(root: Path) -> None:
             indexed_commit = metadata.get("commit")
 
             if current_commit and indexed_commit != current_commit:
-                print("[repoindex] Index outdated (git commit changed) — rebuilding...")
+                print(
+                    "[repoindex] Index outdated (git commit changed) — rebuilding...",
+                    file=sys.stderr,
+                )
                 conn.close()
                 init_db(root)
                 index_repo(root)
 
                 _write_index_metadata(root, {"commit": current_commit})
 
-                print("[repoindex] Index ready")
+                print("[repoindex] Index ready", file=sys.stderr)
                 return
 
             # --- STALENESS CHECK: file count mismatch ---
@@ -185,14 +189,14 @@ def _ensure_index(root: Path) -> None:
             current_files = len(list(iter_project_files(root)))
 
             if indexed_files != current_files:
-                print("[repoindex] Index stale — rebuilding...")
+                print("[repoindex] Index stale — rebuilding...", file=sys.stderr)
                 conn.close()
                 init_db(root)
                 index_repo(root)
                 commit = _get_head_commit(root)
                 if commit:
                     _write_index_metadata(root, {"commit": commit})
-                print("[repoindex] Index ready")
+                print("[repoindex] Index ready", file=sys.stderr)
                 return
 
         finally:

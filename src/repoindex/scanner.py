@@ -55,7 +55,7 @@ def _is_excluded(path: Path, root: Path, patterns: list[str]) -> bool:
     return False
 
 
-def iter_python_files(root: Path) -> Iterator[Path]:
+def _iter_python_files(root: Path) -> Iterator[Path]:
     patterns = _load_gitignore(root)
 
     for path in root.rglob("*.py"):
@@ -66,28 +66,38 @@ def iter_python_files(root: Path) -> Iterator[Path]:
 
 def iter_project_files(root: Path) -> Iterator[Path]:
     """
-    Return Python files tracked by Git (Source of Truth).
+    Yield Python files for indexing.
 
-    This function defines the canonical project boundary.
+    Behavior
+    --------
+    - If inside a Git repository: use tracked files (deterministic SOT)
+    - Otherwise: fall back to filesystem scan with .gitignore filtering
 
-    Notes
-    -----
-    - Requires Git to be available.
-    - No fallback is provided: failures are explicit.
-    - Output is deterministic (sorted).
+    This ensures the tool works both inside and outside Git repositories.
     """
-    result = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.py"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "*.py"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
 
-    files = [root / line.strip() for line in result.stdout.splitlines() if line.strip()]
+        files = [
+            root / line.strip() for line in result.stdout.splitlines() if line.strip()
+        ]
 
-    # Deterministic ordering
-    return iter(sorted(files))
+        return iter(sorted(files))
+
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        # fallback only if git is unavailable or not a repository
+        if isinstance(exc, subprocess.CalledProcessError):
+            stderr = (exc.stderr or "").lower()
+            if "not a git repository" not in stderr:
+                raise
+
+        return iter(sorted(_iter_python_files(root)))
 
 
 def file_metadata(path: Path) -> dict[str, object]:
