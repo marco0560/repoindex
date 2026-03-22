@@ -14,6 +14,8 @@ from repoindex.scanner import iter_project_files
 from repoindex.storage import get_db_path
 
 SymbolRow = tuple[str, str, str, str, int]
+ScoredSymbol = tuple[float, SymbolRow]
+ChannelResults = list[ScoredSymbol]
 ReferenceRow = tuple[str, int]
 CodeContext = tuple[str | None, str | None, list[str]]
 _MIN_SCORE = 1
@@ -458,7 +460,7 @@ def _retrieve_symbol_candidates(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
-) -> list[tuple[float, SymbolRow]]:
+) -> ChannelResults:
     """
     Retrieve and score symbol-channel candidates for a query.
 
@@ -652,7 +654,7 @@ def _retrieve_test_candidates(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
-) -> list[tuple[float, SymbolRow]]:
+) -> ChannelResults:
     return []
 
 
@@ -661,12 +663,12 @@ def _retrieve_script_candidates(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
-) -> list[tuple[float, SymbolRow]]:
+) -> ChannelResults:
     return []
 
 
 def _merge_ranked_channels(
-    channels: list[list[tuple[float, SymbolRow]]],
+    channels: list[ChannelResults],
 ) -> list[SymbolRow]:
     merged: dict[SymbolRow, float] = {}
 
