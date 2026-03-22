@@ -1,3 +1,10 @@
+# [0.13.0](https://github.com/marco0560/repoindex/compare/v0.12.2...v0.13.0) (2026-03-22)
+
+
+### Features
+
+* **repoindex:** unify retrieval pipeline with single final ranking/pruning stage ([cdc81a5](https://github.com/marco0560/repoindex/commit/cdc81a5efe7b084cfbbaa9e63651e2ee203b4b7c))
+
 ## [0.12.2](https://github.com/marco0560/repoindex/compare/v0.12.1...v0.12.2) (2026-03-21)
 
 
