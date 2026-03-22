@@ -714,13 +714,6 @@ def _channel_weights() -> dict[ChannelName, float]:
     }
 
 
-def _channel_name_from_index(idx: int) -> ChannelName:
-    order = _channel_order()
-    if 0 <= idx < len(order):
-        return order[idx]
-    return "unknown"
-
-
 def _channel_order() -> list[ChannelName]:
     return ["symbol", "test", "script"]
 
@@ -828,19 +821,6 @@ def _channel_priority(intent: QueryIntent) -> dict[ChannelName, int]:
         "test": 1,
         "script": 2,
     }
-
-
-def _retrieve_and_score_candidates(
-    root: Path,
-    query: str,
-    conn: sqlite3.Connection,
-    intent: QueryIntent,
-) -> list[SymbolRow]:
-    """
-    Deprecated wrapper retained for backward compatibility.
-    """
-    channels = _select_retrieval_channels(root, query, conn, intent)
-    return _merge_ranked_channels(channels)
 
 
 def _is_issue_query(query: str) -> bool:
