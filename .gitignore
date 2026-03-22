@@ -28,6 +28,7 @@ build/
 dist/
 *.egg-info/
 src/repoindex/_version.py
+repo.tar.xz
 
 # Coverage
 .coverage
