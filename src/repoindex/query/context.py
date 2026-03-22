@@ -12,14 +12,15 @@ from repoindex.query.classifier import QueryIntent, classify_query
 from repoindex.query.exact import docstring_issues, find_symbol
 from repoindex.scanner import iter_project_files
 from repoindex.storage import get_db_path
+from repoindex.types import (
+    ChannelBundle,
+    ChannelName,
+    ChannelResults,
+    CodeContext,
+    ReferenceRow,
+    SymbolRow,
+)
 
-SymbolRow = tuple[str, str, str, str, int]
-ScoredSymbol = tuple[float, SymbolRow]
-ChannelResults = list[ScoredSymbol]
-ChannelName = str
-ChannelBundle = tuple[ChannelName, ChannelResults]
-ReferenceRow = tuple[str, int]
-CodeContext = tuple[str | None, str | None, list[str]]
 _MIN_SCORE = 1
 # --- token-capped context construction ---
 MAX_TOKENS = 1200
@@ -670,11 +671,9 @@ def _retrieve_script_candidates(
 
 
 def _merge_ranked_channels(
-    channels: list[ChannelResults],
+    channels: list[ChannelBundle],
 ) -> list[SymbolRow]:
-    return _merge_ranked_channel_bundles(
-        [(name, results) for name, results in zip(_channel_order(), channels)]
-    )
+    return _merge_ranked_channel_bundles(channels)
 
 
 def _merge_ranked_channel_bundles(
@@ -731,15 +730,8 @@ def _select_retrieval_channels(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
-) -> list[ChannelResults]:
-    bundles = _build_channel_bundles(root, query, conn, intent)
-    return _extract_channel_results(bundles)
-
-
-def _extract_channel_results(
-    bundles: list[ChannelBundle],
-) -> list[ChannelResults]:
-    return [results for _, results in bundles]
+) -> list[ChannelBundle]:
+    return _build_channel_bundles(root, query, conn, intent)
 
 
 def _build_channel_bundles(
@@ -1308,8 +1300,8 @@ def context_for(
     intent: QueryIntent = classify_query(query)
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
-    channels = _select_retrieval_channels(root, query, conn, intent)
-    top_matches = _merge_ranked_channels(channels)
+    bundles = _select_retrieval_channels(root, query, conn, intent)
+    top_matches = _merge_ranked_channels(bundles)
 
     # --- confidence estimation (lightweight, deterministic) ---
     confidence_map: dict[SymbolRow, float] = {}

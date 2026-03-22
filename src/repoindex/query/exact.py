@@ -4,8 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from repoindex.storage import get_db_path
-
-SymbolRow = tuple[str, str, str, str, int]
+from repoindex.types import SymbolRow
 
 
 def find_symbol(
