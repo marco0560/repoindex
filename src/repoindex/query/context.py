@@ -728,6 +728,12 @@ def _select_retrieval_channels(
     intent: QueryIntent,
 ) -> list[ChannelResults]:
     bundles = _build_channel_bundles(root, query, conn, intent)
+    return _extract_channel_results(bundles)
+
+
+def _extract_channel_results(
+    bundles: list[ChannelBundle],
+) -> list[ChannelResults]:
     return [results for _, results in bundles]
 
 
