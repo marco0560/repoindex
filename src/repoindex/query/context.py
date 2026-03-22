@@ -682,17 +682,12 @@ def _merge_ranked_channel_bundles(
     weights = _channel_weights()
 
     merged: dict[SymbolRow, float] = {}
-    contributions: dict[SymbolRow, list[tuple[str, float]]] = {}
 
     for channel_name, channel in bundles:
         weight = weights.get(channel_name, 1.0)
 
         for score, symbol in channel:
             weighted_score = score * weight
-
-            if symbol not in contributions:
-                contributions[symbol] = []
-            contributions[symbol].append((channel_name, weighted_score))
 
             if symbol not in merged or weighted_score > merged[symbol]:
                 merged[symbol] = weighted_score
