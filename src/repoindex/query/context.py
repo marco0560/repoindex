@@ -672,12 +672,18 @@ def _retrieve_script_candidates(
 def _merge_ranked_channels(
     channels: list[ChannelResults],
 ) -> list[SymbolRow]:
+    weights = _channel_weights()
+
     merged: dict[SymbolRow, float] = {}
 
-    for channel in channels:
+    for idx, channel in enumerate(channels):
+        weight = weights.get(idx, 1.0)
+
         for score, symbol in channel:
-            if symbol not in merged or score > merged[symbol]:
-                merged[symbol] = score
+            weighted_score = score * weight
+
+            if symbol not in merged or weighted_score > merged[symbol]:
+                merged[symbol] = weighted_score
 
     ranked = sorted(
         merged.items(),
@@ -686,6 +692,14 @@ def _merge_ranked_channels(
     )
 
     return [symbol for symbol, _ in ranked[:10]]
+
+
+def _channel_weights() -> dict[int, float]:
+    return {
+        0: 1.0,
+        1: 1.0,
+        2: 1.0,
+    }
 
 
 def _select_retrieval_channels(
