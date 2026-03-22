@@ -1,3 +1,10 @@
+# [0.20.0](https://github.com/marco0560/repoindex/compare/v0.19.0...v0.20.0) (2026-03-22)
+
+
+### Features
+
+* **retrieval:** introduce intent-based channel routing and remove symbol scoring bias ([0590958](https://github.com/marco0560/repoindex/commit/05909588e905c8fee9ba7beb8801aa003afd60c7))
+
 # [0.19.0](https://github.com/marco0560/repoindex/compare/v0.18.0...v0.19.0) (2026-03-22)
 
 
