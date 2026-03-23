@@ -1116,6 +1116,7 @@ def _render_context(
     confidence_map: dict[SymbolRow, float] | None = None,
     as_json: bool = False,
     as_prompt: bool = False,
+    explain: bool = False,
 ) -> str:
     """
     Render final structured context output.
@@ -1235,6 +1236,7 @@ def context_for(
     *,
     as_json: bool = False,
     as_prompt: bool = False,
+    explain: bool = False,
 ) -> str:
     """
     Build a structured context block for a given query.
@@ -1320,6 +1322,7 @@ def context_for(
                 [],
                 [],
                 as_json=True,
+                explain=explain,
             )
             conn.close()
             return result
@@ -1333,6 +1336,7 @@ def context_for(
                 [],
                 [],
                 as_prompt=True,
+                explain=explain,
             )
             conn.close()
             return result
@@ -1371,6 +1375,7 @@ def context_for(
         expanded,
         unique_refs,
         confidence_map=confidence_map,
+        explain=explain,
     )
     conn.close()
     return result

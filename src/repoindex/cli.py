@@ -38,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Output a Codex-ready deterministic prompt",
     )
+    context_parser.add_argument(
+        "--explain",
+        action="store_true",
+        help="Show retrieval routing and merge diagnostics",
+    )
 
     return parser
 
@@ -226,11 +231,17 @@ def main() -> int:
         return _run_audit_docstrings(root)
     elif args.command == "context-for":
         _ensure_index(root)
+
+        if args.prompt and args.explain:
+            print("ERROR: --prompt and --explain cannot be used together")
+            return 2
+
         result = context_for(
             root,
             args.query,
             as_json=args.json,
             as_prompt=args.prompt,
+            explain=args.explain,
         )
         print(result)
         return 0
