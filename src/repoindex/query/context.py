@@ -656,18 +656,23 @@ def _merge_ranked_channels(
     return _merge_ranked_channel_bundles(channels)
 
 
-def _merge_ranked_channel_bundles(
+def _merge_ranked_channel_bundles_explain(
     bundles: list[ChannelBundle],
-) -> list[SymbolRow]:
+) -> tuple[list[SymbolRow], dict[SymbolRow, dict[str, float]]]:
     weights = _channel_weights()
 
     merged: dict[SymbolRow, float] = {}
+    provenance: dict[SymbolRow, dict[str, float]] = {}
 
     for channel_name, channel in bundles:
         weight = weights.get(channel_name, 1.0)
 
         for score, symbol in channel:
             weighted_score = score * weight
+
+            if symbol not in provenance:
+                provenance[symbol] = {}
+            provenance[symbol][channel_name] = weighted_score
 
             if symbol not in merged or weighted_score > merged[symbol]:
                 merged[symbol] = weighted_score
@@ -678,7 +683,16 @@ def _merge_ranked_channel_bundles(
         reverse=True,
     )
 
-    return [symbol for symbol, _ in ranked[:10]]
+    top_symbols = [symbol for symbol, _ in ranked[:10]]
+
+    return top_symbols, provenance
+
+
+def _merge_ranked_channel_bundles(
+    bundles: list[ChannelBundle],
+) -> list[SymbolRow]:
+    top_symbols, _ = _merge_ranked_channel_bundles_explain(bundles)
+    return top_symbols
 
 
 def _channel_weights() -> dict[ChannelName, float]:
@@ -1117,6 +1131,11 @@ def _render_context(
     as_json: bool = False,
     as_prompt: bool = False,
     explain: bool = False,
+    intent: QueryIntent | None = None,
+    enabled_channels: set[ChannelName] | None = None,
+    channel_priority: dict[ChannelName, int] | None = None,
+    ordered_channels: list[ChannelName] | None = None,
+    bundles: list[ChannelBundle] | None = None,
 ) -> str:
     """
     Render final structured context output.
@@ -1183,6 +1202,48 @@ def _render_context(
         )
 
     lines: list[str] = []
+
+    if explain:
+        lines.append("=== EXPLAIN: QUERY INTENT ===")
+        if intent:
+            lines.append(f"is_identifier_query: {intent.is_identifier_query}")
+            lines.append(f"is_test_related: {intent.is_test_related}")
+            lines.append(f"is_script_related: {intent.is_script_related}")
+            lines.append(f"is_multi_term: {intent.is_multi_term}")
+            lines.append(f"raw: {intent.raw}")
+
+        lines.append("\n=== EXPLAIN: CHANNEL ROUTING ===")
+        if enabled_channels is not None:
+            lines.append(f"enabled_channels: {sorted(enabled_channels)}")
+        if channel_priority is not None:
+            lines.append(f"channel_priority: {channel_priority}")
+        if ordered_channels is not None:
+            lines.append(f"ordered_channels: {ordered_channels}")
+
+        lines.append("")
+
+    if explain and bundles is not None:
+        lines.append("=== EXPLAIN: CHANNEL RESULTS ===")
+
+        for channel_name, channel in bundles:
+            lines.append(f"{channel_name}:")
+
+            if not channel:
+                lines.append("  (no results)")
+                continue
+
+            # show top 5 per channel
+            for score, symbol in channel[:5]:
+                symbol_type, module_name, name, _, lineno = symbol
+
+                if symbol_type == "module":
+                    label = f"{module_name}:{lineno}"
+                else:
+                    label = f"{module_name}.{name}:{lineno}"
+
+                lines.append(f"  {score:.2f} -> {label}")
+
+        lines.append("")
 
     lines.append("=== TOP MATCHES ===")
     if not top_matches:
@@ -1269,7 +1330,17 @@ def context_for(
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
     bundles = _build_channel_bundles(root, query, conn, intent)
-    top_matches = _merge_ranked_channels(bundles)
+
+    if explain:
+        top_matches, _provenance = _merge_ranked_channel_bundles_explain(bundles)
+        enabled = _enabled_channels(intent)
+        priority = _channel_priority(intent)
+        ordered_channels = [name for name, _ in _get_channel_functions(intent)]
+    else:
+        top_matches = _merge_ranked_channels(bundles)
+        enabled = None
+        priority = None
+        ordered_channels = None
 
     # --- confidence estimation (lightweight, deterministic) ---
     confidence_map: dict[SymbolRow, float] = {}
@@ -1376,6 +1447,11 @@ def context_for(
         unique_refs,
         confidence_map=confidence_map,
         explain=explain,
+        intent=intent,
+        enabled_channels=enabled,
+        channel_priority=priority,
+        ordered_channels=ordered_channels,
+        bundles=bundles if explain else None,
     )
     conn.close()
     return result
