@@ -1,3 +1,10 @@
+# [0.22.0](https://github.com/marco0560/repoindex/compare/v0.21.0...v0.22.0) (2026-03-23)
+
+
+### Features
+
+* **explain:** add merge provenance and winner attribution to explain mode ([538dd1e](https://github.com/marco0560/repoindex/commit/538dd1e71f2823f6015bfb9c732cbe6bdab94aa4))
+
 # [0.21.0](https://github.com/marco0560/repoindex/compare/v0.20.0...v0.21.0) (2026-03-23)
 
 
