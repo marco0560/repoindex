@@ -1,3 +1,11 @@
+# [0.21.0](https://github.com/marco0560/repoindex/compare/v0.20.0...v0.21.0) (2026-03-23)
+
+
+### Features
+
+* **cli,context:** introduce explain mode flag and plumbing ([49d8381](https://github.com/marco0560/repoindex/commit/49d8381fbca7150c99bbaadf2654a55594667adc))
+* **explain:** add routing diagnostics and per-channel results to context output ([2a667cf](https://github.com/marco0560/repoindex/commit/2a667cf0915e63273295a0f0e1b432644ff338b4))
+
 # [0.20.0](https://github.com/marco0560/repoindex/compare/v0.19.0...v0.20.0) (2026-03-22)
 
 
