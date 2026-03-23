@@ -1136,6 +1136,7 @@ def _render_context(
     channel_priority: dict[ChannelName, int] | None = None,
     ordered_channels: list[ChannelName] | None = None,
     bundles: list[ChannelBundle] | None = None,
+    provenance: dict[SymbolRow, dict[str, float]] | None = None,
 ) -> str:
     """
     Render final structured context output.
@@ -1232,7 +1233,6 @@ def _render_context(
                 lines.append("  (no results)")
                 continue
 
-            # show top 5 per channel
             for score, symbol in channel[:5]:
                 symbol_type, module_name, name, _, lineno = symbol
 
@@ -1242,6 +1242,40 @@ def _render_context(
                     label = f"{module_name}.{name}:{lineno}"
 
                 lines.append(f"  {score:.2f} -> {label}")
+
+        lines.append("")
+
+    if explain and provenance is not None:
+        lines.append("=== EXPLAIN: MERGE ===")
+
+        for symbol in top_matches:
+            symbol_type, module_name, name, _, lineno = symbol
+
+            if symbol_type == "module":
+                label = f"{module_name}:{lineno}"
+            else:
+                label = f"{module_name}.{name}:{lineno}"
+
+            channel_scores = provenance.get(symbol)
+
+            # skip symbols not produced by channels (post-processing additions)
+            if not channel_scores:
+                continue
+
+            lines.append(label)
+
+            sorted_scores = sorted(
+                channel_scores.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+
+            winner = sorted_scores[0][0]
+
+            for channel_name, score in sorted_scores:
+                lines.append(f"  {channel_name}: {score:.2f}")
+
+            lines.append(f"  winner: {winner}")
 
         lines.append("")
 
@@ -1332,7 +1366,7 @@ def context_for(
     bundles = _build_channel_bundles(root, query, conn, intent)
 
     if explain:
-        top_matches, _provenance = _merge_ranked_channel_bundles_explain(bundles)
+        top_matches, provenance = _merge_ranked_channel_bundles_explain(bundles)
         enabled = _enabled_channels(intent)
         priority = _channel_priority(intent)
         ordered_channels = [name for name, _ in _get_channel_functions(intent)]
@@ -1452,6 +1486,7 @@ def context_for(
         channel_priority=priority,
         ordered_channels=ordered_channels,
         bundles=bundles if explain else None,
+        provenance=provenance if explain else None,
     )
     conn.close()
     return result
