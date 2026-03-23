@@ -1,3 +1,10 @@
+## [0.22.1](https://github.com/marco0560/repoindex/compare/v0.22.0...v0.22.1) (2026-03-23)
+
+
+### Bug Fixes
+
+* **context:** propagate as_json and as_prompt flags to renderer ([e3eccd6](https://github.com/marco0560/repoindex/commit/e3eccd62559c439cfb711594533b990ae2f3dd97))
+
 # [0.22.0](https://github.com/marco0560/repoindex/compare/v0.21.0...v0.22.0) (2026-03-23)
 
 
