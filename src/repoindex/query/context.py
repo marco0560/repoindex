@@ -664,7 +664,7 @@ def _merge_ranked_channel_bundles_explain(
     merged: dict[SymbolRow, float] = {}
     provenance: dict[SymbolRow, dict[str, float]] = {}
 
-    for channel_name, channel in bundles:
+    for channel_name, channel in sorted(bundles, key=lambda item: item[0]):
         weight = weights.get(channel_name, 1.0)
 
         for score, symbol in channel:
@@ -1156,7 +1156,7 @@ def _render_context(
             _context_blocks.append(block)
             _current_tokens += block_tokens
 
-        result = {
+        result: dict[str, object] = {
             "schema_version": "1.0",
             "status": status,
             "top_matches": [
@@ -1213,7 +1213,7 @@ def _render_context(
             if bundles is not None:
                 channel_results: dict[str, list[dict[str, object]]] = {}
 
-                for channel_name, channel in sorted(bundles, key=lambda item: item[0]):
+                for channel_name, channel in bundles:
                     entries: list[dict[str, object]] = []
 
                     for score, symbol in channel[:5]:
@@ -1300,7 +1300,7 @@ def _render_context(
     if explain and bundles is not None:
         lines.append("=== EXPLAIN: CHANNEL RESULTS ===")
 
-        for channel_name, channel in bundles:
+        for channel_name, channel in sorted(bundles, key=lambda item: item[0]):
             lines.append(f"{channel_name}:")
 
             if not channel:
