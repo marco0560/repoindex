@@ -1,3 +1,10 @@
+## [0.22.2](https://github.com/marco0560/repoindex/compare/v0.22.1...v0.22.2) (2026-03-23)
+
+
+### Bug Fixes
+
+* **context:** complete JSON explain mode and stabilize explain output ([9d0fcc9](https://github.com/marco0560/repoindex/commit/9d0fcc911cd6c3adaf4d9cd671d6331c0b12a702))
+
 ## [0.22.1](https://github.com/marco0560/repoindex/compare/v0.22.0...v0.22.1) (2026-03-23)
 
 
