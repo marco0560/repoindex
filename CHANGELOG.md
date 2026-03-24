@@ -1,3 +1,10 @@
+## [0.27.1](https://github.com/marco0560/repoindex/compare/v0.27.0...v0.27.1) (2026-03-24)
+
+
+### Bug Fixes
+
+* **prompt:** enhanced criteria ([9d76f6d](https://github.com/marco0560/repoindex/commit/9d76f6db0fe45566e0f22dc593238225512f6ff3))
+
 # [0.27.0](https://github.com/marco0560/repoindex/compare/v0.26.0...v0.27.0) (2026-03-24)
 
 
