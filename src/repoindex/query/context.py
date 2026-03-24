@@ -40,6 +40,14 @@ SEMANTIC_RESULT_LIMIT = 50
 MERGE_RESULT_LIMIT = 10
 # --- token-capped context construction ---
 MAX_TOKENS = 1200
+# Number of source lines to include in extracted snippets.
+SNIPPET_LINE_LIMIT = 6
+# Maximum number of lines shown for extracted docstrings in code context.
+DOCSTRING_PREVIEW_LINE_LIMIT = 10
+# Maximum number of displayed docstring lines in enriched symbol blocks.
+DISPLAY_DOCSTRING_LINE_LIMIT = 12
+# Maximum number of enriched symbols rendered in text and prompt output.
+ENRICHED_CONTEXT_LIMIT = 5
 # --- cap doc issues to avoid prompt bloat ---
 MAX_ISSUES = 20
 # --- weight for semantic consolidation
@@ -195,7 +203,7 @@ def _truncate_lines(text: str | None, limit: int) -> str | None:
 
 
 def _snippet_from_lines(
-    source_lines: list[str], lineno: int, limit: int = 5
+    source_lines: list[str], lineno: int, limit: int = SNIPPET_LINE_LIMIT
 ) -> list[str]:
     """
     Slice a fixed-size snippet from raw source lines.
@@ -219,10 +227,49 @@ def _snippet_from_lines(
     return [line.rstrip() for line in source_lines[start:end]]
 
 
+def _normalize_snippet_lines(lines: list[str], limit: int) -> list[str]:
+    """
+    Normalize snippet lines for readable deterministic display.
+
+    Parameters
+    ----------
+    lines : list[str]
+        Raw snippet lines.
+    limit : int
+        Maximum number of normalized lines to retain.
+
+    Returns
+    -------
+    list[str]
+        Snippet lines with trailing whitespace removed, edge blanks trimmed,
+        and repeated blank lines collapsed.
+    """
+    normalized: list[str] = []
+    previous_blank = False
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        is_blank = line == ""
+
+        if is_blank and previous_blank:
+            continue
+
+        normalized.append(line)
+        previous_blank = is_blank
+
+    while normalized and normalized[0] == "":
+        normalized.pop(0)
+
+    while normalized and normalized[-1] == "":
+        normalized.pop()
+
+    return normalized[:limit]
+
+
 def _snippet_from_node(
     node: ast.AST,
     source_lines: list[str],
-    limit: int = 5,
+    limit: int = SNIPPET_LINE_LIMIT,
 ) -> list[str]:
     """
     Extract a compact snippet for a node using AST positions.
@@ -283,9 +330,7 @@ def _snippet_from_node(
             ]
 
     # --- truncate ---
-    snippet = snippet[:limit]
-
-    return [line.rstrip() for line in snippet]
+    return _normalize_snippet_lines(snippet, limit)
 
 
 def _extract_code_context(
@@ -333,7 +378,11 @@ def _extract_code_context(
     if symbol_type == "module":
         module_doc = ast.get_docstring(tree, clean=True)
         snippet = _snippet_from_lines(source_lines, lineno)
-        return (None, _truncate_lines(module_doc, 10), snippet)
+        return (
+            None,
+            _truncate_lines(module_doc, DOCSTRING_PREVIEW_LINE_LIMIT),
+            snippet,
+        )
 
     # --- CLASS MATCH ---
     if symbol_type == "class":
@@ -348,7 +397,11 @@ def _extract_code_context(
             signature = _render_signature(node, source)
             docstring = ast.get_docstring(node, clean=True)
             snippet = _snippet_from_node(node, source_lines)
-            return (signature, _truncate_lines(docstring, 10), snippet)
+            return (
+                signature,
+                _truncate_lines(docstring, DOCSTRING_PREVIEW_LINE_LIMIT),
+                snippet,
+            )
 
     # --- FUNCTION MATCH ---
     if symbol_type == "function":
@@ -364,7 +417,11 @@ def _extract_code_context(
             signature = _render_signature(node, source)
             docstring = ast.get_docstring(node, clean=True)
             snippet = _snippet_from_node(node, source_lines)
-            return (signature, _truncate_lines(docstring, 10), snippet)
+            return (
+                signature,
+                _truncate_lines(docstring, DOCSTRING_PREVIEW_LINE_LIMIT),
+                snippet,
+            )
 
     # --- METHOD MATCH ---
     if symbol_type == "method":
@@ -382,7 +439,11 @@ def _extract_code_context(
             signature = _render_signature(node, source)
             docstring = ast.get_docstring(node, clean=True)
             snippet = _snippet_from_node(node, source_lines)
-            return (signature, _truncate_lines(docstring, 10), snippet)
+            return (
+                signature,
+                _truncate_lines(docstring, DOCSTRING_PREVIEW_LINE_LIMIT),
+                snippet,
+            )
 
     # --- FALLBACK ---
     return (None, None, _snippet_from_lines(source_lines, lineno))
@@ -676,12 +737,10 @@ def _format_enriched_symbol(
         lines.append("  Docstring:")
         doc_lines = docstring.splitlines()
 
-        MAX_DOC_LINES = 12
-
-        for line in doc_lines[:MAX_DOC_LINES]:
+        for line in doc_lines[:DISPLAY_DOCSTRING_LINE_LIMIT]:
             lines.append(f"    {line}")
 
-        if len(doc_lines) > MAX_DOC_LINES:
+        if len(doc_lines) > DISPLAY_DOCSTRING_LINE_LIMIT:
             lines.append("    [...]")
 
     return lines
@@ -1836,7 +1895,7 @@ def _render_context_json(
     _context_blocks: list[list[str]] = []
     _current_tokens = 0
 
-    for s in top_matches[:5]:
+    for s in top_matches[:ENRICHED_CONTEXT_LIMIT]:
         block = _format_enriched_symbol(root, s, {})
         block_tokens = _approx_token_count(block)
 
@@ -2236,7 +2295,9 @@ def _append_main_context_sections(
 
     lines.append("\n=== SUGGESTED CONTEXT ===")
     cache: dict[Path, tuple[str, list[str], ast.Module]] = {}
-    for symbol in top_matches[:5]:
+    for index, symbol in enumerate(top_matches[:ENRICHED_CONTEXT_LIMIT]):
+        if index > 0:
+            lines.append("")
         lines.extend(_format_enriched_symbol(root, symbol, cache))
 
     lines.append("\n=== MODULE EXPANSION ===")
