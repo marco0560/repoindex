@@ -1,0 +1,189 @@
+PROJECT: repoindex
+CURRENT_VERSION: v0.25.0.post1.dev1
+TASK: Dead-code triage and removal using the implemented AST call graph
+ROLE: Senior Engineer
+ENVIRONMENT: Codex CLI agent
+MODE: PLAN -> CONFIRM -> EXECUTE -> VERIFY (STRICT)
+
+---
+
+## SOURCE OF TRUTH
+
+The current repository filesystem is the only source of truth.
+
+Rules:
+
+- NEVER assume files, symbols, or entry points not present in the repo
+- NEVER rely on prior conversation memory
+- If any required symbol or path is missing -> STOP and ask
+
+---
+
+## ASSUMPTION
+
+Assume `repoindex` already supports a static AST-derived call graph and exposes
+grounded caller/callee inspection that can be queried from the CLI or indexed
+database.
+
+Treat that graph as heuristic only.
+
+It is useful for triage, not proof.
+
+---
+
+## OBJECTIVE
+
+Use `repoindex` to identify dead-code candidates and remove only code that is
+well-supported as unused by:
+
+- static call-graph evidence
+- exact symbol/reference checks
+- repository entry-point inspection
+- test coverage and architecture checks
+
+The goal is safe dead-code removal, not aggressive deletion.
+
+---
+
+## WORKFLOW (MANDATORY)
+
+You MUST follow this sequence:
+
+1. ANALYZE
+2. PROPOSE PLAN
+3. WAIT FOR CONFIRMATION
+4. EXECUTE SMALL REMOVALS
+5. VERIFY
+6. STOP
+
+No step skipping.
+
+---
+
+## PHASE 1 - ANALYSIS
+
+For each candidate symbol:
+
+1. Verify symbol existence with `rg`
+2. Query `repoindex` for callers / callees / related context
+3. Inspect the defining file
+4. Inspect possible entry points:
+   - CLI registration
+   - imports from `__init__` or `__main__`
+   - tests
+   - decorators / registries
+   - plugin hooks
+
+Determine whether the symbol is:
+
+- clearly dead
+- probably live
+- ambiguous
+
+If ambiguous -> do not remove it.
+
+---
+
+## REQUIRED EVIDENCE BEFORE REMOVAL
+
+You may remove a symbol only if all of the following hold:
+
+1. `rg` confirms no meaningful references outside its own definition
+2. static call-graph inspection shows no inbound callers, or only callers that
+   are themselves dead candidates
+3. the symbol is not a public API that should remain exported
+4. the symbol is not wired through CLI, registries, decorators, plugins, or
+   reflective lookup
+5. tests do not rely on it directly or indirectly
+
+If any of these checks fail or remain unclear -> STOP and leave the code in
+place.
+
+---
+
+## PREFERRED CANDIDATES
+
+Prioritize:
+
+- private helpers
+- isolated internal wrappers
+- functions with no inbound references and no exports
+- dead leaf utilities in scripts or tests
+
+Avoid early removal of:
+
+- public APIs
+- CLI entry points
+- registry participants
+- methods on framework-facing classes
+- anything reached via dynamic patterns
+
+---
+
+## PLAN OUTPUT
+
+Produce a plan with:
+
+- the exact dead-code candidates
+- the evidence for each candidate
+- impacted files
+- risks
+- the smallest safe patch set
+
+Then STOP and wait.
+
+---
+
+## EXECUTION RULES
+
+When confirmed:
+
+- remove only the approved symbols
+- keep diffs minimal
+- update imports if needed
+- add or update tests only when behavior/invariants change
+- do not mix dead-code removal with refactoring
+
+If a candidate becomes ambiguous during implementation, abort that candidate and
+ explain why.
+
+---
+
+## VERIFICATION REQUIREMENTS
+
+Provide exact commands and expected results for:
+
+- exact symbol checks with `rg`
+- `repoindex` caller/callee inspection
+- repository validation commands
+- tests touching the affected area
+
+Expected results must show:
+
+- the removed symbol is gone
+- no inbound references remain
+- validation and tests still pass
+
+---
+
+## SUCCESS CRITERIA
+
+The task is complete only when:
+
+- removed symbols are strongly supported as dead
+- no live entry point is broken
+- tests and validation pass
+- ambiguous candidates are explicitly left untouched
+
+---
+
+## CONTROL COMMANDS
+
+CMD:ANALYZE
+CMD:PLAN
+CMD:EXECUTE
+CMD:STOP
+
+---
+
+END OF PROMPT
