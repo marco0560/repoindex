@@ -1,3 +1,16 @@
+## [0.24.1](https://github.com/marco0560/repoindex/compare/v0.24.0...v0.24.1) (2026-03-24)
+
+
+### Bug Fixes
+
+* **release:** add package-lock for npm ci ([3f1c8f8](https://github.com/marco0560/repoindex/commit/3f1c8f8df1f670c45811d520ef6f8745771c6d47))
+* **release:** lock semantic-release toolchain for CI ([4d38c4d](https://github.com/marco0560/repoindex/commit/4d38c4df70b2e20860fd581f93ded50c570bad75))
+
+
+### Features
+
+* **context,json-schema:** introduce schema v1.1 validation and fix explain contract ([4423ab5](https://github.com/marco0560/repoindex/commit/4423ab5668861c1710781b06c97421c888706ddd))
+
 # [0.24.0](https://github.com/marco0560/repoindex/compare/v0.23.0...v0.24.0) (2026-03-24)
 
 
