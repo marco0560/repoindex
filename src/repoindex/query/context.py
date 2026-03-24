@@ -1119,6 +1119,165 @@ def _approx_token_count(lines: list[str]) -> int:
     return sum(len(line.split()) for line in lines)
 
 
+def _render_context_json(
+    root: Path,
+    top_matches: list[SymbolRow],
+    doc_issues: list[tuple[str, str]],
+    expanded: list[SymbolRow],
+    unique_refs: list[ReferenceRow],
+    *,
+    confidence_map: dict[SymbolRow, float] | None = None,
+    explain: bool = False,
+    intent: QueryIntent | None = None,
+    enabled_channels: set[ChannelName] | None = None,
+    channel_priority: dict[ChannelName, int] | None = None,
+    ordered_channels: list[ChannelName] | None = None,
+    bundles: list[ChannelBundle] | None = None,
+    provenance: dict[SymbolRow, dict[str, float]] | None = None,
+) -> str:
+    status = "ok" if top_matches else "no_matches"
+    _context_blocks: list[list[str]] = []
+    _current_tokens = 0
+
+    for s in top_matches[:5]:
+        block = _format_enriched_symbol(root, s, {})
+        block_tokens = _approx_token_count(block)
+
+        if _current_tokens + block_tokens > MAX_TOKENS:
+            break
+
+        _context_blocks.append(block)
+        _current_tokens += block_tokens
+
+    result: dict[str, object] = {
+        "schema_version": "1.0",
+        "status": status,
+        "top_matches": [
+            {
+                "type": t,
+                "module": m,
+                "name": n,
+                "file": f,
+                "lineno": lin,
+                "confidence": (
+                    confidence_map.get((t, m, n, f, lin), 1.0)
+                    if confidence_map
+                    else 1.0
+                ),
+            }
+            for t, m, n, f, lin in top_matches
+        ],
+        "doc_issues": [{"type": t, "message": m} for t, m in doc_issues],
+        "context": _context_blocks,
+        "module_expansion": [
+            {
+                "type": t,
+                "module": m,
+                "name": n,
+                "file": f,
+                "lineno": lin,
+            }
+            for t, m, n, f, lin in expanded
+        ],
+        "references": [{"file": f, "lineno": lin} for f, lin in unique_refs],
+    }
+
+    if explain:
+        explain_block: dict[str, object] = {}
+
+        if intent:
+            explain_block["intent"] = {
+                "is_identifier_query": intent.is_identifier_query,
+                "is_test_related": intent.is_test_related,
+                "is_script_related": intent.is_script_related,
+                "is_multi_term": intent.is_multi_term,
+                "raw": intent.raw,
+            }
+
+        if enabled_channels is not None:
+            explain_block["enabled_channels"] = sorted(enabled_channels)
+
+        if channel_priority is not None:
+            explain_block["channel_priority"] = channel_priority
+
+        if ordered_channels is not None:
+            explain_block["ordered_channels"] = ordered_channels
+
+        if bundles is not None:
+            channel_results: dict[str, list[dict[str, object]]] = {}
+
+            for channel_name, channel in bundles:
+                entries: list[dict[str, object]] = []
+
+                for score, symbol in channel[:5]:
+                    symbol_type, module_name, name, _, lineno = symbol
+
+                    entries.append(
+                        {
+                            "type": symbol_type,
+                            "module": module_name,
+                            "name": name,
+                            "lineno": lineno,
+                            "score": score,
+                        }
+                    )
+
+                channel_results[channel_name] = entries
+
+            explain_block["channel_results"] = channel_results
+
+        if provenance is not None:
+            merge_entries: list[dict[str, object]] = []
+
+            for symbol in top_matches:
+                channel_scores = provenance.get(symbol)
+                if not channel_scores:
+                    continue
+
+                symbol_type, module_name, name, _, lineno = symbol
+
+                sorted_scores = sorted(
+                    channel_scores.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+
+                merge_entries.append(
+                    {
+                        "type": symbol_type,
+                        "module": module_name,
+                        "name": name,
+                        "lineno": lineno,
+                        "scores": dict(sorted_scores),
+                        "winner": sorted_scores[0][0],
+                    }
+                )
+
+            explain_block["merge"] = merge_entries
+
+        result["explain"] = explain_block
+
+    return json.dumps(result, indent=2)
+
+
+def _render_context_prompt(
+    root: Path,
+    query: str,
+    top_matches: list[SymbolRow],
+    doc_issues: list[tuple[str, str]],
+    expanded: list[SymbolRow],
+    unique_refs: list[ReferenceRow],
+) -> str:
+    return _render_agent_prompt(
+        root,
+        query,
+        top_matches,
+        doc_issues,
+        expanded,
+        unique_refs,
+    )
+
+
 def _render_context(
     root: Path,
     query: str,
@@ -1142,132 +1301,24 @@ def _render_context(
     Render final structured context output.
     """
     if as_json:
-        status = "ok" if top_matches else "no_matches"
-        _context_blocks: list[list[str]] = []
-        _current_tokens = 0
-
-        for s in top_matches[:5]:
-            block = _format_enriched_symbol(root, s, {})
-            block_tokens = _approx_token_count(block)
-
-            if _current_tokens + block_tokens > MAX_TOKENS:
-                break
-
-            _context_blocks.append(block)
-            _current_tokens += block_tokens
-
-        result: dict[str, object] = {
-            "schema_version": "1.0",
-            "status": status,
-            "top_matches": [
-                {
-                    "type": t,
-                    "module": m,
-                    "name": n,
-                    "file": f,
-                    "lineno": lin,
-                    "confidence": (
-                        confidence_map.get((t, m, n, f, lin), 1.0)
-                        if confidence_map
-                        else 1.0
-                    ),
-                }
-                for t, m, n, f, lin in top_matches
-            ],
-            "doc_issues": [{"type": t, "message": m} for t, m in doc_issues],
-            "context": _context_blocks,
-            "module_expansion": [
-                {
-                    "type": t,
-                    "module": m,
-                    "name": n,
-                    "file": f,
-                    "lineno": lin,
-                }
-                for t, m, n, f, lin in expanded
-            ],
-            "references": [{"file": f, "lineno": lin} for f, lin in unique_refs],
-        }
-
-        if explain:
-            explain_block: dict[str, object] = {}
-
-            if intent:
-                explain_block["intent"] = {
-                    "is_identifier_query": intent.is_identifier_query,
-                    "is_test_related": intent.is_test_related,
-                    "is_script_related": intent.is_script_related,
-                    "is_multi_term": intent.is_multi_term,
-                    "raw": intent.raw,
-                }
-
-            if enabled_channels is not None:
-                explain_block["enabled_channels"] = sorted(enabled_channels)
-
-            if channel_priority is not None:
-                explain_block["channel_priority"] = channel_priority
-
-            if ordered_channels is not None:
-                explain_block["ordered_channels"] = ordered_channels
-
-            if bundles is not None:
-                channel_results: dict[str, list[dict[str, object]]] = {}
-
-                for channel_name, channel in bundles:
-                    entries: list[dict[str, object]] = []
-
-                    for score, symbol in channel[:5]:
-                        symbol_type, module_name, name, _, lineno = symbol
-
-                        entries.append(
-                            {
-                                "type": symbol_type,
-                                "module": module_name,
-                                "name": name,
-                                "lineno": lineno,
-                                "score": score,
-                            }
-                        )
-
-                    channel_results[channel_name] = entries
-
-                explain_block["channel_results"] = channel_results
-
-            if provenance is not None:
-                merge_entries: list[dict[str, object]] = []
-
-                for symbol in top_matches:
-                    channel_scores = provenance.get(symbol)
-                    if not channel_scores:
-                        continue
-
-                    symbol_type, module_name, name, _, lineno = symbol
-
-                    sorted_scores = sorted(
-                        channel_scores.items(),
-                        key=lambda item: item[1],
-                        reverse=True,
-                    )
-
-                    merge_entries.append(
-                        {
-                            "type": symbol_type,
-                            "module": module_name,
-                            "name": name,
-                            "lineno": lineno,
-                            "scores": dict(sorted_scores),
-                            "winner": sorted_scores[0][0],
-                        }
-                    )
-
-                explain_block["merge"] = merge_entries
-
-            result["explain"] = explain_block
-
-        return json.dumps(result, indent=2)
+        return _render_context_json(
+            root,
+            top_matches,
+            doc_issues,
+            expanded,
+            unique_refs,
+            confidence_map=confidence_map,
+            explain=explain,
+            intent=intent,
+            enabled_channels=enabled_channels,
+            channel_priority=channel_priority,
+            ordered_channels=ordered_channels,
+            bundles=bundles,
+            provenance=provenance,
+        )
 
     if as_prompt:
-        return _render_agent_prompt(
+        return _render_context_prompt(
             root,
             query,
             top_matches,
