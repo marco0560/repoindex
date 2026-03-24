@@ -1,3 +1,10 @@
+# [0.26.0](https://github.com/marco0560/repoindex/compare/v0.25.1...v0.26.0) (2026-03-24)
+
+
+### Features
+
+* **context:** improve deterministic context rendering quality ([6957b2d](https://github.com/marco0560/repoindex/commit/6957b2d62d5809f481e8669834508358babd0d7d))
+
 ## [0.25.1](https://github.com/marco0560/repoindex/compare/v0.25.0...v0.25.1) (2026-03-24)
 
 
