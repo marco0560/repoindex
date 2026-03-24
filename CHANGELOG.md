@@ -1,3 +1,10 @@
+## [0.25.1](https://github.com/marco0560/repoindex/compare/v0.25.0...v0.25.1) (2026-03-24)
+
+
+### Bug Fixes
+
+* **retrieval:** stabilize deterministic channel merge behavior ([7a24686](https://github.com/marco0560/repoindex/commit/7a24686a46648859d936fc3a2a73bba7b7abca86))
+
 # [0.25.0](https://github.com/marco0560/repoindex/compare/v0.24.1...v0.25.0) (2026-03-24)
 
 
