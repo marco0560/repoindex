@@ -1,3 +1,10 @@
+# [0.25.0](https://github.com/marco0560/repoindex/compare/v0.24.1...v0.25.0) (2026-03-24)
+
+
+### Features
+
+* **release:** stabilize tagging and guard commit scopes ([762c5f9](https://github.com/marco0560/repoindex/commit/762c5f955292f91bbd70eaf210bacb93c49afd14))
+
 ## [0.24.1](https://github.com/marco0560/repoindex/compare/v0.24.0...v0.24.1) (2026-03-24)
 
 
