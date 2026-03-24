@@ -131,12 +131,27 @@ def iter_project_files(root: Path) -> Iterator[Path]:
     """
     Yield Python files for indexing.
 
-    Behavior
-    --------
-    - If inside a Git repository: use tracked files (deterministic SOT)
-    - Otherwise: fall back to filesystem scan with .gitignore filtering
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root to inspect.
 
-    This ensures the tool works both inside and outside Git repositories.
+    Returns
+    -------
+    collections.abc.Iterator[pathlib.Path]
+        Python files selected for indexing.
+
+    Raises
+    ------
+    subprocess.CalledProcessError
+        If ``git ls-files`` fails for a reason other than "not a git
+        repository".
+
+    Notes
+    -----
+    If the root is inside a Git repository, only tracked Python files are used
+    so Git remains the source of truth. Outside Git repositories, the function
+    falls back to a filesystem scan filtered by ``.gitignore`` rules.
     """
     try:
         result = subprocess.run(

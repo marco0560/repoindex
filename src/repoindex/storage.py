@@ -68,6 +68,12 @@ def init_db(root: Path) -> None:
     ----------
     root : pathlib.Path
         Repository root whose ``.repoindex`` directory should be initialized.
+
+    Returns
+    -------
+    None
+        The schema and metadata files are created or refreshed under
+        ``root / ".repoindex"``.
     """
     repo_dir = get_repoindex_dir(root)
     repo_dir.mkdir(exist_ok=True)

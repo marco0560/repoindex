@@ -23,6 +23,15 @@ def _symbol(
 def test_dedupe_channel_results_keeps_first_ranked_occurrence() -> None:
     """
     Ensure channel-local deduplication preserves the best-ranked occurrence.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts that duplicate channel entries keep the first rank.
     """
     symbol = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
     other = _symbol("function", "repoindex.beta", "run", "src/b.py", 20)
@@ -43,6 +52,15 @@ def test_dedupe_channel_results_keeps_first_ranked_occurrence() -> None:
 def test_merge_ranked_channel_bundles_explain_dedupes_and_orders_ties() -> None:
     """
     Ensure merged output is unique and tie ordering is deterministic.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts deterministic tie ordering and provenance.
     """
     alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
     beta = _symbol("function", "repoindex.beta", "run", "src/b.py", 20)
@@ -76,6 +94,15 @@ def test_merge_ranked_channel_bundles_explain_dedupes_and_orders_ties() -> None:
 def test_merge_ranked_channel_bundles_explain_caps_output() -> None:
     """
     Ensure merged output is capped by the module-level limit.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts enforcement of the merged-output cap.
     """
     bundles = [
         (

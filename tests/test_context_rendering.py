@@ -11,6 +11,15 @@ from repoindex.query.context import _append_main_context_sections, _snippet_from
 def test_snippet_from_node_removes_docstring_and_collapses_blank_lines() -> None:
     """
     Ensure extracted snippets remain compact after docstring removal.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts normalized snippet output.
     """
     source = (
         "def demo(x):\n"
@@ -42,6 +51,11 @@ def test_append_main_context_sections_separates_enriched_blocks(tmp_path: Path) 
     ----------
     tmp_path : pathlib.Path
         Temporary repository root used to create fixture files.
+
+    Returns
+    -------
+    None
+        The test asserts visual separation between enriched context blocks.
     """
     first = tmp_path / "alpha.py"
     second = tmp_path / "beta.py"

@@ -154,6 +154,10 @@ def main() -> int:
     """
     Run commit header validation.
 
+    Parameters
+    ----------
+    None
+
     Returns
     -------
     int

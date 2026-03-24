@@ -18,6 +18,16 @@ def test_index_and_queries(tmp_path: Path) -> None:
     ----------
     tmp_path : pathlib.Path
         Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts basic indexing and exact-query behavior.
+
+    Notes
+    -----
+    The indexed source intentionally omits some callable docstrings so the
+    audit query can verify that missing-docstring issues are recorded.
     """
     pkg = tmp_path / "pkg"
     pkg.mkdir()

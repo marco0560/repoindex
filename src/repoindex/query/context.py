@@ -274,12 +274,24 @@ def _snippet_from_node(
     """
     Extract a compact snippet for a node using AST positions.
 
-    Includes:
-    - decorators (if present)
-    - definition line
-    - first body lines
+    Parameters
+    ----------
+    node : ast.AST
+        AST node whose source snippet should be extracted.
+    source_lines : list[str]
+        Source file split into lines.
+    limit : int, optional
+        Maximum number of snippet lines to retain.
 
-    Truncated to `limit` lines.
+    Returns
+    -------
+    list[str]
+        Normalized snippet lines for the node.
+
+    Notes
+    -----
+    Decorators are included when present. Leading docstring blocks are removed
+    from the snippet so the reader sees executable structure first.
     """
     # Determine start (include decorators if present)
     start = getattr(node, "lineno", 1) - 1
@@ -493,16 +505,28 @@ def _find_references(
     """
     Find references to a symbol name across indexed Python files.
 
-    This is a simple string-based search:
-    - scans only files provided in ``project_files``
-    - returns (file_path, lineno)
-    - skips import statements
-    - limits results to avoid explosion
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used to relativize file paths.
+    name : str
+        Symbol name to search for.
+    project_files : list[pathlib.Path]
+        Indexed project files to scan.
+    file_cache : dict[pathlib.Path, list[str]] | None, optional
+        Optional in-memory file cache reused across scans.
+
+    Returns
+    -------
+    list[repoindex.types.ReferenceRow]
+        Reference locations as ``(file_path, lineno)`` tuples.
 
     Notes
     -----
     The function relies on the indexing phase to define the set of
-    project files, ensuring consistency between indexing and querying.
+    project files, ensuring consistency between indexing and querying. It uses
+    simple string containment, skips import statements, and caps the total
+    number of returned hits.
     """
     results: list[ReferenceRow] = []
     if file_cache is None:
@@ -576,7 +600,20 @@ def _path_bias(file_path: str) -> int:
     """
     Lightweight ranking bias based on file location.
 
-    Favors core source code over scripts/tests without hiding results.
+    Parameters
+    ----------
+    file_path : str
+        Indexed file path for the candidate symbol.
+
+    Returns
+    -------
+    int
+        Small additive score bias based on the file location.
+
+    Notes
+    -----
+    The bias prefers source files over scripts and tests without suppressing
+    those results entirely.
     """
     if file_path.startswith("src/"):
         return 2
@@ -1075,6 +1112,10 @@ def _channel_weights() -> dict[ChannelName, float]:
     """
     Return channel weights used during rank fusion.
 
+    Parameters
+    ----------
+    None
+
     Returns
     -------
     dict[repoindex.types.ChannelName, float]
@@ -1086,6 +1127,10 @@ def _channel_weights() -> dict[ChannelName, float]:
 def _channel_order() -> list[ChannelName]:
     """
     Return the default channel evaluation order.
+
+    Parameters
+    ----------
+    None
 
     Returns
     -------
@@ -1180,6 +1225,30 @@ def _retrieve_semantic_candidates(
 ) -> ChannelResults:
     """
     Deterministic semantic channel with independent candidate retrieval.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing indexed files. The current implementation
+        does not need it directly.
+    query : str
+        User query string.
+    conn : sqlite3.Connection
+        Open database connection.
+    intent : repoindex.query.classifier.QueryIntent
+        Structured query classification. The current implementation does not
+        use it directly.
+
+    Returns
+    -------
+    repoindex.types.ChannelResults
+        Ranked semantic candidates for the query.
+
+    Notes
+    -----
+    The channel is deterministic and independent from the symbol channel. It
+    scores token overlap against symbol names, module names, and optional
+    docstring text when that auxiliary table exists.
     """
 
     del root, intent
@@ -1265,6 +1334,10 @@ def _channel_registry() -> dict[
 ]:
     """
     Return the retrieval function registry keyed by channel name.
+
+    Parameters
+    ----------
+    None
 
     Returns
     -------
@@ -1556,6 +1629,22 @@ def _collect_doc_issues_and_related(
 ) -> tuple[list[tuple[str, str]], list[SymbolRow]]:
     """
     Collect related docstring issues and derive additional related symbols.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index database.
+    query : str
+        Original user query.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols for the query.
+    conn : sqlite3.Connection
+        Open database connection.
+
+    Returns
+    -------
+    tuple[list[tuple[str, str]], list[repoindex.types.SymbolRow]]
+        Related docstring issue rows and derived related symbols.
     """
     issue_rows = docstring_issues(root, conn=conn)
 
@@ -1660,6 +1749,23 @@ def _expand_and_collect_references(
 ) -> tuple[list[SymbolRow], list[ReferenceRow]]:
     """
     Perform module expansion and collect cross-module references.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for file discovery and path normalization.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols for the query.
+
+    Returns
+    -------
+    tuple[list[repoindex.types.SymbolRow], list[repoindex.types.ReferenceRow]]
+        Expanded related symbols and cross-module reference locations.
+
+    Notes
+    -----
+    Expansion excludes private helpers and removes test or script modules to
+    keep the final context focused on reusable project code.
     """
     # --- PHASE 4: module expansion ---
     expanded: list[SymbolRow] = []
@@ -2082,6 +2188,46 @@ def _render_context(
 ) -> str:
     """
     Render final structured context output.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used to relativize paths.
+    query : str
+        Original user query.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols.
+    doc_issues : list[tuple[str, str]]
+        Related docstring issues.
+    expanded : list[repoindex.types.SymbolRow]
+        Secondary symbols collected by module expansion.
+    unique_refs : list[repoindex.types.ReferenceRow]
+        Cross-reference locations for selected symbols.
+    confidence_map : dict[repoindex.types.SymbolRow, float] | None, optional
+        Confidence values keyed by symbol.
+    as_json : bool, optional
+        Whether to render JSON output.
+    as_prompt : bool, optional
+        Whether to render prompt output.
+    explain : bool, optional
+        Whether to include explain metadata.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Structured query classification.
+    enabled_channels : set[repoindex.types.ChannelName] | None, optional
+        Channels enabled for the query.
+    channel_priority : dict[repoindex.types.ChannelName, int] | None, optional
+        Channel priority mapping.
+    ordered_channels : list[repoindex.types.ChannelName] | None, optional
+        Ordered channel names.
+    bundles : list[repoindex.types.ChannelBundle] | None, optional
+        Raw channel results.
+    provenance : dict[repoindex.types.SymbolRow, dict[str, float]] | None, optional
+        Per-channel scores for merged symbols.
+
+    Returns
+    -------
+    str
+        Rendered context in plain-text, JSON, or prompt form.
     """
     if as_json:
         return _render_context_json(
@@ -2172,6 +2318,16 @@ def _append_explain_sections(
         Per-channel scores for merged symbols.
     top_matches : list[repoindex.types.SymbolRow]
         Primary merged symbols to explain.
+
+    Returns
+    -------
+    None
+        The explain sections are appended to ``lines`` in place.
+
+    Notes
+    -----
+    Rendering is gated by ``explain``. When explain mode is disabled, the
+    function leaves ``lines`` unchanged.
     """
     if explain:
         lines.append("=== EXPLAIN: ENVIRONMENT ===")
@@ -2273,6 +2429,16 @@ def _append_main_context_sections(
         Secondary symbols collected by module expansion.
     unique_refs : list[repoindex.types.ReferenceRow]
         Cross-reference locations for selected symbols.
+
+    Returns
+    -------
+    None
+        The main context sections are appended to ``lines`` in place.
+
+    Notes
+    -----
+    The function preserves the ranked order of ``top_matches`` and only emits
+    enriched blocks for the configured leading subset.
     """
     lines.append("=== TOP MATCHES ===")
     if not top_matches:
@@ -2337,6 +2503,12 @@ def context_for(
         Root directory of the indexed repository.
     query : str
         Query string used to retrieve relevant symbols and context.
+    as_json : bool, optional
+        Whether to emit the JSON representation.
+    as_prompt : bool, optional
+        Whether to emit the prompt-oriented representation.
+    explain : bool, optional
+        Whether to include retrieval diagnostics.
 
     Returns
     -------
@@ -2353,6 +2525,11 @@ def context_for(
     The output is optimized for LLM consumption and follows a
     deterministic section-based layout. Query classification is
     performed before retrieval and passed into the scoring phase.
+
+    Raises
+    ------
+    sqlite3.Error
+        If the repository index cannot be opened or queried.
     """
     conn = sqlite3.connect(get_db_path(root))
     intent: QueryIntent = classify_query(query)

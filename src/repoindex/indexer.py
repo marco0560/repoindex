@@ -19,6 +19,11 @@ def _clear_index_tables(conn: sqlite3.Connection) -> None:
     ----------
     conn : sqlite3.Connection
         Open database connection to clear in place.
+
+    Returns
+    -------
+    None
+        The tables are cleared in place on ``conn``.
     """
     conn.execute("DELETE FROM docstring_issues")
     conn.execute("DELETE FROM call_edges")
@@ -38,6 +43,16 @@ def index_repo(root: Path) -> None:
     ----------
     root : pathlib.Path
         Repository root whose tracked Python files should be indexed.
+
+    Returns
+    -------
+    None
+        The repository index is rebuilt in place.
+
+    Notes
+    -----
+    The function clears all indexed tables before repopulating them, so each
+    run produces a fresh snapshot of the current repository state.
     """
     db_path = get_db_path(root)
     conn = sqlite3.connect(db_path)
@@ -183,7 +198,7 @@ def index_repo(root: Path) -> None:
                         method["docstring"],
                         method["is_public"],
                         parameters=method["parameters"],
-                        returns_value=bool(method["returns_value"]),
+                        require_callable_sections=True,
                         raises_exception=bool(method["raises"]),
                     )
 
@@ -253,7 +268,7 @@ def index_repo(root: Path) -> None:
                     fn["docstring"],
                     fn["is_public"],
                     parameters=fn["parameters"],
-                    returns_value=bool(fn["returns_value"]),
+                    require_callable_sections=True,
                     raises_exception=bool(fn["raises"]),
                 )
 

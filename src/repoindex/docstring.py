@@ -135,6 +135,30 @@ def _parameter_section_names(doc: str) -> set[str]:
     return names
 
 
+def _requires_structured_docstring(
+    *,
+    require_callable_sections: bool,
+    raises_exception: bool,
+) -> bool:
+    """
+    Decide whether a docstring must use structured NumPy sections.
+
+    Parameters
+    ----------
+    require_callable_sections : bool
+        Whether the audited object is a callable governed by the strict
+        project profile.
+    raises_exception : bool
+        Whether the callable explicitly raises.
+
+    Returns
+    -------
+    bool
+        ``True`` when structured sections are required.
+    """
+    return require_callable_sections or raises_exception
+
+
 def is_numpy_style(doc: str) -> bool:
     """
     Check whether a docstring contains basic NumPy-style sections.
@@ -156,8 +180,8 @@ def is_numpy_style(doc: str) -> bool:
 def find_missing_sections(
     doc: str,
     *,
-    parameters: list[str] | None = None,
-    returns_value: bool = False,
+    require_parameters_section: bool = False,
+    require_returns_section: bool = False,
     raises_exception: bool = False,
 ) -> List[str]:
     """
@@ -167,10 +191,10 @@ def find_missing_sections(
     ----------
     doc : str
         Docstring text to inspect.
-    parameters : list[str] | None, optional
-        Logical parameter names declared by the callable.
-    returns_value : bool, optional
-        Whether the callable explicitly returns a value.
+    require_parameters_section : bool, optional
+        Whether the ``Parameters`` section is required.
+    require_returns_section : bool, optional
+        Whether the ``Returns`` section is required.
     raises_exception : bool, optional
         Whether the callable explicitly raises an exception.
 
@@ -182,10 +206,10 @@ def find_missing_sections(
     sections = _section_map(doc)
     missing: List[str] = []
 
-    if parameters and "Parameters" not in sections:
+    if require_parameters_section and "Parameters" not in sections:
         missing.append("Parameters")
 
-    if returns_value and "Returns" not in sections:
+    if require_returns_section and "Returns" not in sections:
         missing.append("Returns")
 
     if raises_exception and "Raises" not in sections:
@@ -216,7 +240,7 @@ def validate_docstring(
     is_public: int,
     *,
     parameters: list[str] | None = None,
-    returns_value: bool = False,
+    require_callable_sections: bool = False,
     raises_exception: bool = False,
 ) -> list[tuple[str, str]]:
     """
@@ -231,8 +255,10 @@ def validate_docstring(
         private.
     parameters : list[str] | None, optional
         Logical parameter names declared by the callable.
-    returns_value : bool, optional
-        Whether the callable explicitly returns a value.
+    require_callable_sections : bool, optional
+        Whether the audited object is a callable that must include the
+        project-required ``Parameters`` and ``Returns`` sections even when
+        they document ``None``.
     raises_exception : bool, optional
         Whether the callable explicitly raises an exception.
 
@@ -250,7 +276,10 @@ def validate_docstring(
 
     sections = _section_map(doc)
 
-    if not is_numpy_style(doc):
+    if not is_numpy_style(doc) and _requires_structured_docstring(
+        require_callable_sections=require_callable_sections,
+        raises_exception=raises_exception,
+    ):
         issues.append(("non_numpy", "Docstring not in NumPy style"))
 
     for section in _malformed_sections(doc):
@@ -260,8 +289,8 @@ def validate_docstring(
 
     for section in find_missing_sections(
         doc,
-        parameters=parameters,
-        returns_value=returns_value,
+        require_parameters_section=require_callable_sections,
+        require_returns_section=require_callable_sections,
         raises_exception=raises_exception,
     ):
         issues.append(("missing_section", f"Missing section: {section}"))

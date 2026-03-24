@@ -34,9 +34,21 @@ def test_context_output_matches_schema(tmp_path: Path) -> None:
     """
     Validate that JSON output of context_for conforms to the JSON schema.
 
-    This is a structural contract test:
-    - ensures schema and renderer stay in sync
-    - prevents silent drift
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest. The fixture is unused but
+        retained for symmetry with the companion schema test.
+
+    Returns
+    -------
+    None
+        The test asserts schema conformance for the populated case.
+
+    Notes
+    -----
+    This is a structural contract test that keeps the schema and renderer in
+    sync and prevents silent drift in the JSON output shape.
     """
     root = Path.cwd()
 
@@ -66,6 +78,11 @@ def test_context_no_matches_schema(tmp_path: Path) -> None:
     tmp_path : pathlib.Path
         Temporary directory provided by pytest. The fixture is unused but
         retained for interface consistency with the companion test.
+
+    Returns
+    -------
+    None
+        The test asserts schema conformance for the no-match case.
     """
     root = Path.cwd()
     schema = _load_schema(root)

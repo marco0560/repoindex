@@ -30,6 +30,10 @@ def git_ignored_paths() -> Iterable[Path]:
     """
     Yield Git-ignored paths reported by ``git status``.
 
+    Parameters
+    ----------
+    None
+
     Returns
     -------
     collections.abc.Iterable[pathlib.Path]
@@ -62,6 +66,12 @@ def remove_path(path: Path, dry_run: bool) -> None:
         File or directory path to remove.
     dry_run : bool
         Whether to print the planned action without mutating the filesystem.
+
+    Returns
+    -------
+    None
+        The path is removed in place or only reported when ``dry_run`` is
+        enabled.
     """
     if dry_run:
         print(f"[DRY-RUN] Would remove: {path}")
@@ -78,6 +88,21 @@ def remove_path(path: Path, dry_run: bool) -> None:
 def main() -> None:
     """
     Remove ignored repository artifacts while preserving protected paths.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The script removes ignored paths in place or reports the planned
+        actions in dry-run mode.
+
+    Notes
+    -----
+    Protected paths are filtered before deletion, even when Git reports them
+    as ignored.
     """
     parser = argparse.ArgumentParser(
         description="Clean repository by removing ignored artifacts"

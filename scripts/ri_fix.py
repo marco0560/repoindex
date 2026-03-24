@@ -16,6 +16,15 @@ def main() -> None:
     """
     Forward a natural-language query to ``repoindex context-for --prompt``.
 
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The generated prompt is printed to standard output.
+
     Raises
     ------
     SystemExit

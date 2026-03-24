@@ -12,6 +12,10 @@ def _load_module() -> ModuleType:
     """
     Load the validator script as a module.
 
+    Parameters
+    ----------
+    None
+
     Returns
     -------
     types.ModuleType
@@ -33,6 +37,15 @@ def _load_module() -> ModuleType:
 def test_validate_header_rejects_comma_in_scope() -> None:
     """
     Ensure comma-separated scopes are rejected.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts that comma-separated scopes are rejected.
     """
     module = _load_module()
     commit = module.CommitHeader(
@@ -50,6 +63,15 @@ def test_validate_header_rejects_comma_in_scope() -> None:
 def test_validate_header_accepts_release_safe_scope() -> None:
     """
     Ensure release-safe scope characters are accepted.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts that release-safe scopes are accepted.
     """
     module = _load_module()
     commit = module.CommitHeader(

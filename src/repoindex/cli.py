@@ -21,6 +21,10 @@ def build_parser() -> argparse.ArgumentParser:
     """
     Build the top-level command-line parser.
 
+    Parameters
+    ----------
+    None
+
     Returns
     -------
     argparse.ArgumentParser
@@ -226,6 +230,11 @@ def _write_index_metadata(root: Path, data: dict[str, str]) -> None:
         Repository root containing the ``.repoindex`` directory.
     data : dict[str, str]
         Metadata payload to serialize.
+
+    Returns
+    -------
+    None
+        The metadata file is written in place.
     """
     path = get_repoindex_dir(root) / "metadata.json"
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -235,11 +244,25 @@ def _ensure_index(root: Path) -> None:
     """
     Ensure that the repository index exists and is usable.
 
-    Behavior
-    --------
-    - If DB is missing → build it automatically.
-    - If DB is readable → return.
-    - If DB is corrupted/unusable → fail with guidance.
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose local index should be checked.
+
+    Returns
+    -------
+    None
+        The function returns after confirming or rebuilding the index.
+
+    Raises
+    ------
+    SystemExit
+        If the index cannot be built or is corrupted and unreadable.
+
+    Notes
+    -----
+    If the on-disk index is missing or stale, the function rebuilds it
+    automatically and refreshes the stored Git commit metadata.
     """
     db_path = get_db_path(root)
 
@@ -325,6 +348,10 @@ def _ensure_index(root: Path) -> None:
 def main() -> int:
     """
     Dispatch the repoindex command-line interface.
+
+    Parameters
+    ----------
+    None
 
     Returns
     -------
