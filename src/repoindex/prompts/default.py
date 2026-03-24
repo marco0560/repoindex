@@ -1,3 +1,5 @@
+"""Prompt rendering helpers for deterministic agent-facing output."""
+
 from __future__ import annotations
 
 import ast
@@ -19,11 +21,41 @@ def build_prompt(
     format_enriched_symbol: Callable[[Path, SymbolRow, CacheType], list[str]],
 ) -> str:
     """
-    Deterministic agent prompt builder (full fidelity).
+    Build the default deterministic agent prompt.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used to relativize file paths.
+    query : str
+        Original user query being answered.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols selected for the query.
+    doc_issues : list[tuple[str, str]]
+        Related docstring issues to surface in the prompt.
+    expanded : list[repoindex.types.SymbolRow]
+        Secondary symbols collected from module expansion.
+    unique_refs : list[repoindex.types.ReferenceRow]
+        Cross-reference locations associated with the selected symbols.
+    prompt_symbol_line : collections.abc.Callable[
+        [pathlib.Path, repoindex.types.SymbolRow],
+        str,
+    ]
+        Formatter used for one-line symbol summaries.
+    format_enriched_symbol : collections.abc.Callable[
+        [pathlib.Path, repoindex.types.SymbolRow, repoindex.types.CacheType],
+        list[str],
+    ]
+        Formatter used for multi-line enriched context blocks.
+
+    Returns
+    -------
+    str
+        Deterministic plain-text prompt containing the selected context.
 
     Notes
     -----
-    This is a direct extraction of the original _render_agent_prompt logic.
+    This is a direct extraction of the original ``_render_agent_prompt`` logic.
     """
 
     cache: dict[Path, tuple[str, list[str], ast.Module]] = {}

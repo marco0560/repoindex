@@ -27,6 +27,19 @@ PROTECTED_PATHS = {
 
 
 def git_ignored_paths() -> Iterable[Path]:
+    """
+    Yield Git-ignored paths reported by ``git status``.
+
+    Returns
+    -------
+    collections.abc.Iterable[pathlib.Path]
+        Ignored repository-relative paths.
+
+    Raises
+    ------
+    subprocess.CalledProcessError
+        If ``git status --ignored --porcelain`` fails.
+    """
     result = subprocess.run(
         ["git", "status", "--ignored", "--porcelain"],
         capture_output=True,
@@ -40,6 +53,16 @@ def git_ignored_paths() -> Iterable[Path]:
 
 
 def remove_path(path: Path, dry_run: bool) -> None:
+    """
+    Remove a filesystem path or report the action in dry-run mode.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        File or directory path to remove.
+    dry_run : bool
+        Whether to print the planned action without mutating the filesystem.
+    """
     if dry_run:
         print(f"[DRY-RUN] Would remove: {path}")
         return
@@ -53,6 +76,9 @@ def remove_path(path: Path, dry_run: bool) -> None:
 
 
 def main() -> None:
+    """
+    Remove ignored repository artifacts while preserving protected paths.
+    """
     parser = argparse.ArgumentParser(
         description="Clean repository by removing ignored artifacts"
     )

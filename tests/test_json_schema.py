@@ -1,3 +1,5 @@
+"""Schema contract tests for JSON context rendering."""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +13,19 @@ from repoindex.storage import init_db
 
 
 def _load_schema(root: Path) -> dict[str, object]:
+    """
+    Load the JSON schema used for context output validation.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the schema file.
+
+    Returns
+    -------
+    dict[str, object]
+        Parsed JSON schema document.
+    """
     schema_path = root / "src" / "repoindex" / "schema" / "context.schema.json"
     return json.loads(schema_path.read_text(encoding="utf-8"))
 
@@ -45,6 +60,12 @@ def test_context_output_matches_schema(tmp_path: Path) -> None:
 def test_context_no_matches_schema(tmp_path: Path) -> None:
     """
     Validate schema compliance for the 'no_matches' case.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest. The fixture is unused but
+        retained for interface consistency with the companion test.
     """
     root = Path.cwd()
     schema = _load_schema(root)

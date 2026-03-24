@@ -1,3 +1,5 @@
+"""AST parsing helpers for extracting repository symbols."""
+
 from __future__ import annotations
 
 import ast
@@ -6,10 +8,37 @@ from typing import Any
 
 
 def _is_public(name: str) -> int:
+    """
+    Encode public visibility as an integer flag.
+
+    Parameters
+    ----------
+    name : str
+        Symbol name to classify.
+
+    Returns
+    -------
+    int
+        ``1`` when the name does not start with an underscore, otherwise ``0``.
+    """
     return int(not name.startswith("_"))
 
 
 def _signature_text(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    """
+    Render a simplified textual signature for a function node.
+
+    Parameters
+    ----------
+    node : ast.FunctionDef | ast.AsyncFunctionDef
+        Function-like AST node to render.
+
+    Returns
+    -------
+    str
+        Function name with positional, variadic, and keyword variadic
+        parameters.
+    """
     arg_names = [arg.arg for arg in node.args.args]
     if node.args.vararg is not None:
         arg_names.append(f"*{node.args.vararg.arg}")
@@ -19,6 +48,21 @@ def _signature_text(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
 
 
 def _module_name_from_path(path: Path, root: Path) -> str:
+    """
+    Derive the dotted module name for a source file.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Python file path to convert.
+    root : pathlib.Path
+        Repository root used to compute the relative module path.
+
+    Returns
+    -------
+    str
+        Dotted import-style module name.
+    """
     rel = path.with_suffix("").relative_to(root)
     parts = list(rel.parts)
 
@@ -32,6 +76,19 @@ def _module_name_from_path(path: Path, root: Path) -> str:
 
 
 def _extract_call_names(node: ast.AST) -> list[str]:
+    """
+    Collect simple callee names from a subtree.
+
+    Parameters
+    ----------
+    node : ast.AST
+        AST node whose descendants should be inspected.
+
+    Returns
+    -------
+    list[str]
+        Ordered callee names found in ``ast.Call`` nodes.
+    """
     calls: list[str] = []
 
     for child in ast.walk(node):
@@ -49,6 +106,21 @@ def _extract_call_names(node: ast.AST) -> list[str]:
 
 
 def parse_file(path: Path, root: Path) -> dict[str, Any]:
+    """
+    Parse a Python file into indexable metadata.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Python source file to parse.
+    root : pathlib.Path
+        Repository root used for module name derivation.
+
+    Returns
+    -------
+    dict[str, Any]
+        Parsed module, class, function, and import metadata ready for indexing.
+    """
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
 

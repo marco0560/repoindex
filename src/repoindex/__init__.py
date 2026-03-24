@@ -1,3 +1,5 @@
+"""Top-level package for repoindex."""
+
 try:
     from ._version import version as __version__
 except Exception:

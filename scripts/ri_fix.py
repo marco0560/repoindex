@@ -13,6 +13,15 @@ import sys
 
 
 def main() -> None:
+    """
+    Forward a natural-language query to ``repoindex context-for --prompt``.
+
+    Raises
+    ------
+    SystemExit
+        If no query arguments are provided or the underlying ``repoindex``
+        command exits with a non-zero status.
+    """
     if len(sys.argv) < 2:
         print("Usage: ri-fix <query>")
         sys.exit(1)

@@ -1,3 +1,5 @@
+"""Filesystem and Git-backed file discovery helpers for indexing."""
+
 from __future__ import annotations
 
 import fnmatch
@@ -19,6 +21,19 @@ EXCLUDED_DIRS = {
 
 
 def _load_gitignore(root: Path) -> list[str]:
+    """
+    Load raw ignore patterns from ``.gitignore``.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root.
+
+    Returns
+    -------
+    list[str]
+        Non-comment, non-empty ignore patterns.
+    """
     gitignore = root / ".gitignore"
     if not gitignore.exists():
         return []
@@ -33,6 +48,23 @@ def _load_gitignore(root: Path) -> list[str]:
 
 
 def _match_gitignore(path: Path, root: Path, patterns: list[str]) -> bool:
+    """
+    Check whether a path matches any loaded ignore patterns.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Candidate path to evaluate.
+    root : pathlib.Path
+        Repository root used to compute relative paths.
+    patterns : list[str]
+        Ignore patterns loaded from ``.gitignore``.
+
+    Returns
+    -------
+    bool
+        ``True`` when the path matches at least one pattern.
+    """
     rel = str(path.relative_to(root))
 
     for pat in patterns:
@@ -46,6 +78,24 @@ def _match_gitignore(path: Path, root: Path, patterns: list[str]) -> bool:
 
 
 def _is_excluded(path: Path, root: Path, patterns: list[str]) -> bool:
+    """
+    Decide whether a path should be excluded from scanning.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Candidate path to evaluate.
+    root : pathlib.Path
+        Repository root used to compute relative paths.
+    patterns : list[str]
+        Ignore patterns loaded from ``.gitignore``.
+
+    Returns
+    -------
+    bool
+        ``True`` when the path belongs to an excluded directory or matches
+        an ignore pattern.
+    """
     if any(part in EXCLUDED_DIRS for part in path.parts):
         return True
 
@@ -56,6 +106,19 @@ def _is_excluded(path: Path, root: Path, patterns: list[str]) -> bool:
 
 
 def _iter_python_files(root: Path) -> Iterator[Path]:
+    """
+    Yield Python files from a filesystem scan.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root to scan recursively.
+
+    Returns
+    -------
+    collections.abc.Iterator[pathlib.Path]
+        Python source files that survive exclusion filtering.
+    """
     patterns = _load_gitignore(root)
 
     for path in root.rglob("*.py"):
@@ -101,6 +164,19 @@ def iter_project_files(root: Path) -> Iterator[Path]:
 
 
 def file_metadata(path: Path) -> dict[str, object]:
+    """
+    Collect stable metadata for a file.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        File whose metadata should be collected.
+
+    Returns
+    -------
+    dict[str, object]
+        File path, hash, modification time, and size.
+    """
     data = path.read_bytes()
     return {
         "path": str(path),

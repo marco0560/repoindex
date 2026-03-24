@@ -1,3 +1,5 @@
+"""Command-line entry points for repoindex."""
+
 from __future__ import annotations
 
 import argparse
@@ -16,6 +18,14 @@ from repoindex.storage import get_db_path, get_repoindex_dir, init_db
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """
+    Build the top-level command-line parser.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        Parser configured with the supported repoindex subcommands.
+    """
     parser = argparse.ArgumentParser(prog="repoindex")
     parser.add_argument(
         "-V",
@@ -55,11 +65,37 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _run_help(parser: argparse.ArgumentParser) -> int:
+    """
+    Print CLI help text.
+
+    Parameters
+    ----------
+    parser : argparse.ArgumentParser
+        Parser whose help message should be rendered.
+
+    Returns
+    -------
+    int
+        Process exit status for a successful help invocation.
+    """
     parser.print_help()
     return 0
 
 
 def _run_index(root: Path) -> int:
+    """
+    Build or refresh the repository index.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose Python files should be indexed.
+
+    Returns
+    -------
+    int
+        Process exit status for a successful indexing run.
+    """
     init_db(root)
     index_repo(root)
 
@@ -74,6 +110,21 @@ def _run_index(root: Path) -> int:
 
 
 def _run_symbol(root: Path, name: str) -> int:
+    """
+    Resolve and print exact symbol matches.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index.
+    name : str
+        Exact symbol name to look up.
+
+    Returns
+    -------
+    int
+        Zero when at least one symbol is found, otherwise one.
+    """
     rows = find_symbol(root, name)
 
     if not rows:
@@ -90,6 +141,19 @@ def _run_symbol(root: Path, name: str) -> int:
 
 
 def _run_audit_docstrings(root: Path) -> int:
+    """
+    Print indexed docstring issues.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index.
+
+    Returns
+    -------
+    int
+        Process exit status for the audit command.
+    """
     rows = docstring_issues(root)
 
     if not rows:
@@ -102,6 +166,19 @@ def _run_audit_docstrings(root: Path) -> int:
 
 
 def _get_head_commit(root: Path) -> str | None:
+    """
+    Read the current Git commit hash for a repository.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used as the subprocess working directory.
+
+    Returns
+    -------
+    str | None
+        Current ``HEAD`` commit hash, or ``None`` if it cannot be read.
+    """
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -116,6 +193,20 @@ def _get_head_commit(root: Path) -> str | None:
 
 
 def _read_index_metadata(root: Path) -> dict[str, str]:
+    """
+    Load persisted index metadata.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the ``.repoindex`` directory.
+
+    Returns
+    -------
+    dict[str, str]
+        Parsed metadata values, or an empty mapping when the metadata file
+        does not exist or cannot be decoded.
+    """
     path = get_repoindex_dir(root) / "metadata.json"
     if not path.exists():
         return {}
@@ -126,6 +217,16 @@ def _read_index_metadata(root: Path) -> dict[str, str]:
 
 
 def _write_index_metadata(root: Path, data: dict[str, str]) -> None:
+    """
+    Persist index metadata as JSON.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the ``.repoindex`` directory.
+    data : dict[str, str]
+        Metadata payload to serialize.
+    """
     path = get_repoindex_dir(root) / "metadata.json"
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -222,6 +323,14 @@ def _ensure_index(root: Path) -> None:
 
 
 def main() -> int:
+    """
+    Dispatch the repoindex command-line interface.
+
+    Returns
+    -------
+    int
+        Process exit status for the selected subcommand.
+    """
     parser = build_parser()
     args = parser.parse_args()
     root = Path.cwd()

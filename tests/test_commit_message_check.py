@@ -1,3 +1,5 @@
+"""Tests for the commit-message validator script."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -7,6 +9,14 @@ from types import ModuleType
 
 
 def _load_module() -> ModuleType:
+    """
+    Load the validator script as a module.
+
+    Returns
+    -------
+    types.ModuleType
+        Imported module object for ``scripts/check_commit_messages.py``.
+    """
     script_path = (
         Path(__file__).resolve().parents[1] / "scripts" / "check_commit_messages.py"
     )
@@ -21,6 +31,9 @@ def _load_module() -> ModuleType:
 
 
 def test_validate_header_rejects_comma_in_scope() -> None:
+    """
+    Ensure comma-separated scopes are rejected.
+    """
     module = _load_module()
     commit = module.CommitHeader(
         sha="4423ab5668861c1710781b06c97421c888706ddd",
@@ -35,6 +48,9 @@ def test_validate_header_rejects_comma_in_scope() -> None:
 
 
 def test_validate_header_accepts_release_safe_scope() -> None:
+    """
+    Ensure release-safe scope characters are accepted.
+    """
     module = _load_module()
     commit = module.CommitHeader(
         sha="4d38c4df70b2e20860fd581f93ded50c570bad75",

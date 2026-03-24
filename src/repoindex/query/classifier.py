@@ -1,3 +1,5 @@
+"""Deterministic query-intent classification for retrieval routing."""
+
 from __future__ import annotations
 
 import re

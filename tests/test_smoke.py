@@ -1,3 +1,5 @@
+"""Smoke tests for indexing and exact-query behavior."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -9,6 +11,14 @@ from repoindex.storage import get_db_path, init_db
 
 
 def test_index_and_queries(tmp_path: Path) -> None:
+    """
+    Index a temporary package and verify basic query behavior.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    """
     pkg = tmp_path / "pkg"
     pkg.mkdir()
 

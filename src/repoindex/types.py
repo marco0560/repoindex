@@ -1,3 +1,5 @@
+"""Shared type aliases used across repoindex modules."""
+
 from __future__ import annotations
 
 import ast

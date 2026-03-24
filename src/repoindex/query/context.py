@@ -1,3 +1,5 @@
+"""Context assembly and rendering for repoindex query results."""
+
 from __future__ import annotations
 
 import ast
@@ -38,6 +40,21 @@ def _render_signature(
     node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
     source: str,
 ) -> str:
+    """
+    Render a compact signature string for a class or callable node.
+
+    Parameters
+    ----------
+    node : ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        AST node to render.
+    source : str
+        Source text used to recover argument and return annotations.
+
+    Returns
+    -------
+    str
+        Compact display signature for the supplied node.
+    """
     if isinstance(node, ast.ClassDef):
         return f"{node.name}"
 
@@ -68,6 +85,21 @@ def _render_signature(
 
 
 def _truncate_lines(text: str | None, limit: int) -> str | None:
+    """
+    Truncate multiline text to a fixed number of lines.
+
+    Parameters
+    ----------
+    text : str | None
+        Text block to truncate.
+    limit : int
+        Maximum number of lines to retain before appending an ellipsis line.
+
+    Returns
+    -------
+    str | None
+        Truncated text, or ``None`` when the input is empty.
+    """
     if not text:
         return None
 
@@ -83,6 +115,23 @@ def _truncate_lines(text: str | None, limit: int) -> str | None:
 def _snippet_from_lines(
     source_lines: list[str], lineno: int, limit: int = 5
 ) -> list[str]:
+    """
+    Slice a fixed-size snippet from raw source lines.
+
+    Parameters
+    ----------
+    source_lines : list[str]
+        Source file split into lines.
+    lineno : int
+        One-based line number at which the snippet should start.
+    limit : int, optional
+        Maximum number of lines to return.
+
+    Returns
+    -------
+    list[str]
+        Right-stripped source lines for the requested slice.
+    """
     start = max(lineno - 1, 0)
     end = min(start + limit, len(source_lines))
     return [line.rstrip() for line in source_lines[start:end]]
@@ -162,6 +211,23 @@ def _extract_code_context(
     symbol: SymbolRow,
     cache: dict[Path, tuple[str, list[str], ast.Module]],
 ) -> CodeContext:
+    """
+    Extract signature, docstring, and snippet data for a symbol.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used to resolve file paths.
+    symbol : repoindex.types.SymbolRow
+        Indexed symbol row to expand.
+    cache : dict[pathlib.Path, tuple[str, list[str], ast.Module]]
+        Parsed-file cache shared across multiple lookups.
+
+    Returns
+    -------
+    repoindex.types.CodeContext
+        Signature, truncated docstring, and code snippet for the symbol.
+    """
     symbol_type, _module_name, name, file_path, lineno = symbol
     path = root / file_path
 
@@ -241,6 +307,21 @@ def _extract_code_context(
 
 
 def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
+    """
+    Retrieve indexed symbols belonging to a module.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index database.
+    module : str
+        Dotted module name to expand.
+
+    Returns
+    -------
+    list[repoindex.types.SymbolRow]
+        Up to twenty indexed symbols from the requested module.
+    """
     conn = sqlite3.connect(get_db_path(root))
     try:
         rows = conn.execute(
@@ -320,6 +401,19 @@ def _find_references(
 
 
 def _tokenize(text: str) -> set[str]:
+    """
+    Tokenize text into lowercased alphanumeric and underscore fragments.
+
+    Parameters
+    ----------
+    text : str
+        Input text to split.
+
+    Returns
+    -------
+    set[str]
+        Unique normalized tokens extracted from the input.
+    """
     parts = re.split(r"[^A-Za-z0-9_]+", text.lower())
     tokens: set[str] = set()
 
@@ -351,6 +445,21 @@ def _path_bias(file_path: str) -> int:
 
 
 def _score_match(query_tokens: list[str], symbol: SymbolRow) -> int:
+    """
+    Score a symbol candidate against tokenized query text.
+
+    Parameters
+    ----------
+    query_tokens : list[str]
+        Normalized query tokens.
+    symbol : repoindex.types.SymbolRow
+        Candidate symbol row to score.
+
+    Returns
+    -------
+    int
+        Deterministic relevance score for the candidate.
+    """
     symbol_type, module_name, name, _file_path, _lineno = symbol
 
     score = 0
@@ -403,6 +512,21 @@ def _score_match(query_tokens: list[str], symbol: SymbolRow) -> int:
 
 
 def _format_symbol(symbol: SymbolRow, *, include_path: bool) -> str:
+    """
+    Format a symbol row for human-readable output.
+
+    Parameters
+    ----------
+    symbol : repoindex.types.SymbolRow
+        Symbol row to render.
+    include_path : bool
+        Whether to append a file path suffix.
+
+    Returns
+    -------
+    str
+        Single-line textual representation of the symbol.
+    """
     symbol_type, module_name, name, file_path, lineno = symbol
 
     if symbol_type == "module":
@@ -424,6 +548,23 @@ def _format_enriched_symbol(
     symbol: SymbolRow,
     cache: dict[Path, tuple[str, list[str], ast.Module]],
 ) -> list[str]:
+    """
+    Format a symbol with location, snippet, and docstring details.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used to relativize paths.
+    symbol : repoindex.types.SymbolRow
+        Symbol row to render.
+    cache : dict[pathlib.Path, tuple[str, list[str], ast.Module]]
+        Parsed-file cache shared across multiple symbols.
+
+    Returns
+    -------
+    list[str]
+        Multi-line textual block describing the symbol.
+    """
     symbol_type, module_name, name, file_path, lineno = symbol
     signature, docstring, snippet = _extract_code_context(root, symbol, cache)
 
@@ -644,6 +785,25 @@ def _retrieve_test_candidates(
     conn: sqlite3.Connection,
     intent: QueryIntent,
 ) -> ChannelResults:
+    """
+    Retrieve candidates for the test channel.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing indexed files.
+    query : str
+        User query string.
+    conn : sqlite3.Connection
+        Open database connection.
+    intent : repoindex.query.classifier.QueryIntent
+        Structured query classification.
+
+    Returns
+    -------
+    repoindex.types.ChannelResults
+        Empty channel results. Test-specific retrieval is not implemented.
+    """
     return []
 
 
@@ -653,18 +813,66 @@ def _retrieve_script_candidates(
     conn: sqlite3.Connection,
     intent: QueryIntent,
 ) -> ChannelResults:
+    """
+    Retrieve candidates for the script channel.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing indexed files.
+    query : str
+        User query string.
+    conn : sqlite3.Connection
+        Open database connection.
+    intent : repoindex.query.classifier.QueryIntent
+        Structured query classification.
+
+    Returns
+    -------
+    repoindex.types.ChannelResults
+        Empty channel results. Script-specific retrieval is not implemented.
+    """
     return []
 
 
 def _merge_ranked_channels(
     channels: list[ChannelBundle],
 ) -> list[SymbolRow]:
+    """
+    Merge ranked channels into a single ordered symbol list.
+
+    Parameters
+    ----------
+    channels : list[repoindex.types.ChannelBundle]
+        Ranked channel results to combine.
+
+    Returns
+    -------
+    list[repoindex.types.SymbolRow]
+        Top merged symbol rows.
+    """
     return _merge_ranked_channel_bundles(channels)
 
 
 def _merge_ranked_channel_bundles_explain(
     bundles: list[ChannelBundle],
 ) -> tuple[list[SymbolRow], dict[SymbolRow, dict[str, float]]]:
+    """
+    Merge channel bundles while preserving per-channel score provenance.
+
+    Parameters
+    ----------
+    bundles : list[repoindex.types.ChannelBundle]
+        Ranked channel bundles to combine.
+
+    Returns
+    -------
+    tuple[
+        list[repoindex.types.SymbolRow],
+        dict[repoindex.types.SymbolRow, dict[str, float]],
+    ]
+        Top merged symbols and a provenance map keyed by symbol.
+    """
     weights = _channel_weights()
 
     merged: dict[SymbolRow, float] = {}
@@ -703,11 +911,32 @@ def _merge_ranked_channel_bundles_explain(
 def _merge_ranked_channel_bundles(
     bundles: list[ChannelBundle],
 ) -> list[SymbolRow]:
+    """
+    Merge ranked channel bundles without returning provenance details.
+
+    Parameters
+    ----------
+    bundles : list[repoindex.types.ChannelBundle]
+        Ranked channel bundles to combine.
+
+    Returns
+    -------
+    list[repoindex.types.SymbolRow]
+        Top merged symbol rows.
+    """
     top_symbols, _ = _merge_ranked_channel_bundles_explain(bundles)
     return top_symbols
 
 
 def _channel_weights() -> dict[ChannelName, float]:
+    """
+    Return channel weights used during rank fusion.
+
+    Returns
+    -------
+    dict[repoindex.types.ChannelName, float]
+        Weight per retrieval channel.
+    """
     return {
         "symbol": 1.0,
         "test": 1.0,
@@ -716,6 +945,14 @@ def _channel_weights() -> dict[ChannelName, float]:
 
 
 def _channel_order() -> list[ChannelName]:
+    """
+    Return the default channel evaluation order.
+
+    Returns
+    -------
+    list[repoindex.types.ChannelName]
+        Channel names in evaluation order.
+    """
     return ["symbol", "semantic", "test", "script"]
 
 
@@ -725,6 +962,25 @@ def _build_channel_bundles(
     conn: sqlite3.Connection,
     intent: QueryIntent,
 ) -> list[ChannelBundle]:
+    """
+    Execute the enabled retrieval channels for a query.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing indexed files.
+    query : str
+        User query string.
+    conn : sqlite3.Connection
+        Open database connection.
+    intent : repoindex.query.classifier.QueryIntent
+        Structured query classification.
+
+    Returns
+    -------
+    list[repoindex.types.ChannelBundle]
+        Channel names paired with their ranked results.
+    """
     channel_fns = _get_channel_functions(intent)
 
     return [(name, fn(root, query, conn, intent)) for name, fn in channel_fns]
@@ -741,6 +997,32 @@ def _get_channel_functions(
         ],
     ]
 ]:
+    """
+    Resolve enabled channel functions for a query intent.
+
+    Parameters
+    ----------
+    intent : repoindex.query.classifier.QueryIntent
+        Structured query classification.
+
+    Returns
+    -------
+    list[
+        tuple[
+            repoindex.types.ChannelName,
+            collections.abc.Callable[
+                [
+                    pathlib.Path,
+                    str,
+                    sqlite3.Connection,
+                    repoindex.query.classifier.QueryIntent,
+                ],
+                repoindex.types.ChannelResults,
+            ],
+        ]
+    ]
+        Ordered channel names and their retrieval callables.
+    """
     order = _channel_order()
     registry = _channel_registry()
 
@@ -842,6 +1124,25 @@ def _channel_registry() -> dict[
         ChannelResults,
     ],
 ]:
+    """
+    Return the retrieval function registry keyed by channel name.
+
+    Returns
+    -------
+    dict[
+        repoindex.types.ChannelName,
+        collections.abc.Callable[
+            [
+                pathlib.Path,
+                str,
+                sqlite3.Connection,
+                repoindex.query.classifier.QueryIntent,
+            ],
+            repoindex.types.ChannelResults,
+        ],
+    ]
+        Mapping from channel names to retrieval functions.
+    """
     return {
         "symbol": _retrieve_symbol_candidates,
         "test": _retrieve_test_candidates,
@@ -870,6 +1171,47 @@ def _filter_channels_by_intent(
         ],
     ]
 ]:
+    """
+    Filter and order channels according to query intent.
+
+    Parameters
+    ----------
+    intent : repoindex.query.classifier.QueryIntent
+        Structured query classification.
+    channels : list[
+        tuple[
+            repoindex.types.ChannelName,
+            collections.abc.Callable[
+                [
+                    pathlib.Path,
+                    str,
+                    sqlite3.Connection,
+                    repoindex.query.classifier.QueryIntent,
+                ],
+                repoindex.types.ChannelResults,
+            ],
+        ]
+    ]
+        Candidate channels to filter and order.
+
+    Returns
+    -------
+    list[
+        tuple[
+            repoindex.types.ChannelName,
+            collections.abc.Callable[
+                [
+                    pathlib.Path,
+                    str,
+                    sqlite3.Connection,
+                    repoindex.query.classifier.QueryIntent,
+                ],
+                repoindex.types.ChannelResults,
+            ],
+        ]
+    ]
+        Enabled channels in priority order.
+    """
     priority = _channel_priority(intent)
 
     enabled = _enabled_channels(intent)
@@ -885,6 +1227,19 @@ def _filter_channels_by_intent(
 
 
 def _enabled_channels(intent: QueryIntent) -> set[ChannelName]:
+    """
+    Return the set of channels enabled for an intent.
+
+    Parameters
+    ----------
+    intent : repoindex.query.classifier.QueryIntent
+        Structured query classification.
+
+    Returns
+    -------
+    set[repoindex.types.ChannelName]
+        Enabled retrieval channels.
+    """
     if intent.is_test_related:
         return {
             "test",
@@ -904,6 +1259,19 @@ def _enabled_channels(intent: QueryIntent) -> set[ChannelName]:
 
 
 def _channel_priority(intent: QueryIntent) -> dict[ChannelName, int]:
+    """
+    Return channel priority values for an intent.
+
+    Parameters
+    ----------
+    intent : repoindex.query.classifier.QueryIntent
+        Structured query classification.
+
+    Returns
+    -------
+    dict[repoindex.types.ChannelName, int]
+        Lower values indicate higher routing priority.
+    """
     if intent.is_test_related:
         return {
             "test": 0,
@@ -925,6 +1293,19 @@ def _channel_priority(intent: QueryIntent) -> dict[ChannelName, int]:
 
 
 def _is_issue_query(query: str) -> bool:
+    """
+    Check whether a query targets documentation issues.
+
+    Parameters
+    ----------
+    query : str
+        User query string.
+
+    Returns
+    -------
+    bool
+        ``True`` when the query mentions issue-oriented documentation terms.
+    """
     query_tokens = _tokenize(query)
     issue_tokens = {
         "doc",
@@ -946,6 +1327,23 @@ def _issue_driven_symbols(
     query: str,
     conn: sqlite3.Connection,
 ) -> list[SymbolRow]:
+    """
+    Rank symbols that are implicated by matching docstring issues.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index database.
+    query : str
+        User query string.
+    conn : sqlite3.Connection
+        Open database connection.
+
+    Returns
+    -------
+    list[repoindex.types.SymbolRow]
+        Small set of issue-related symbols ordered by heuristic score.
+    """
     issue_rows = docstring_issues(root, conn=conn)
     query_tokens = _tokenize(query)
     scored: dict[SymbolRow, int] = {}
@@ -1050,6 +1448,19 @@ def _collect_doc_issues_and_related(
 
 
 def _is_test_file(path: str) -> bool:
+    """
+    Check whether a path looks like a test file.
+
+    Parameters
+    ----------
+    path : str
+        File path to classify.
+
+    Returns
+    -------
+    bool
+        ``True`` when the path looks like a pytest-style test module.
+    """
     return "/tests/" in path or Path(path).name.startswith("test_")
 
 
@@ -1059,6 +1470,23 @@ def _dedupe_and_cap_references(
     max_per_file: int = 3,
     min_line_gap: int = 5,
 ) -> list[ReferenceRow]:
+    """
+    Dedupe reference hits and cap density per file.
+
+    Parameters
+    ----------
+    refs : list[repoindex.types.ReferenceRow]
+        Raw reference hits to reduce.
+    max_per_file : int, optional
+        Maximum number of references retained per file.
+    min_line_gap : int, optional
+        Minimum spacing between retained references in the same file.
+
+    Returns
+    -------
+    list[repoindex.types.ReferenceRow]
+        Reduced reference hits ordered by file and line number.
+    """
     # group by file
     by_file: dict[str, list[int]] = {}
 
@@ -1183,6 +1611,21 @@ def _expand_and_collect_references(
 
 
 def _prompt_symbol_line(root: Path, symbol: SymbolRow) -> str:
+    """
+    Render a one-line symbol entry for agent prompts.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used to relativize paths.
+    symbol : repoindex.types.SymbolRow
+        Symbol row to render.
+
+    Returns
+    -------
+    str
+        Prompt-friendly single-line symbol description.
+    """
     symbol_type, module_name, name, file_path, lineno = symbol
 
     try:
@@ -1204,6 +1647,29 @@ def _render_agent_prompt(
     expanded: list[SymbolRow],
     unique_refs: list[ReferenceRow],
 ) -> str:
+    """
+    Render the agent prompt variant of the query context.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used to relativize paths.
+    query : str
+        Original user query.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked matches.
+    doc_issues : list[tuple[str, str]]
+        Related docstring issues.
+    expanded : list[repoindex.types.SymbolRow]
+        Secondary symbols collected by module expansion.
+    unique_refs : list[repoindex.types.ReferenceRow]
+        Cross-reference locations for the selected symbols.
+
+    Returns
+    -------
+    str
+        Prompt-formatted query context.
+    """
     return build_prompt(
         root,
         query,
@@ -1217,6 +1683,19 @@ def _render_agent_prompt(
 
 
 def _approx_token_count(lines: list[str]) -> int:
+    """
+    Approximate token count using whitespace splitting.
+
+    Parameters
+    ----------
+    lines : list[str]
+        Lines whose token count should be estimated.
+
+    Returns
+    -------
+    int
+        Approximate token count.
+    """
     return sum(len(line.split()) for line in lines)
 
 
@@ -1236,6 +1715,43 @@ def _render_context_json(
     bundles: list[ChannelBundle] | None = None,
     provenance: dict[SymbolRow, dict[str, float]] | None = None,
 ) -> str:
+    """
+    Render context output as structured JSON.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used to format file paths.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols.
+    doc_issues : list[tuple[str, str]]
+        Related docstring issues.
+    expanded : list[repoindex.types.SymbolRow]
+        Secondary symbols collected by module expansion.
+    unique_refs : list[repoindex.types.ReferenceRow]
+        Cross-reference locations for selected symbols.
+    confidence_map : dict[repoindex.types.SymbolRow, float] | None, optional
+        Confidence values keyed by symbol.
+    explain : bool, optional
+        Whether explain metadata should be included.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Structured query classification.
+    enabled_channels : set[repoindex.types.ChannelName] | None, optional
+        Channels enabled for the query.
+    channel_priority : dict[repoindex.types.ChannelName, int] | None, optional
+        Channel priority mapping.
+    ordered_channels : list[repoindex.types.ChannelName] | None, optional
+        Ordered channel names.
+    bundles : list[repoindex.types.ChannelBundle] | None, optional
+        Raw channel results.
+    provenance : dict[repoindex.types.SymbolRow, dict[str, float]] | None, optional
+        Per-channel scores for merged symbols.
+
+    Returns
+    -------
+    str
+        JSON-encoded context payload.
+    """
     status = "ok" if top_matches else "no_matches"
     _context_blocks: list[list[str]] = []
     _current_tokens = 0
@@ -1373,6 +1889,29 @@ def _render_context_prompt(
     expanded: list[SymbolRow],
     unique_refs: list[ReferenceRow],
 ) -> str:
+    """
+    Render context output in prompt form.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used to relativize paths.
+    query : str
+        Original user query.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols.
+    doc_issues : list[tuple[str, str]]
+        Related docstring issues.
+    expanded : list[repoindex.types.SymbolRow]
+        Secondary symbols collected by module expansion.
+    unique_refs : list[repoindex.types.ReferenceRow]
+        Cross-reference locations for selected symbols.
+
+    Returns
+    -------
+    str
+        Prompt-formatted query context.
+    """
     return _render_agent_prompt(
         root,
         query,
@@ -1471,6 +2010,30 @@ def _append_explain_sections(
     provenance: dict[SymbolRow, dict[str, float]] | None,
     top_matches: list[SymbolRow],
 ) -> None:
+    """
+    Append explain-mode sections to the plain-text output buffer.
+
+    Parameters
+    ----------
+    lines : list[str]
+        Mutable output buffer.
+    explain : bool
+        Whether explain sections should be rendered.
+    intent : repoindex.query.classifier.QueryIntent | None
+        Structured query classification.
+    enabled_channels : set[repoindex.types.ChannelName] | None
+        Channels enabled for the query.
+    channel_priority : dict[repoindex.types.ChannelName, int] | None
+        Channel priority mapping.
+    ordered_channels : list[repoindex.types.ChannelName] | None
+        Ordered channel names.
+    bundles : list[repoindex.types.ChannelBundle] | None
+        Raw channel results.
+    provenance : dict[repoindex.types.SymbolRow, dict[str, float]] | None
+        Per-channel scores for merged symbols.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary merged symbols to explain.
+    """
     if explain:
         lines.append("=== EXPLAIN: ENVIRONMENT ===")
         lines.append(f"repoindex_version: {__version__}")
@@ -1554,6 +2117,24 @@ def _append_main_context_sections(
     expanded: list[SymbolRow],
     unique_refs: list[ReferenceRow],
 ) -> None:
+    """
+    Append the main plain-text context sections to the output buffer.
+
+    Parameters
+    ----------
+    lines : list[str]
+        Mutable output buffer.
+    root : pathlib.Path
+        Repository root used to relativize paths.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols.
+    doc_issues : list[tuple[str, str]]
+        Related docstring issues.
+    expanded : list[repoindex.types.SymbolRow]
+        Secondary symbols collected by module expansion.
+    unique_refs : list[repoindex.types.ReferenceRow]
+        Cross-reference locations for selected symbols.
+    """
     lines.append("=== TOP MATCHES ===")
     if not top_matches:
         lines.append("No direct symbol matches found.")

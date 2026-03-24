@@ -1,3 +1,5 @@
+"""Index repository symbols and docstring diagnostics into SQLite."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -10,6 +12,14 @@ from repoindex.storage import get_db_path
 
 
 def _clear_index_tables(conn: sqlite3.Connection) -> None:
+    """
+    Remove all indexed rows from the database tables.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to clear in place.
+    """
     conn.execute("DELETE FROM docstring_issues")
     conn.execute("DELETE FROM call_edges")
     conn.execute("DELETE FROM symbol_index")
@@ -21,6 +31,14 @@ def _clear_index_tables(conn: sqlite3.Connection) -> None:
 
 
 def index_repo(root: Path) -> None:
+    """
+    Scan repository files and populate the SQLite index.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose tracked Python files should be indexed.
+    """
     db_path = get_db_path(root)
     conn = sqlite3.connect(db_path)
 
