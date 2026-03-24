@@ -739,6 +739,50 @@ def _get_channel_functions(
     return selected
 
 
+def _retrieve_semantic_candidates(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+    intent: QueryIntent,
+) -> ChannelResults:
+    """
+    Deterministic semantic channel based on token overlap heuristics.
+    """
+
+    tokens = [t.lower() for t in query.split() if len(t) >= 3]
+    if not tokens:
+        return []
+
+    results: ChannelResults = []
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT type, module, name, file, lineno FROM symbols")
+
+    for symbol_type, module, name, file, lineno in cursor.fetchall():
+        symbol: SymbolRow = (symbol_type, module, name, file, lineno)
+
+        text = f"{module} {name}".lower()
+
+        score = 0.0
+
+        for token in tokens:
+            if token in text:
+                score += 1.0
+
+        if score == 0.0:
+            continue
+
+        # small deterministic boost
+        if len(tokens) > 1:
+            score *= 1.1
+
+        results.append((score, symbol))
+
+    results.sort(key=lambda item: item[0], reverse=True)
+
+    return results[:50]
+
+
 def _channel_registry() -> dict[
     ChannelName,
     Callable[
@@ -750,6 +794,7 @@ def _channel_registry() -> dict[
         "symbol": _retrieve_symbol_candidates,
         "test": _retrieve_test_candidates,
         "script": _retrieve_script_candidates,
+        "semantic": _retrieve_semantic_candidates,
     }
 
 
