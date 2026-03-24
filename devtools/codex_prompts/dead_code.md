@@ -1,7 +1,7 @@
 # Dead code removal workflow
 
 PROJECT: repoindex
-CURRENT_VERSION: v0.25.0.post1.dev1
+CURRENT_VERSION: v0.27.x
 TASK: Dead-code triage and removal using the implemented AST call graph
 ROLE: Senior Engineer
 ENVIRONMENT: Codex CLI agent
@@ -97,6 +97,15 @@ You may remove a symbol only if all of the following hold:
 4. the symbol is not wired through CLI, registries, decorators, plugins, or
    reflective lookup
 5. tests do not rely on it directly or indirectly
+6. Before removal, verify that no indirect dependency exists through:
+
+    - re-export (__init__)
+    - wildcard imports
+    - dynamic import patterns
+
+7. Prefer removing entire symbols over partial edits.
+   Do not partially modify functions to make them "used".
+8. After each removal batch, the repository must remain indexable by repoindex.
 
 If any of these checks fail or remain unclear -> STOP and leave the code in
 place.

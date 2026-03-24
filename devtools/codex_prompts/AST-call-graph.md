@@ -1,7 +1,7 @@
 # AST call graph implementation
 
 PROJECT: repoindex
-CURRENT_VERSION: v0.25.0.post1.dev1
+CURRENT_VERSION: v0.27.x
 TASK: Add AST-derived static call graph support
 ROLE: Senior Engineer
 ENVIRONMENT: Codex CLI agent
@@ -133,21 +133,32 @@ The implementation should prefer:
 
 ## REQUIRED DESIGN CONSTRAINTS
 
-The call graph must be presented as static and heuristic.
+1. The call graph must be presented as static and heuristic.
+2. At minimum, the implementation should distinguish:
 
-At minimum, the implementation should distinguish:
+    - resolved call edges
+    - unresolved or skipped call sites
 
-- resolved call edges
-- unresolved or skipped call sites
+3. Useful first-step invariants:
 
-Useful first-step invariants:
+    - deterministic ordering
+    - deterministic database writes
+    - no duplicate call edges for the same caller/callee pair
+    - no dependency on runtime execution
 
-- deterministic ordering
-- deterministic database writes
-- no duplicate call edges for the same caller/callee pair
-- no dependency on runtime execution
+4. If symbol resolution is ambiguous, prefer dropping the edge over inventing one.
+5. Each call edge MUST be uniquely identified by:
 
-If symbol resolution is ambiguous, prefer dropping the edge over inventing one.
+    - caller_module,
+    - caller_name,
+    - callee_module,
+    - callee_name
+
+6. Do not rely on line numbers for identity.
+7. Call graph extraction MUST be part of indexing, not query-time.
+8. No dynamic recomputation during query.
+9. The call graph must be stored in a way that allows future extension (e.g. edge
+   types, confidence, unresolved reasons) without schema rewrite.
 
 ---
 
