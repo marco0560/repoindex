@@ -1,3 +1,10 @@
+# [0.27.0](https://github.com/marco0560/repoindex/compare/v0.26.0...v0.27.0) (2026-03-24)
+
+
+### Features
+
+* **docstrings:** harden NumPy docstring audit engine ([b4e7b2d](https://github.com/marco0560/repoindex/commit/b4e7b2df077f702755c44aacb361c4106a73b668))
+
 # [0.26.0](https://github.com/marco0560/repoindex/compare/v0.25.1...v0.26.0) (2026-03-24)
 
 
