@@ -767,14 +767,12 @@ def _retrieve_semantic_candidates(
     if not tokens:
         return []
 
-    rows = conn.execute(
-        """
+    rows = conn.execute("""
         SELECT type, module_name, name, file_path, lineno
         FROM symbol_index
         ORDER BY module_name, name, file_path, lineno
         LIMIT 500
-        """
-    ).fetchall()
+        """).fetchall()
 
     results: ChannelResults = []
 

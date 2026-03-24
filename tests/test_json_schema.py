@@ -5,10 +5,12 @@ from pathlib import Path
 
 from jsonschema import validate
 
+from repoindex.indexer import index_repo
 from repoindex.query.context import context_for
+from repoindex.storage import init_db
 
 
-def _load_schema(root: Path) -> dict:
+def _load_schema(root: Path) -> dict[str, object]:
     schema_path = root / "src" / "repoindex" / "schema" / "context.schema.json"
     return json.loads(schema_path.read_text(encoding="utf-8"))
 
@@ -24,6 +26,8 @@ def test_context_output_matches_schema(tmp_path: Path) -> None:
     root = Path.cwd()
 
     schema = _load_schema(root)
+    init_db(root)
+    index_repo(root)
 
     # Use a stable query that always produces results
     output = context_for(
@@ -44,6 +48,8 @@ def test_context_no_matches_schema(tmp_path: Path) -> None:
     """
     root = Path.cwd()
     schema = _load_schema(root)
+    init_db(root)
+    index_repo(root)
 
     output = context_for(
         root,
