@@ -1,3 +1,10 @@
+# [0.23.0](https://github.com/marco0560/repoindex/compare/v0.22.2...v0.23.0) (2026-03-24)
+
+
+### Features
+
+* **retrieval:** introduce semantic channel (deterministic token-overlap) ([3a49623](https://github.com/marco0560/repoindex/commit/3a49623eb684241fdf1ece7ba0d403ef298ede86))
+
 ## [0.22.2](https://github.com/marco0560/repoindex/compare/v0.22.1...v0.22.2) (2026-03-23)
 
 
