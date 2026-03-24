@@ -1,3 +1,5 @@
+# Dead code removal workflow
+
 PROJECT: repoindex
 CURRENT_VERSION: v0.25.0.post1.dev1
 TASK: Dead-code triage and removal using the implemented AST call graph
