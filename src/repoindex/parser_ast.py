@@ -47,6 +47,84 @@ def _signature_text(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     return f"{node.name}({', '.join(arg_names)})"
 
 
+def _parameter_names(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[str]:
+    """
+    Collect logical parameter names from a function node.
+
+    Parameters
+    ----------
+    node : ast.FunctionDef | ast.AsyncFunctionDef
+        Function-like AST node to inspect.
+
+    Returns
+    -------
+    list[str]
+        Parameter names in declaration order, excluding conventional
+        ``self`` and ``cls`` method receivers.
+    """
+    names: list[str] = []
+
+    for arg in node.args.posonlyargs:
+        if arg.arg not in {"self", "cls"}:
+            names.append(arg.arg)
+
+    for arg in node.args.args:
+        if arg.arg not in {"self", "cls"}:
+            names.append(arg.arg)
+
+    if node.args.vararg is not None:
+        names.append(node.args.vararg.arg)
+
+    for arg in node.args.kwonlyargs:
+        if arg.arg not in {"self", "cls"}:
+            names.append(arg.arg)
+
+    if node.args.kwarg is not None:
+        names.append(node.args.kwarg.arg)
+
+    return names
+
+
+def _returns_value(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """
+    Check whether a function explicitly returns a value.
+
+    Parameters
+    ----------
+    node : ast.FunctionDef | ast.AsyncFunctionDef
+        Function-like AST node to inspect.
+
+    Returns
+    -------
+    bool
+        ``True`` when the function contains a ``return`` with a non-``None``
+        value.
+    """
+    return any(
+        isinstance(child, ast.Return) and child.value is not None
+        for child in ast.walk(node)
+    )
+
+
+def _raises_exception(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """
+    Check whether a function explicitly raises an exception.
+
+    Parameters
+    ----------
+    node : ast.FunctionDef | ast.AsyncFunctionDef
+        Function-like AST node to inspect.
+
+    Returns
+    -------
+    bool
+        ``True`` when the function contains an explicit ``raise`` statement.
+    """
+    return any(isinstance(child, ast.Raise) for child in ast.walk(node))
+
+
 def _module_name_from_path(path: Path, root: Path) -> str:
     """
     Derive the dotted module name for a source file.
@@ -162,6 +240,9 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                             "has_docstring": int(method_doc is not None),
                             "is_method": 1,
                             "is_public": _is_public(child.name),
+                            "parameters": _parameter_names(child),
+                            "returns_value": int(_returns_value(child)),
+                            "raises": int(_raises_exception(child)),
                             "calls": _extract_call_names(child),
                         }
                     )
@@ -180,6 +261,9 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                     "has_docstring": int(func_doc is not None),
                     "is_method": 0,
                     "is_public": _is_public(node.name),
+                    "parameters": _parameter_names(node),
+                    "returns_value": int(_returns_value(node)),
+                    "raises": int(_raises_exception(node)),
                     "calls": _extract_call_names(node),
                 }
             )

@@ -180,7 +180,11 @@ def index_repo(root: Path) -> None:
                     )
 
                     issues = validate_docstring(
-                        method["docstring"], method["is_public"]
+                        method["docstring"],
+                        method["is_public"],
+                        parameters=method["parameters"],
+                        returns_value=bool(method["returns_value"]),
+                        raises_exception=bool(method["raises"]),
                     )
 
                     for callee_name in method["calls"]:
@@ -245,7 +249,13 @@ def index_repo(root: Path) -> None:
                     ),
                 )
 
-                issues = validate_docstring(fn["docstring"], fn["is_public"])
+                issues = validate_docstring(
+                    fn["docstring"],
+                    fn["is_public"],
+                    parameters=fn["parameters"],
+                    returns_value=bool(fn["returns_value"]),
+                    raises_exception=bool(fn["raises"]),
+                )
 
                 for callee_name in fn["calls"]:
                     conn.execute(

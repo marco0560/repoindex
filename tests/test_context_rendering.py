@@ -47,15 +47,11 @@ def test_append_main_context_sections_separates_enriched_blocks(tmp_path: Path) 
     second = tmp_path / "beta.py"
 
     first.write_text(
-        "def alpha():\n"
-        '    """Alpha docstring."""\n'
-        "    return 1\n",
+        "def alpha():\n" '    """Alpha docstring."""\n' "    return 1\n",
         encoding="utf-8",
     )
     second.write_text(
-        "def beta():\n"
-        '    """Beta docstring."""\n'
-        "    return 2\n",
+        "def beta():\n" '    """Beta docstring."""\n' "    return 2\n",
         encoding="utf-8",
     )
 
