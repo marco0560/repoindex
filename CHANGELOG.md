@@ -1,3 +1,10 @@
+## [0.27.2](https://github.com/marco0560/repoindex/compare/v0.27.1...v0.27.2) (2026-03-24)
+
+
+### Bug Fixes
+
+* **prompt:** added prompts for roadmap enhancements ([51721e1](https://github.com/marco0560/repoindex/commit/51721e1dfa5b3982427231c9aba0484b8a5d4f70))
+
 ## [0.27.1](https://github.com/marco0560/repoindex/compare/v0.27.0...v0.27.1) (2026-03-24)
 
 
