@@ -26,6 +26,8 @@ _MIN_SCORE = 1
 MAX_TOKENS = 1200
 # --- cap doc issues to avoid prompt bloat ---
 MAX_ISSUES = 20
+# --- weight for semantic consolidation
+SEMANTIC_WEIGHT = 0.3
 
 
 def _render_signature(
@@ -667,15 +669,21 @@ def _merge_ranked_channel_bundles_explain(
     for channel_name, channel in sorted(bundles, key=lambda item: item[0]):
         weight = weights.get(channel_name, 1.0)
 
-        for score, symbol in channel:
+        for rank, (score, symbol) in enumerate(channel):
             weighted_score = score * weight
 
+            # --- keep provenance EXACTLY as before ---
             if symbol not in provenance:
                 provenance[symbol] = {}
             provenance[symbol][channel_name] = weighted_score
 
-            if symbol not in merged or weighted_score > merged[symbol]:
-                merged[symbol] = weighted_score
+            # --- RRF merge ---
+            rrf = weight * (1.0 / (rank + 1))
+
+            if symbol not in merged:
+                merged[symbol] = 0.0
+
+            merged[symbol] += rrf
 
     ranked = sorted(
         merged.items(),
@@ -704,7 +712,7 @@ def _channel_weights() -> dict[ChannelName, float]:
 
 
 def _channel_order() -> list[ChannelName]:
-    return ["symbol", "test", "script"]
+    return ["symbol", "semantic", "test", "script"]
 
 
 def _build_channel_bundles(
@@ -746,39 +754,81 @@ def _retrieve_semantic_candidates(
     intent: QueryIntent,
 ) -> ChannelResults:
     """
-    Deterministic semantic channel based on token overlap heuristics.
+    Deterministic semantic channel with independent candidate retrieval.
     """
 
-    tokens = [t.lower() for t in query.split() if len(t) >= 3]
+    del root, intent
+
+    tokens = [t.lower() for t in _tokenize(query) if len(t) >= 3]
     if not tokens:
         return []
 
+    rows = conn.execute(
+        """
+        SELECT type, module_name, name, file_path, lineno
+        FROM symbol_index
+        ORDER BY module_name, name, file_path, lineno
+        LIMIT 500
+        """
+    ).fetchall()
+
     results: ChannelResults = []
 
-    cursor = conn.cursor()
-    cursor.execute("SELECT type, module, name, file, lineno FROM symbols")
+    for row in rows:
+        symbol = (
+            str(row[0]),
+            str(row[1]),
+            str(row[2]),
+            str(row[3]),
+            int(row[4]),
+        )
 
-    for symbol_type, module, name, file, lineno in cursor.fetchall():
-        symbol: SymbolRow = (symbol_type, module, name, file, lineno)
+        symbol_type, module_name, name, _file_path, _lineno = symbol
 
-        text = f"{module} {name}".lower()
+        text_parts = [module_name.lower(), name.lower()]
 
-        score = 0.0
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT docstring FROM docstrings WHERE module=? AND name=?",
+                (module_name, name),
+            )
+            doc_row = cursor.fetchone()
+            if doc_row and doc_row[0]:
+                text_parts.append(str(doc_row[0]).lower())
+        except sqlite3.OperationalError:
+            # docstrings table may not exist depending on index version
+            pass
+
+        semantic_score = 0.0
 
         for token in tokens:
-            if token in text:
-                score += 1.0
+            if token in name.lower():
+                semantic_score += 3.0
+            elif token in module_name.lower():
+                semantic_score += 2.0
+            elif any(token in part for part in text_parts):
+                semantic_score += 1.0
 
-        if score == 0.0:
+        if semantic_score == 0.0:
             continue
 
-        # small deterministic boost
-        if len(tokens) > 1:
-            score *= 1.1
+        if symbol_type == "function":
+            semantic_score += 0.5
 
-        results.append((score, symbol))
+        if name.startswith("_"):
+            semantic_score -= 1.0
 
-    results.sort(key=lambda item: item[0], reverse=True)
+        if module_name.startswith("tests."):
+            semantic_score -= 0.5
+
+        if semantic_score >= SEMANTIC_WEIGHT:
+            results.append((semantic_score, symbol))
+
+    results.sort(
+        key=lambda item: (item[0], item[1][1], item[1][2], item[1][3], item[1][4]),
+        reverse=True,
+    )
 
     return results[:50]
 
@@ -837,14 +887,17 @@ def _enabled_channels(intent: QueryIntent) -> set[ChannelName]:
         return {
             "test",
             "symbol",
+            "semantic",
         }
     if intent.is_script_related:
         return {
             "script",
             "symbol",
+            "semantic",
         }
     return {
         "symbol",
+        "semantic",
     }
 
 
@@ -863,8 +916,9 @@ def _channel_priority(intent: QueryIntent) -> dict[ChannelName, int]:
         }
     return {
         "symbol": 0,
-        "test": 1,
-        "script": 2,
+        "semantic": 1,
+        "test": 2,
+        "script": 3,
     }
 
 
@@ -1263,7 +1317,7 @@ def _render_context_json(
                             "module": module_name,
                             "name": name,
                             "lineno": lineno,
-                            "score": score,
+                            "score": round(score, 2),
                         }
                     )
 
@@ -1294,7 +1348,6 @@ def _render_context_json(
                         "name": name,
                         "lineno": lineno,
                         "scores": dict(sorted_scores),
-                        "winner": sorted_scores[0][0],
                     }
                 )
 
@@ -1476,12 +1529,8 @@ def _append_explain_sections(
                 reverse=True,
             )
 
-            winner = sorted_scores[0][0]
-
             for channel_name, score in sorted_scores:
                 lines.append(f"  {channel_name}: {score:.2f}")
-
-            lines.append(f"  winner: {winner}")
 
         lines.append("")
 
