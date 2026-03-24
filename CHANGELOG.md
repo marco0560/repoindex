@@ -1,3 +1,10 @@
+# [0.24.0](https://github.com/marco0560/repoindex/compare/v0.23.0...v0.24.0) (2026-03-24)
+
+
+### Features
+
+* **query:** introduce rank-based multi-channel retrieval with independent semantic channel ([282fc1e](https://github.com/marco0560/repoindex/commit/282fc1e102e5a6a0c24b6e28998e41d2a61ac5f3))
+
 # [0.23.0](https://github.com/marco0560/repoindex/compare/v0.22.2...v0.23.0) (2026-03-24)
 
 
