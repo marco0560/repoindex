@@ -28,12 +28,94 @@ from repoindex.types import (
 SCHEMA_VERSION = "1.1"
 # Minimum accepted score
 _MIN_SCORE = 1
+# Maximum number of rows inspected by the symbol fallback scan.
+SYMBOL_FALLBACK_SCAN_LIMIT = 200
+# Maximum number of rows retrieved for a token search term.
+SYMBOL_TERM_MATCH_LIMIT = 50
+# Maximum number of rows inspected by the semantic channel.
+SEMANTIC_SCAN_LIMIT = 500
+# Maximum number of semantic results returned.
+SEMANTIC_RESULT_LIMIT = 50
+# Maximum number of merged symbols returned.
+MERGE_RESULT_LIMIT = 10
 # --- token-capped context construction ---
 MAX_TOKENS = 1200
 # --- cap doc issues to avoid prompt bloat ---
 MAX_ISSUES = 20
 # --- weight for semantic consolidation
 SEMANTIC_WEIGHT = 0.3
+CHANNEL_WEIGHTS: dict[ChannelName, float] = {
+    "symbol": 1.0,
+    "semantic": 1.0,
+    "test": 1.0,
+    "script": 1.0,
+}
+
+
+def _symbol_sort_key(symbol: SymbolRow) -> tuple[str, str, str, int, str]:
+    """
+    Return a deterministic ascending sort key for a symbol row.
+
+    Parameters
+    ----------
+    symbol : repoindex.types.SymbolRow
+        Symbol row to normalize into a sortable key.
+
+    Returns
+    -------
+    tuple[str, str, str, int, str]
+        Deterministic ascending key based on module, name, file, line, and type.
+    """
+    symbol_type, module_name, name, file_path, lineno = symbol
+    return (module_name, name, file_path, lineno, symbol_type)
+
+
+def _scored_symbol_sort_key(
+    item: tuple[float, SymbolRow],
+) -> tuple[float, str, str, str, int, str]:
+    """
+    Return a deterministic sort key for scored symbols.
+
+    Parameters
+    ----------
+    item : tuple[float, repoindex.types.SymbolRow]
+        Score and symbol pair to normalize.
+
+    Returns
+    -------
+    tuple[float, str, str, str, int, str]
+        Sort key ordering by descending score and ascending symbol identity.
+    """
+    score, symbol = item
+    module_name, name, file_path, lineno, symbol_type = _symbol_sort_key(symbol)
+    return (-score, module_name, name, file_path, lineno, symbol_type)
+
+
+def _dedupe_channel_results(channel: ChannelResults) -> ChannelResults:
+    """
+    Remove duplicate symbols from a single channel while keeping best rank.
+
+    Parameters
+    ----------
+    channel : repoindex.types.ChannelResults
+        Ranked results emitted by one retrieval channel.
+
+    Returns
+    -------
+    repoindex.types.ChannelResults
+        Deduplicated channel results preserving the first occurrence of each
+        symbol.
+    """
+    seen: set[SymbolRow] = set()
+    deduped: ChannelResults = []
+
+    for score, symbol in channel:
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        deduped.append((score, symbol))
+
+    return deduped
 
 
 def _render_signature(
@@ -651,9 +733,9 @@ def _retrieve_symbol_candidates(
                OR name LIKE ?
                OR module_name LIKE ?
             ORDER BY type, module_name, file_path, lineno
-            LIMIT 50
+            LIMIT ?
             """,
-            (term, f"%{term}%", f"%{term}%"),
+            (term, f"%{term}%", f"%{term}%", SYMBOL_TERM_MATCH_LIMIT),
         ).fetchall()
 
         for row in rows:
@@ -672,13 +754,15 @@ def _retrieve_symbol_candidates(
             key=lambda symbol: (symbol[1], symbol[2], symbol[3], symbol[4]),
         )
     else:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT type, module_name, name, file_path, lineno
             FROM symbol_index
             ORDER BY module_name, name, file_path, lineno
-            LIMIT 200
-            """).fetchall()
-
+            LIMIT ?
+            """,
+            (SYMBOL_FALLBACK_SCAN_LIMIT,),
+        ).fetchall()
         all_candidates = [
             (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
         ]
@@ -750,7 +834,7 @@ def _retrieve_symbol_candidates(
         if score >= _MIN_SCORE:
             scored.append((float(score), candidate))
 
-    scored.sort(reverse=True)
+    scored.sort(key=_scored_symbol_sort_key)
 
     if not scored:
         fallback_scored: list[tuple[float, SymbolRow]] = []
@@ -773,7 +857,7 @@ def _retrieve_symbol_candidates(
 
             fallback_scored.append((float(score), candidate))
 
-        fallback_scored.sort(reverse=True)
+        fallback_scored.sort(key=_scored_symbol_sort_key)
         return fallback_scored
 
     return scored
@@ -880,8 +964,9 @@ def _merge_ranked_channel_bundles_explain(
 
     for channel_name, channel in sorted(bundles, key=lambda item: item[0]):
         weight = weights.get(channel_name, 1.0)
+        deduped_channel = _dedupe_channel_results(channel)
 
-        for rank, (score, symbol) in enumerate(channel):
+        for rank, (score, symbol) in enumerate(deduped_channel):
             weighted_score = score * weight
 
             # --- keep provenance EXACTLY as before ---
@@ -899,11 +984,10 @@ def _merge_ranked_channel_bundles_explain(
 
     ranked = sorted(
         merged.items(),
-        key=lambda item: (item[1], item[0][1], item[0][2], item[0][3], item[0][4]),
-        reverse=True,
+        key=lambda item: (-item[1], *_symbol_sort_key(item[0])),
     )
 
-    top_symbols = [symbol for symbol, _ in ranked[:10]]
+    top_symbols = [symbol for symbol, _ in ranked[:MERGE_RESULT_LIMIT]]
 
     return top_symbols, provenance
 
@@ -937,11 +1021,7 @@ def _channel_weights() -> dict[ChannelName, float]:
     dict[repoindex.types.ChannelName, float]
         Weight per retrieval channel.
     """
-    return {
-        "symbol": 1.0,
-        "test": 1.0,
-        "script": 1.0,
-    }
+    return dict(CHANNEL_WEIGHTS)
 
 
 def _channel_order() -> list[ChannelName]:
@@ -1049,12 +1129,15 @@ def _retrieve_semantic_candidates(
     if not tokens:
         return []
 
-    rows = conn.execute("""
+    rows = conn.execute(
+        """
         SELECT type, module_name, name, file_path, lineno
         FROM symbol_index
         ORDER BY module_name, name, file_path, lineno
-        LIMIT 500
-        """).fetchall()
+        LIMIT ?
+        """,
+        (SEMANTIC_SCAN_LIMIT,),
+    ).fetchall()
 
     results: ChannelResults = []
 
@@ -1109,12 +1192,9 @@ def _retrieve_semantic_candidates(
         if semantic_score >= SEMANTIC_WEIGHT:
             results.append((semantic_score, symbol))
 
-    results.sort(
-        key=lambda item: (item[0], item[1][1], item[1][2], item[1][3], item[1][4]),
-        reverse=True,
-    )
+    results.sort(key=_scored_symbol_sort_key)
 
-    return results[:50]
+    return results[:SEMANTIC_RESULT_LIMIT]
 
 
 def _channel_registry() -> dict[
