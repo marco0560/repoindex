@@ -1,19 +1,18 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "RepoIndex Context Output",
+    "title": "repoindex context output",
     "type": "object",
     "required": [
         "schema_version",
         "status",
-        "top_matches",
-        "doc_issues",
-        "context",
-        "module_expansion",
-        "references"
+        "top_matches"
     ],
     "properties": {
         "schema_version": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+                "1.1"
+            ]
         },
         "status": {
             "type": "string",
@@ -25,49 +24,13 @@
         "top_matches": {
             "type": "array",
             "items": {
-                "type": "object",
-                "required": [
-                    "type",
-                    "module",
-                    "name",
-                    "file",
-                    "lineno"
-                ],
-                "properties": {
-                    "type": {
-                        "type": "string"
-                    },
-                    "module": {
-                        "type": "string"
-                    },
-                    "name": {
-                        "type": "string"
-                    },
-                    "file": {
-                        "type": "string"
-                    },
-                    "lineno": {
-                        "type": "integer"
-                    }
-                }
+                "$ref": "#/definitions/symbol"
             }
         },
         "doc_issues": {
             "type": "array",
             "items": {
-                "type": "object",
-                "required": [
-                    "type",
-                    "message"
-                ],
-                "properties": {
-                    "type": {
-                        "type": "string"
-                    },
-                    "message": {
-                        "type": "string"
-                    }
-                }
+                "$ref": "#/definitions/doc_issue"
             }
         },
         "context": {
@@ -82,50 +45,225 @@
         "module_expansion": {
             "type": "array",
             "items": {
-                "type": "object",
-                "required": [
-                    "type",
-                    "module",
-                    "name",
-                    "file",
-                    "lineno"
-                ],
-                "properties": {
-                    "type": {
-                        "type": "string"
-                    },
-                    "module": {
-                        "type": "string"
-                    },
-                    "name": {
-                        "type": "string"
-                    },
-                    "file": {
-                        "type": "string"
-                    },
-                    "lineno": {
-                        "type": "integer"
-                    }
-                }
+                "$ref": "#/definitions/symbol"
             }
         },
         "references": {
             "type": "array",
             "items": {
-                "type": "object",
-                "required": [
-                    "file",
-                    "lineno"
-                ],
-                "properties": {
-                    "file": {
-                        "type": "string"
+                "$ref": "#/definitions/reference"
+            }
+        },
+        "explain": {
+            "type": "object",
+            "properties": {
+                "environment": {
+                    "type": "object",
+                    "required": [
+                        "repoindex_version",
+                        "schema_version"
+                    ],
+                    "properties": {
+                        "repoindex_version": {
+                            "type": "string"
+                        },
+                        "schema_version": {
+                            "type": "string"
+                        }
                     },
-                    "lineno": {
+                    "additionalProperties": false
+                },
+                "intent": {
+                    "type": "object",
+                    "properties": {
+                        "is_identifier_query": {
+                            "type": "boolean"
+                        },
+                        "is_test_related": {
+                            "type": "boolean"
+                        },
+                        "is_script_related": {
+                            "type": "boolean"
+                        },
+                        "is_multi_term": {
+                            "type": "boolean"
+                        },
+                        "raw": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "is_identifier_query",
+                        "is_test_related",
+                        "is_script_related",
+                        "is_multi_term",
+                        "raw"
+                    ],
+                    "additionalProperties": false
+                },
+                "enabled_channels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "channel_priority": {
+                    "type": "object",
+                    "additionalProperties": {
                         "type": "integer"
                     }
+                },
+                "ordered_channels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "channel_results": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/channel_result"
+                        }
+                    }
+                },
+                "merge": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/merge_entry"
+                    }
                 }
-            }
+            },
+            "additionalProperties": false
         }
-    }
+    },
+    "definitions": {
+        "symbol": {
+            "type": "object",
+            "required": [
+                "type",
+                "module",
+                "name",
+                "file",
+                "lineno"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "file": {
+                    "type": "string"
+                },
+                "lineno": {
+                    "type": "integer"
+                },
+                "confidence": {
+                    "type": "number"
+                }
+            },
+            "additionalProperties": false
+        },
+        "doc_issue": {
+            "type": "object",
+            "required": [
+                "type",
+                "message"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": false
+        },
+        "reference": {
+            "type": "object",
+            "required": [
+                "file",
+                "lineno"
+            ],
+            "properties": {
+                "file": {
+                    "type": "string"
+                },
+                "lineno": {
+                    "type": "integer"
+                }
+            },
+            "additionalProperties": false
+        },
+        "channel_result": {
+            "type": "object",
+            "required": [
+                "type",
+                "module",
+                "name",
+                "lineno",
+                "score"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "lineno": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "number"
+                }
+            },
+            "additionalProperties": false
+        },
+        "merge_entry": {
+            "type": "object",
+            "required": [
+                "type",
+                "module",
+                "name",
+                "lineno",
+                "scores"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "lineno": {
+                    "type": "integer"
+                },
+                "scores": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number"
+                    }
+                },
+                "winner": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "additionalProperties": false
 }

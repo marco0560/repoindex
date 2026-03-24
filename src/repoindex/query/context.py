@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Callable, cast
 
+from repoindex._version import version as __version__
 from repoindex.prompts.default import build_prompt
 from repoindex.query.classifier import QueryIntent, classify_query
 from repoindex.query.exact import docstring_issues, find_symbol
@@ -21,6 +22,9 @@ from repoindex.types import (
     SymbolRow,
 )
 
+# Current schema version
+SCHEMA_VERSION = "1.1"
+# Minimum accepted score
 _MIN_SCORE = 1
 # --- token-capped context construction ---
 MAX_TOKENS = 1200
@@ -1249,7 +1253,7 @@ def _render_context_json(
         _current_tokens += block_tokens
 
     result: dict[str, object] = {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "status": status,
         "top_matches": [
             {
@@ -1283,6 +1287,11 @@ def _render_context_json(
 
     if explain:
         explain_block: dict[str, object] = {}
+
+        explain_block["environment"] = {
+            "repoindex_version": __version__,
+            "schema_version": SCHEMA_VERSION,
+        }
 
         if intent:
             explain_block["intent"] = {
@@ -1465,6 +1474,10 @@ def _append_explain_sections(
     top_matches: list[SymbolRow],
 ) -> None:
     if explain:
+        lines.append("=== EXPLAIN: ENVIRONMENT ===")
+        lines.append(f"repoindex_version: {__version__}")
+        lines.append(f"schema_version: {SCHEMA_VERSION}")
+        lines.append("")
         lines.append("=== EXPLAIN: QUERY INTENT ===")
         if intent:
             lines.append(f"is_identifier_query: {intent.is_identifier_query}")

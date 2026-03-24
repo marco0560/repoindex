@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from repoindex._version import version as __version__
 from repoindex.indexer import index_repo
 from repoindex.query.context import context_for
 from repoindex.query.exact import docstring_issues, find_symbol
@@ -16,6 +17,12 @@ from repoindex.storage import get_db_path, get_repoindex_dir, init_db
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="repoindex")
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("help", help="Show help")

@@ -4,7 +4,9 @@ dynamic = ["version"]
 description = "Local repository indexing and retrieval tool"
 authors = [{name = "Marco Coppola"}]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "jsonschema>=4.0"
+]
 
 [build-system]
 requires = ["setuptools>=61", "setuptools-scm"]
