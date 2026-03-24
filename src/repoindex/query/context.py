@@ -1330,6 +1330,43 @@ def _render_context(
     lines: list[str] = []
 
     if explain:
+        _append_explain_sections(
+            lines,
+            explain=explain,
+            intent=intent,
+            enabled_channels=enabled_channels,
+            channel_priority=channel_priority,
+            ordered_channels=ordered_channels,
+            bundles=bundles,
+            provenance=provenance,
+            top_matches=top_matches,
+        )
+
+    _append_main_context_sections(
+        lines,
+        root,
+        top_matches,
+        doc_issues,
+        expanded,
+        unique_refs,
+    )
+
+    return "\n".join(lines)
+
+
+def _append_explain_sections(
+    lines: list[str],
+    *,
+    explain: bool,
+    intent: QueryIntent | None,
+    enabled_channels: set[ChannelName] | None,
+    channel_priority: dict[ChannelName, int] | None,
+    ordered_channels: list[ChannelName] | None,
+    bundles: list[ChannelBundle] | None,
+    provenance: dict[SymbolRow, dict[str, float]] | None,
+    top_matches: list[SymbolRow],
+) -> None:
+    if explain:
         lines.append("=== EXPLAIN: QUERY INTENT ===")
         if intent:
             lines.append(f"is_identifier_query: {intent.is_identifier_query}")
@@ -1383,7 +1420,6 @@ def _render_context(
 
             channel_scores = provenance.get(symbol)
 
-            # skip symbols not produced by channels (post-processing additions)
             if not channel_scores:
                 continue
 
@@ -1404,6 +1440,15 @@ def _render_context(
 
         lines.append("")
 
+
+def _append_main_context_sections(
+    lines: list[str],
+    root: Path,
+    top_matches: list[SymbolRow],
+    doc_issues: list[tuple[str, str]],
+    expanded: list[SymbolRow],
+    unique_refs: list[ReferenceRow],
+) -> None:
     lines.append("=== TOP MATCHES ===")
     if not top_matches:
         lines.append("No direct symbol matches found.")
@@ -1446,8 +1491,6 @@ def _render_context(
                 rel_path = str(file_path)
 
             lines.append(f"{rel_path}:{lineno}")
-
-    return "\n".join(lines)
 
 
 def context_for(
