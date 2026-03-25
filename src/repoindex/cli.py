@@ -12,8 +12,9 @@ from pathlib import Path
 from repoindex._version import version as __version__
 from repoindex.indexer import index_repo
 from repoindex.query.context import context_for
-from repoindex.query.exact import docstring_issues, find_symbol
+from repoindex.query.exact import docstring_issues, find_call_edges, find_symbol
 from repoindex.scanner import iter_project_files
+from repoindex.schema import SCHEMA_VERSION
 from repoindex.storage import get_db_path, get_repoindex_dir, init_db
 
 
@@ -44,6 +45,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     symbol_parser = sub.add_parser("symbol", help="Find symbol by exact name")
     symbol_parser.add_argument("name")
+
+    calls_parser = sub.add_parser("calls", help="Inspect indexed static call edges")
+    calls_parser.add_argument(
+        "name",
+        help="Exact logical caller or callee name to inspect",
+    )
+    calls_parser.add_argument(
+        "--module",
+        help="Restrict the caller or callee side to one exact module",
+    )
+    calls_parser.add_argument(
+        "--incoming",
+        action="store_true",
+        help="Show callers of the named callee instead of outgoing edges",
+    )
 
     sub.add_parser("audit-docstrings", help="List docstring issues")
 
@@ -108,10 +124,11 @@ def _run_index(root: Path) -> int:
     index_repo(root)
 
     commit = _get_head_commit(root)
+    metadata = _read_index_metadata(root)
+    metadata["schema_version"] = str(SCHEMA_VERSION)
     if commit:
-        metadata = _read_index_metadata(root)
         metadata["commit"] = commit
-        _write_index_metadata(root, metadata)
+    _write_index_metadata(root, metadata)
 
     print("Repository indexed")
     return 0
@@ -170,6 +187,61 @@ def _run_audit_docstrings(root: Path) -> int:
 
     for issue_type, message in rows:
         print(f"{issue_type}: {message}")
+    return 0
+
+
+def _run_calls(
+    root: Path,
+    name: str,
+    *,
+    module: str | None,
+    incoming: bool,
+) -> int:
+    """
+    Print indexed static call edges for one logical name.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index.
+    name : str
+        Exact logical caller or callee name to inspect.
+    module : str | None
+        Optional exact module filter for the selected side of the edge.
+    incoming : bool
+        Whether to show incoming edges for a callee instead of outgoing edges
+        for a caller.
+
+    Returns
+    -------
+    int
+        Zero when at least one edge is found, otherwise one.
+    """
+    rows = find_call_edges(
+        root,
+        name,
+        module=module,
+        incoming=incoming,
+    )
+
+    if not rows:
+        direction = "callee" if incoming else "caller"
+        if module is None:
+            print(f"No call edges found for {direction}: {name}")
+        else:
+            print(f"No call edges found for {direction}: {module}.{name}")
+        return 1
+
+    for caller_module, caller_name, callee_module, callee_name, resolved in rows:
+        caller = f"{caller_module}.{caller_name}"
+        if resolved:
+            assert callee_module is not None
+            assert callee_name is not None
+            callee = f"{callee_module}.{callee_name}"
+        else:
+            callee = "<unresolved>"
+        print(f"{caller} -> {callee}")
+
     return 0
 
 
@@ -307,6 +379,23 @@ def _ensure_index(root: Path) -> None:
             current_commit = _get_head_commit(root)
             metadata = _read_index_metadata(root)
             indexed_commit = metadata.get("commit")
+            indexed_schema = metadata.get("schema_version")
+
+            if indexed_schema != str(SCHEMA_VERSION):
+                print(
+                    "[repoindex] Index schema changed — rebuilding...",
+                    file=sys.stderr,
+                )
+                conn.close()
+                init_db(root)
+                index_repo(root)
+                commit = _get_head_commit(root)
+                metadata = {"schema_version": str(SCHEMA_VERSION)}
+                if commit:
+                    metadata["commit"] = commit
+                _write_index_metadata(root, metadata)
+                print("[repoindex] Index ready", file=sys.stderr)
+                return
 
             if current_commit and indexed_commit != current_commit:
                 print(
@@ -317,7 +406,13 @@ def _ensure_index(root: Path) -> None:
                 init_db(root)
                 index_repo(root)
 
-                _write_index_metadata(root, {"commit": current_commit})
+                _write_index_metadata(
+                    root,
+                    {
+                        "commit": current_commit,
+                        "schema_version": str(SCHEMA_VERSION),
+                    },
+                )
 
                 print("[repoindex] Index ready", file=sys.stderr)
                 return
@@ -334,8 +429,10 @@ def _ensure_index(root: Path) -> None:
                 init_db(root)
                 index_repo(root)
                 commit = _get_head_commit(root)
+                metadata = {"schema_version": str(SCHEMA_VERSION)}
                 if commit:
-                    _write_index_metadata(root, {"commit": commit})
+                    metadata["commit"] = commit
+                _write_index_metadata(root, metadata)
                 print("[repoindex] Index ready", file=sys.stderr)
                 return
 
@@ -373,6 +470,14 @@ def main() -> int:
     if args.command == "symbol":
         _ensure_index(root)
         return _run_symbol(root, args.name)
+    if args.command == "calls":
+        _ensure_index(root)
+        return _run_calls(
+            root,
+            args.name,
+            module=args.module,
+            incoming=args.incoming,
+        )
     if args.command == "audit-docstrings":
         _ensure_index(root)
         return _run_audit_docstrings(root)

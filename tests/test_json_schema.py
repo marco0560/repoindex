@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
-from jsonschema import validate
+from jsonschema import validate  # type: ignore[import-untyped]
 
 from repoindex.indexer import index_repo
 from repoindex.query.context import context_for
@@ -27,7 +28,7 @@ def _load_schema(root: Path) -> dict[str, object]:
         Parsed JSON schema document.
     """
     schema_path = root / "src" / "repoindex" / "schema" / "context.schema.json"
-    return json.loads(schema_path.read_text(encoding="utf-8"))
+    return cast(dict[str, object], json.loads(schema_path.read_text(encoding="utf-8")))
 
 
 def test_context_output_matches_schema(tmp_path: Path) -> None:

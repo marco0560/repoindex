@@ -9,6 +9,44 @@ from pathlib import Path
 from repoindex.schema import DDL, SCHEMA_VERSION
 
 
+def _refresh_call_edges_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``call_edges`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(call_edges)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "caller_module",
+        "caller_name",
+        "callee_module",
+        "callee_name",
+        "resolved",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_call_edges_identity")
+    conn.execute("DROP INDEX IF EXISTS idx_call_edges_caller")
+    conn.execute("DROP INDEX IF EXISTS idx_call_edges_callee")
+    conn.execute("DROP INDEX IF EXISTS idx_call_edges_resolved")
+    conn.execute("DROP TABLE IF EXISTS call_edges")
+
+
 def get_repoindex_dir(root: Path) -> Path:
     """
     Return the repository-local storage directory.
@@ -82,6 +120,7 @@ def init_db(root: Path) -> None:
 
     conn = sqlite3.connect(db_path)
     try:
+        _refresh_call_edges_schema(conn)
         for stmt in DDL:
             conn.execute(stmt)
         conn.commit()
@@ -89,7 +128,7 @@ def init_db(root: Path) -> None:
         conn.close()
 
     metadata = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": str(SCHEMA_VERSION),
     }
 
     with open(get_metadata_path(root), "w", encoding="utf-8") as f:

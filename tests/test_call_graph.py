@@ -1,0 +1,182 @@
+"""Deterministic tests for static call-graph indexing and inspection."""
+
+from __future__ import annotations
+
+import sqlite3
+import sys
+from pathlib import Path
+
+import pytest
+
+from repoindex.cli import main
+from repoindex.indexer import index_repo
+from repoindex.query.exact import find_call_edges
+from repoindex.storage import get_db_path, init_db
+
+
+def _write_fixture(root: Path) -> None:
+    """
+    Write a small multi-module package used for call-graph tests.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Temporary repository root to populate.
+
+    Returns
+    -------
+    None
+        The fixture files are created under ``root``.
+    """
+    pkg = root / "pkg"
+    pkg.mkdir()
+
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "b.py").write_text(
+        '"""Helpers for import resolution tests."""\n'
+        "\n"
+        "def imported_helper():\n"
+        '    """Return a constant value."""\n'
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    (pkg / "a.py").write_text(
+        '"""Call-graph fixture module."""\n'
+        "\n"
+        "from pkg.b import imported_helper as external\n"
+        "import pkg.b as helpers\n"
+        "\n"
+        "def helper(value=0):\n"
+        '    """Return the given value."""\n'
+        "    return value\n"
+        "\n"
+        "def dynamic(callback):\n"
+        '    """Trigger unresolved callback calls."""\n'
+        "    callback()\n"
+        "    callback()\n"
+        "    return 1\n"
+        "\n"
+        "def caller():\n"
+        '    """Exercise same-module static calls."""\n'
+        "    helper()\n"
+        "    helper(1)\n"
+        "    return dynamic(helper)\n"
+        "\n"
+        "def imported_caller():\n"
+        '    """Exercise straightforward imported call resolution."""\n'
+        "    external()\n"
+        "    helpers.imported_helper()\n"
+        "    return 1\n"
+        "\n"
+        "class Demo:\n"
+        "    def helper(self):\n"
+        '        """Return a constant value."""\n'
+        "        return 1\n"
+        "\n"
+        "    def caller(self):\n"
+        '        """Exercise self method resolution."""\n'
+        "        self.helper()\n"
+        "        self.helper()\n"
+        "        return 1\n",
+        encoding="utf-8",
+    )
+
+
+def test_call_edges_are_resolved_and_deduplicated(tmp_path: Path) -> None:
+    """
+    Index a fixture package and assert deterministic call-edge rows.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts exact stored call-edge rows and helper lookups.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    conn = sqlite3.connect(get_db_path(tmp_path))
+    try:
+        rows = conn.execute("""
+            SELECT caller_module, caller_name, callee_module, callee_name, resolved
+            FROM call_edges
+            ORDER BY
+                caller_module,
+                caller_name,
+                COALESCE(callee_module, ''),
+                COALESCE(callee_name, ''),
+                resolved
+            """).fetchall()
+    finally:
+        conn.close()
+
+    assert rows == [
+        ("pkg.a", "Demo.caller", "pkg.a", "Demo.helper", 1),
+        ("pkg.a", "caller", "pkg.a", "dynamic", 1),
+        ("pkg.a", "caller", "pkg.a", "helper", 1),
+        ("pkg.a", "dynamic", None, None, 0),
+        ("pkg.a", "imported_caller", "pkg.b", "imported_helper", 1),
+    ]
+
+    assert find_call_edges(tmp_path, "caller", module="pkg.a") == [
+        ("pkg.a", "caller", "pkg.a", "dynamic", 1),
+        ("pkg.a", "caller", "pkg.a", "helper", 1),
+    ]
+    assert find_call_edges(
+        tmp_path,
+        "imported_helper",
+        module="pkg.b",
+        incoming=True,
+    ) == [
+        ("pkg.a", "imported_caller", "pkg.b", "imported_helper", 1),
+    ]
+
+
+def test_calls_cli_prints_incoming_edges(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Verify the CLI inspection path for incoming call edges.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts the printed incoming edge line.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "calls",
+            "imported_helper",
+            "--module",
+            "pkg.b",
+            "--incoming",
+        ],
+    )
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "pkg.a.imported_caller -> pkg.b.imported_helper"

@@ -153,9 +153,36 @@ def _module_name_from_path(path: Path, root: Path) -> str:
     return ".".join(parts)
 
 
-def _extract_call_names(node: ast.AST) -> list[str]:
+def _attribute_path(node: ast.AST) -> str | None:
     """
-    Collect simple callee names from a subtree.
+    Render a dotted attribute chain when it is statically representable.
+
+    Parameters
+    ----------
+    node : ast.AST
+        Expression node that may encode a dotted attribute path.
+
+    Returns
+    -------
+    str | None
+        Dotted path for ``ast.Name`` and nested ``ast.Attribute`` chains, or
+        ``None`` when the expression depends on dynamic evaluation.
+    """
+    if isinstance(node, ast.Name):
+        return node.id
+
+    if isinstance(node, ast.Attribute):
+        prefix = _attribute_path(node.value)
+        if prefix is None:
+            return None
+        return f"{prefix}.{node.attr}"
+
+    return None
+
+
+def _extract_call_records(node: ast.AST) -> list[dict[str, str | int]]:
+    """
+    Collect deterministic call-site records from a subtree.
 
     Parameters
     ----------
@@ -164,22 +191,74 @@ def _extract_call_names(node: ast.AST) -> list[str]:
 
     Returns
     -------
-    list[str]
-        Ordered callee names found in ``ast.Call`` nodes.
+    list[dict[str, str | int]]
+        Ordered call-site records with the static information available for
+        later resolution.
     """
-    calls: list[str] = []
+    calls: list[dict[str, str | int]] = []
 
     for child in ast.walk(node):
         if not isinstance(child, ast.Call):
             continue
 
         func = child.func
+        lineno = getattr(child, "lineno", 0)
+        col_offset = getattr(child, "col_offset", 0)
 
         if isinstance(func, ast.Name):
-            calls.append(func.id)
-        elif isinstance(func, ast.Attribute):
-            calls.append(func.attr)
+            calls.append(
+                {
+                    "kind": "name",
+                    "target": func.id,
+                    "lineno": lineno,
+                    "col_offset": col_offset,
+                }
+            )
+            continue
 
+        if isinstance(func, ast.Attribute):
+            dotted = _attribute_path(func)
+            if dotted is None or "." not in dotted:
+                calls.append(
+                    {
+                        "kind": "unresolved",
+                        "target": "",
+                        "lineno": lineno,
+                        "col_offset": col_offset,
+                    }
+                )
+                continue
+
+            base, target = dotted.rsplit(".", 1)
+            calls.append(
+                {
+                    "kind": "attribute",
+                    "base": base,
+                    "target": target,
+                    "lineno": lineno,
+                    "col_offset": col_offset,
+                }
+            )
+            continue
+
+        calls.append(
+            {
+                "kind": "unresolved",
+                "target": "",
+                "lineno": lineno,
+                "col_offset": col_offset,
+            }
+        )
+
+    calls.sort(
+        key=lambda call: (
+            int(call.get("lineno", 0)),
+            int(call.get("col_offset", 0)),
+            str(call.get("kind", "")),
+            str(call.get("base", "")),
+            str(call.get("target", "")),
+        )
+    )
     return calls
 
 
@@ -243,7 +322,7 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                             "parameters": _parameter_names(child),
                             "returns_value": int(_returns_value(child)),
                             "raises": int(_raises_exception(child)),
-                            "calls": _extract_call_names(child),
+                            "calls": _extract_call_records(child),
                         }
                     )
 
@@ -264,7 +343,7 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                     "parameters": _parameter_names(node),
                     "returns_value": int(_returns_value(node)),
                     "raises": int(_raises_exception(node)),
-                    "calls": _extract_call_names(node),
+                    "calls": _extract_call_records(node),
                 }
             )
 

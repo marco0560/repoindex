@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 DDL = [
     """
@@ -85,12 +85,39 @@ DDL = [
     """,
     """
     CREATE TABLE IF NOT EXISTS call_edges (
-        id INTEGER PRIMARY KEY,
-        caller_file_path TEXT NOT NULL,
-        caller_lineno INTEGER NOT NULL,
+        caller_module TEXT NOT NULL,
         caller_name TEXT NOT NULL,
-        callee_name TEXT NOT NULL
+        callee_module TEXT,
+        callee_name TEXT,
+        resolved INTEGER NOT NULL,
+        PRIMARY KEY (
+            caller_module,
+            caller_name,
+            callee_module,
+            callee_name
+        )
     );
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_call_edges_identity
+    ON call_edges(
+        caller_module,
+        caller_name,
+        COALESCE(callee_module, ''),
+        COALESCE(callee_name, '')
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_call_edges_caller
+    ON call_edges(caller_module, caller_name);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_call_edges_callee
+    ON call_edges(callee_module, callee_name);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_call_edges_resolved
+    ON call_edges(resolved);
     """,
     """
     CREATE TABLE IF NOT EXISTS embeddings (
@@ -111,13 +138,5 @@ DDL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_symbol_name ON symbol_index(name);
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_call_edges_caller
-    ON call_edges(caller_file_path, caller_lineno);
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_call_edges_callee
-    ON call_edges(callee_name);
     """,
 ]

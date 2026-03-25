@@ -8,6 +8,8 @@ from pathlib import Path
 from repoindex.storage import get_db_path
 from repoindex.types import SymbolRow
 
+CallEdgeRow = tuple[str, str, str | None, str | None, int]
+
 
 def find_symbol(
     root: Path, name: str, conn: sqlite3.Connection | None = None
@@ -83,6 +85,81 @@ def docstring_issues(
             """).fetchall()
 
         return [(str(t), str(m)) for t, m in rows]
+    finally:
+        if owns_connection:
+            conn.close()
+
+
+def find_call_edges(
+    root: Path,
+    name: str,
+    *,
+    module: str | None = None,
+    incoming: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> list[CallEdgeRow]:
+    """
+    Find exact call edges for a caller or callee logical name.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index database.
+    name : str
+        Exact logical caller or callee name to search for.
+    module : str | None, optional
+        Optional module qualifier used to restrict the result set.
+    incoming : bool, optional
+        When ``True``, return incoming edges for the callee; otherwise return
+        outgoing edges for the caller.
+    conn : sqlite3.Connection | None, optional
+        Existing database connection to reuse. When omitted, the function
+        opens and closes its own connection.
+
+    Returns
+    -------
+    list[CallEdgeRow]
+        Matching call-edge rows ordered deterministically.
+    """
+    owns_connection = conn is None
+    if conn is None:
+        conn = sqlite3.connect(get_db_path(root))
+
+    direction_column = "callee_name" if incoming else "caller_name"
+    module_column = "callee_module" if incoming else "caller_module"
+
+    query = f"""
+        SELECT caller_module, caller_name, callee_module, callee_name, resolved
+        FROM call_edges
+        WHERE {direction_column} = ?
+    """
+    params: list[str] = [name]
+
+    if module is not None:
+        query += f" AND {module_column} = ?"
+        params.append(module)
+
+    query += """
+        ORDER BY
+            caller_module,
+            caller_name,
+            COALESCE(callee_module, ''),
+            COALESCE(callee_name, ''),
+            resolved
+    """
+
+    try:
+        rows = conn.execute(query, tuple(params)).fetchall()
+        return [
+            (
+                str(caller_module),
+                str(caller_name),
+                None if callee_module is None else str(callee_module),
+                None if callee_name is None else str(callee_name),
+                int(resolved),
+            )
+            for caller_module, caller_name, callee_module, callee_name, resolved in rows
+        ]
     finally:
         if owns_connection:
             conn.close()
