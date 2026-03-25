@@ -1,3 +1,10 @@
+## [0.27.4](https://github.com/marco0560/repoindex/compare/v0.27.3...v0.27.4) (2026-03-25)
+
+
+### Bug Fixes
+
+* clarify ri-fix help ([380eac3](https://github.com/marco0560/repoindex/commit/380eac353042388a2e8ac82931046c398e1f119c))
+
 ## [0.27.3](https://github.com/marco0560/repoindex/compare/v0.27.2...v0.27.3) (2026-03-25)
 
 
