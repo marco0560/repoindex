@@ -88,6 +88,41 @@ No summaries. No partial edits.
    - atomic
    - CI-compliant
 
+### repoindex Workflow
+
+Use `repoindex` as a repository-local developer tool.
+
+Before broad code exploration or patching:
+
+1. Verify candidate symbols with `rg <query>` before editing.
+2. Run `repoindex context-for "<query>" --json` or `--prompt` as needed.
+3. Inspect the referenced files before applying changes.
+
+Use output modes as follows:
+
+- plain `context-for`: compact human-readable context
+- `context-for --json`: structured tool/agent workflows
+- `context-for --prompt`: copy-ready agent preamble
+- `context-for --explain`: retrieval diagnostics
+
+`repoindex` narrows search and improves determinism. It does not replace
+reading the actual source files before editing.
+
+### Virtual Environment
+
+This repository is operated from the local `.venv` environment.
+
+All Python-facing tools and entry points MUST resolve from `.venv`, not from
+the system installation or ambient `PATH`.
+
+Use one of these forms consistently:
+
+- `source .venv/bin/activate` before running project tools
+- explicit `.venv/bin/<tool>` paths when activation is not appropriate
+
+Assume all tool paths, Python interpreters, and console scripts are based on
+`.venv`.
+
 ---
 
 ### Cleanup
@@ -96,6 +131,7 @@ Before critical operations:
 
 ```bash
 git clean-repo
+repoindex index
 ```
 
 ---
@@ -216,7 +252,6 @@ This file may evolve to include:
 
 - audit workflows
 - release discipline
-- ontology rules
 - semantic indexing policies
 
 ---
