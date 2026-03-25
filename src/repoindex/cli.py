@@ -156,7 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Retrieve task-focused repository context for a natural-language "
             "query. The retrieval pipeline includes symbol, heuristic semantic, "
-            "and embedding channels. --prompt and --explain are mutually exclusive."
+            "and embedding channels. Output modes are mutually exclusive."
         ),
         epilog=(
             "Examples:\n"
@@ -172,12 +172,12 @@ def build_parser() -> argparse.ArgumentParser:
     context_parser.add_argument(
         "query", type=str, help="Natural-language query to retrieve context for"
     )
-    context_parser.add_argument(
+    mode_group = context_parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--json",
         action="store_true",
         help="Output structured JSON (agent mode)",
     )
-    mode_group = context_parser.add_mutually_exclusive_group()
     mode_group.add_argument(
         "--prompt",
         action="store_true",

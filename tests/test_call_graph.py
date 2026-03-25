@@ -292,12 +292,19 @@ def test_context_for_help_shows_incompatibility_and_examples(
     assert help_exit.value.code == 0
 
     captured = capsys.readouterr()
-    assert "--prompt | --explain" in captured.out
+    assert "--json | --prompt | --explain" in captured.out
     assert "repoindex context-for --explain" in captured.out
 
     with pytest.raises(SystemExit) as exc:
         build_parser().parse_args(
             ["context-for", "--prompt", "--explain", "static call graph"]
+        )
+
+    assert exc.value.code == 2
+
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(
+            ["context-for", "--json", "--prompt", "static call graph"]
         )
 
     assert exc.value.code == 2
