@@ -47,8 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("audit-docstrings", help="List docstring issues")
 
-    context_parser = sub.add_parser("context-for")
-    context_parser.add_argument("query", type=str)
+    context_parser = sub.add_parser(
+        "context-for", help="Retrieve task-focused repository context"
+    )
+    context_parser.add_argument(
+        "query", type=str, help="Natural-language query to retrieve context for"
+    )
     context_parser.add_argument(
         "--json",
         action="store_true",
