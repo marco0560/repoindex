@@ -85,6 +85,85 @@ def _refresh_callable_refs_schema(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS callable_refs")
 
 
+def _refresh_call_records_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``call_records`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(call_records)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "file_path",
+        "owner_module",
+        "owner_name",
+        "kind",
+        "base",
+        "target",
+        "lineno",
+        "col_offset",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_call_records_file")
+    conn.execute("DROP INDEX IF EXISTS idx_call_records_owner")
+    conn.execute("DROP TABLE IF EXISTS call_records")
+
+
+def _refresh_callable_ref_records_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``callable_ref_records`` table when an older schema exists.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(callable_ref_records)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "file_path",
+        "owner_module",
+        "owner_name",
+        "kind",
+        "ref_kind",
+        "base",
+        "target",
+        "lineno",
+        "col_offset",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_callable_ref_records_file")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_ref_records_owner")
+    conn.execute("DROP TABLE IF EXISTS callable_ref_records")
+
+
 def _refresh_embeddings_schema(conn: sqlite3.Connection) -> None:
     """
     Recreate the ``embeddings`` table when an older schema is present.
@@ -198,6 +277,8 @@ def init_db(root: Path) -> None:
     try:
         _refresh_call_edges_schema(conn)
         _refresh_callable_refs_schema(conn)
+        _refresh_call_records_schema(conn)
+        _refresh_callable_ref_records_schema(conn)
         _refresh_embeddings_schema(conn)
         for stmt in DDL:
             conn.execute(stmt)

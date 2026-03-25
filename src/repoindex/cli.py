@@ -74,13 +74,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser("help", help="Show help")
-    sub.add_parser(
+    index_parser = sub.add_parser(
         "index",
         help="Build or refresh the repository index",
         description=(
             "Build the repository-local SQLite index used by repoindex queries, "
-            "including precomputed semantic embeddings."
+            "including precomputed semantic embeddings. Incremental indexing "
+            "reuses unchanged files by default."
         ),
+        epilog=(
+            "Examples:\n"
+            "  repoindex index\n"
+            "  repoindex index --explain\n"
+            "  repoindex index --full"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    index_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Force a full rebuild instead of reusing unchanged files",
+    )
+    index_parser.add_argument(
+        "--explain",
+        "--verbose",
+        dest="explain",
+        action="store_true",
+        help="Show per-file indexing decisions after the summary",
     )
 
     symbol_parser = sub.add_parser(
@@ -241,7 +261,7 @@ def _run_help(parser: argparse.ArgumentParser) -> int:
     return 0
 
 
-def _run_index(root: Path) -> int:
+def _run_index(root: Path, *, full: bool, explain: bool) -> int:
     """
     Build or refresh the repository index.
 
@@ -256,7 +276,7 @@ def _run_index(root: Path) -> int:
         Process exit status for a successful indexing run.
     """
     init_db(root)
-    index_repo(root)
+    report = index_repo(root, full=full)
 
     commit = _get_head_commit(root)
     metadata = _read_index_metadata(root)
@@ -265,7 +285,19 @@ def _run_index(root: Path) -> int:
         metadata["commit"] = commit
     _write_index_metadata(root, metadata)
 
-    print("Repository indexed")
+    print(f"Indexed: {report.indexed}")
+    print(f"Reused: {report.reused}")
+    print(f"Deleted: {report.deleted}")
+    print(f"Embeddings recomputed: {report.embeddings_recomputed}")
+    print(f"Embeddings reused: {report.embeddings_reused}")
+    if explain:
+        for decision in report.decisions:
+            rel_path = Path(decision.path)
+            try:
+                rel_label = str(rel_path.relative_to(root))
+            except ValueError:
+                rel_label = decision.path
+            print(f"{decision.action}: {rel_label} ({decision.reason})")
     return 0
 
 
@@ -712,7 +744,7 @@ def main() -> int:
     if args.command in (None, "help"):
         return _run_help(parser)
     if args.command == "index":
-        return _run_index(root)
+        return _run_index(root, full=args.full, explain=args.explain)
     if args.command == "symbol":
         _ensure_index(root)
         return _run_symbol(root, args.name)

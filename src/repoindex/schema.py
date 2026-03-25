@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 DDL = [
     """
@@ -154,6 +154,68 @@ DDL = [
     """
     CREATE INDEX IF NOT EXISTS idx_callable_refs_resolved
     ON callable_refs(resolved);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS call_records (
+        file_path TEXT NOT NULL,
+        owner_module TEXT NOT NULL,
+        owner_name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        base TEXT NOT NULL,
+        target TEXT NOT NULL,
+        lineno INTEGER NOT NULL,
+        col_offset INTEGER NOT NULL,
+        PRIMARY KEY (
+            file_path,
+            owner_module,
+            owner_name,
+            kind,
+            base,
+            target,
+            lineno,
+            col_offset
+        )
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_call_records_file
+    ON call_records(file_path);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_call_records_owner
+    ON call_records(owner_module, owner_name);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS callable_ref_records (
+        file_path TEXT NOT NULL,
+        owner_module TEXT NOT NULL,
+        owner_name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        ref_kind TEXT NOT NULL,
+        base TEXT NOT NULL,
+        target TEXT NOT NULL,
+        lineno INTEGER NOT NULL,
+        col_offset INTEGER NOT NULL,
+        PRIMARY KEY (
+            file_path,
+            owner_module,
+            owner_name,
+            kind,
+            ref_kind,
+            base,
+            target,
+            lineno,
+            col_offset
+        )
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_callable_ref_records_file
+    ON callable_ref_records(file_path);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_callable_ref_records_owner
+    ON callable_ref_records(owner_module, owner_name);
     """,
     """
     CREATE TABLE IF NOT EXISTS embeddings (

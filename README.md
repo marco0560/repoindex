@@ -32,6 +32,19 @@ repoindex index
 ```
 
 Indexing also precomputes local deterministic embeddings for indexed symbols.
+Unchanged files are reused by default.
+
+Force a full rebuild:
+
+```bash
+repoindex index --full
+```
+
+Show incremental reuse decisions:
+
+```bash
+repoindex index --explain
+```
 
 Audit indexed docstrings:
 
