@@ -1,3 +1,11 @@
+# [0.30.0](https://github.com/marco0560/repoindex/compare/v0.29.1...v0.30.0) (2026-03-25)
+
+
+### Features
+
+* add embedding backend metadata ([7c418e8](https://github.com/marco0560/repoindex/commit/7c418e8c24cea4feb0ea8a37f4677d774d84af9f))
+* expand context with graph relations ([3aa0d85](https://github.com/marco0560/repoindex/commit/3aa0d85301d37c17c735f4cb25d4125eaff7cb84))
+
 ## [0.29.1](https://github.com/marco0560/repoindex/compare/v0.29.0...v0.29.1) (2026-03-25)
 
 
