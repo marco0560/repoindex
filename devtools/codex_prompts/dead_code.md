@@ -24,12 +24,31 @@ Rules:
 ## ASSUMPTION
 
 Assume `repoindex` already supports a static AST-derived call graph and exposes
-grounded caller/callee inspection that can be queried from the CLI or indexed
-database.
+grounded call-edge inspection through the current CLI and indexed database.
+
+Current grounded CLI surface:
+
+- `repoindex calls <name>`
+- `repoindex calls <name> --incoming`
+- `repoindex calls <name> --module <module>`
 
 Treat that graph as heuristic only.
 
 It is useful for triage, not proof.
+
+The graph is strongest for:
+
+- direct same-module calls
+- straightforward same-repo imported calls
+- `self` / `cls` method calls
+
+The graph is weaker for:
+
+- dynamic dispatch
+- decorators and registries
+- reflective lookup
+- plugin wiring
+- unresolved attribute chains
 
 ---
 
@@ -39,11 +58,13 @@ Use `repoindex` to identify dead-code candidates and remove only code that is
 well-supported as unused by:
 
 - static call-graph evidence
-- exact symbol/reference checks
+- exact symbol checks and `rg` reference checks
 - repository entry-point inspection
 - test coverage and architecture checks
 
 The goal is safe dead-code removal, not aggressive deletion.
+
+Prefer report-first triage over immediate deletion.
 
 ---
 
@@ -67,7 +88,10 @@ No step skipping.
 For each candidate symbol:
 
 1. Verify symbol existence with `rg`
-2. Query `repoindex` for callers / callees / related context
+2. Query `repoindex` for exact call edges and related context:
+   - `repoindex calls <name>`
+   - `repoindex calls <name> --incoming`
+   - `repoindex context-for "<query>"`
 3. Inspect the defining file
 4. Inspect possible entry points:
    - CLI registration
@@ -107,6 +131,8 @@ You may remove a symbol only if all of the following hold:
    Do not partially modify functions to make them "used".
 8. After each removal batch, the repository must remain indexable by repoindex.
 
+Absence of inbound call edges alone is NOT sufficient evidence for removal.
+
 If any of these checks fail or remain unclear -> STOP and leave the code in
 place.
 
@@ -137,6 +163,7 @@ Produce a plan with:
 
 - the exact dead-code candidates
 - the evidence for each candidate
+- the exact `repoindex calls` and `rg` commands used to justify each candidate
 - impacted files
 - risks
 - the smallest safe patch set
