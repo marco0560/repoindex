@@ -1,3 +1,10 @@
+## [0.29.1](https://github.com/marco0560/repoindex/compare/v0.29.0...v0.29.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* reject mixed context output modes ([1856d6f](https://github.com/marco0560/repoindex/commit/1856d6f626d16ddfa3d351aef8d39be5f8cd898e))
+
 # [0.29.0](https://github.com/marco0560/repoindex/compare/v0.28.0...v0.29.0) (2026-03-25)
 
 
