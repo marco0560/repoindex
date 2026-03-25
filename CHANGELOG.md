@@ -1,3 +1,10 @@
+# [0.29.0](https://github.com/marco0560/repoindex/compare/v0.28.0...v0.29.0) (2026-03-25)
+
+
+### Features
+
+* add deterministic embedding retrieval ([18257a7](https://github.com/marco0560/repoindex/commit/18257a7893e2ccc2e3076df0122e08b1153866c0))
+
 # [0.28.0](https://github.com/marco0560/repoindex/compare/v0.27.4...v0.28.0) (2026-03-25)
 
 
