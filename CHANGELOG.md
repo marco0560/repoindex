@@ -1,3 +1,16 @@
+# [0.28.0](https://github.com/marco0560/repoindex/compare/v0.27.4...v0.28.0) (2026-03-25)
+
+
+### Bug Fixes
+
+* improve cli help output ([0be499f](https://github.com/marco0560/repoindex/commit/0be499f9023d17422df8dcd4579aab78bce9eb29))
+
+
+### Features
+
+* add static call graph indexing ([d83fe90](https://github.com/marco0560/repoindex/commit/d83fe904f1646d2b08cfe56e7e5806e4c172f827))
+* index callable references ([ecf9c1a](https://github.com/marco0560/repoindex/commit/ecf9c1a289397828e9764ab6f10ce7b2df898c8f))
+
 ## [0.27.4](https://github.com/marco0560/repoindex/compare/v0.27.3...v0.27.4) (2026-03-25)
 
 
