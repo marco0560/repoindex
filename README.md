@@ -4,8 +4,8 @@
 agent-assisted development.
 
 It builds a SQLite index inside the target repository, supports exact symbol
-lookup, docstring auditing, and deterministic context generation for natural
-language queries.
+lookup, docstring auditing, deterministic local semantic embeddings, and
+deterministic context generation for natural-language queries.
 
 ## Install for Local Development
 
@@ -30,6 +30,8 @@ Build or refresh the repository-local index:
 ```bash
 repoindex index
 ```
+
+Indexing also precomputes local deterministic embeddings for indexed symbols.
 
 Audit indexed docstrings:
 
@@ -60,6 +62,12 @@ Generate deterministic context for a natural-language query:
 
 ```bash
 repoindex context-for "missing numpy docstring"
+```
+
+Embedding-assisted retrieval works best for natural-language queries such as:
+
+```bash
+repoindex context-for "schema migration rules"
 ```
 
 Emit structured JSON for agent workflows:
@@ -98,7 +106,8 @@ for reading the referenced files.
 
 ## Choosing an Output Mode
 
-Use the plain text mode when you want a compact human-readable summary:
+Use the plain text mode when you want a compact human-readable summary across
+the symbol, semantic, and embedding channels:
 
 ```bash
 repoindex context-for "missing numpy docstring"
@@ -203,11 +212,14 @@ determinism, but it does not replace direct source inspection.
 
 Important limits:
 
-- it is not a full semantic embedding system
+- it includes a deterministic in-repo embedding backend rather than a full
+  external-model semantic stack
 - it does not prove behavior correctness on its own
 - it does not replace reading the referenced files
 - it does not authorize blind edits based only on retrieved snippets
 - it is only as current as the indexed repository state
+- embedding recall is intentionally lightweight and local-first in the current
+  implementation
 - `repoindex calls` only covers direct static call sites
 - `repoindex refs` should be used for callable-object references such as
   registry values, assignment values, and returned function objects

@@ -39,8 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repoindex",
         description=(
-            "Index a repository, inspect exact symbols and static call edges, "
-            "and retrieve task-focused context."
+            "Index a repository, precompute semantic embeddings, inspect exact "
+            "symbols and static relations, and retrieve task-focused context."
         ),
         epilog=(
             "Examples:\n"
@@ -48,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
             '  repoindex context-for "find schema migration logic"\n'
             "  repoindex context-for --prompt "
             '"add a regression test for symbol lookup"\n'
+            '  repoindex context-for "schema migration rules"\n'
             "  repoindex calls caller\n"
             "  repoindex refs _retrieve_script_candidates --incoming\n"
             "  repoindex calls imported_helper --module pkg.b --incoming"
@@ -71,7 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
         "index",
         help="Build or refresh the repository index",
         description=(
-            "Build the repository-local SQLite index used by repoindex queries."
+            "Build the repository-local SQLite index used by repoindex queries, "
+            "including precomputed semantic embeddings."
         ),
     )
 
@@ -153,11 +155,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Retrieve task-focused repository context",
         description=(
             "Retrieve task-focused repository context for a natural-language "
-            "query. --prompt and --explain are mutually exclusive."
+            "query. The retrieval pipeline includes symbol, heuristic semantic, "
+            "and embedding channels. --prompt and --explain are mutually exclusive."
         ),
         epilog=(
             "Examples:\n"
             '  repoindex context-for "find schema migration logic"\n'
+            '  repoindex context-for "schema migration rules"\n'
             '  repoindex context-for --json "static call graph"\n'
             '  repoindex context-for --prompt "add a test for imported calls"\n'
             "  repoindex context-for --explain "

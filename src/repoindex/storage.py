@@ -85,6 +85,42 @@ def _refresh_callable_refs_schema(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS callable_refs")
 
 
+def _refresh_embeddings_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``embeddings`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(embeddings)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "id",
+        "object_type",
+        "object_id",
+        "backend",
+        "dim",
+        "vector",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_embeddings_object_backend")
+    conn.execute("DROP TABLE IF EXISTS embeddings")
+
+
 def get_repoindex_dir(root: Path) -> Path:
     """
     Return the repository-local storage directory.
@@ -160,6 +196,7 @@ def init_db(root: Path) -> None:
     try:
         _refresh_call_edges_schema(conn)
         _refresh_callable_refs_schema(conn)
+        _refresh_embeddings_schema(conn)
         for stmt in DDL:
             conn.execute(stmt)
         conn.commit()

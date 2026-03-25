@@ -14,6 +14,7 @@ from repoindex.prompts.default import build_prompt
 from repoindex.query.classifier import QueryIntent, classify_query
 from repoindex.query.exact import docstring_issues, find_symbol
 from repoindex.scanner import iter_project_files
+from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import get_db_path
 from repoindex.types import (
     ChannelBundle,
@@ -36,6 +37,8 @@ SYMBOL_TERM_MATCH_LIMIT = 50
 SEMANTIC_SCAN_LIMIT = 500
 # Maximum number of semantic results returned.
 SEMANTIC_RESULT_LIMIT = 50
+# Maximum number of embedding results returned.
+EMBEDDING_RESULT_LIMIT = 50
 # Maximum number of merged symbols returned.
 MERGE_RESULT_LIMIT = 10
 # --- token-capped context construction ---
@@ -52,8 +55,11 @@ ENRICHED_CONTEXT_LIMIT = 5
 MAX_ISSUES = 20
 # --- weight for semantic consolidation
 SEMANTIC_WEIGHT = 0.3
+# Minimum accepted embedding similarity.
+EMBEDDING_MIN_SCORE = 0.2
 CHANNEL_WEIGHTS: dict[ChannelName, float] = {
     "symbol": 1.0,
+    "embedding": 1.0,
     "semantic": 1.0,
     "test": 1.0,
     "script": 1.0,
@@ -1137,7 +1143,7 @@ def _channel_order() -> list[ChannelName]:
     list[repoindex.types.ChannelName]
         Channel names in evaluation order.
     """
-    return ["symbol", "semantic", "test", "script"]
+    return ["symbol", "embedding", "semantic", "test", "script"]
 
 
 def _build_channel_bundles(
@@ -1325,6 +1331,42 @@ def _retrieve_semantic_candidates(
     return results[:SEMANTIC_RESULT_LIMIT]
 
 
+def _retrieve_embedding_candidates(
+    root: Path,
+    query: str,
+    conn: sqlite3.Connection,
+    intent: QueryIntent,
+) -> ChannelResults:
+    """
+    Retrieve ranked candidates from the stored embedding channel.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index database.
+    query : str
+        User query string.
+    conn : sqlite3.Connection
+        Open database connection.
+    intent : repoindex.query.classifier.QueryIntent
+        Structured query classification. The current implementation does not
+        use it directly.
+
+    Returns
+    -------
+    repoindex.types.ChannelResults
+        Ranked embedding-channel candidates for the query.
+    """
+    del intent
+    return embedding_candidates(
+        root,
+        query,
+        limit=EMBEDDING_RESULT_LIMIT,
+        min_score=EMBEDDING_MIN_SCORE,
+        conn=conn,
+    )
+
+
 def _channel_registry() -> dict[
     ChannelName,
     Callable[
@@ -1357,6 +1399,7 @@ def _channel_registry() -> dict[
     """
     return {
         "symbol": _retrieve_symbol_candidates,
+        "embedding": _retrieve_embedding_candidates,
         "test": _retrieve_test_candidates,
         "script": _retrieve_script_candidates,
         "semantic": _retrieve_semantic_candidates,
@@ -1456,16 +1499,19 @@ def _enabled_channels(intent: QueryIntent) -> set[ChannelName]:
         return {
             "test",
             "symbol",
+            "embedding",
             "semantic",
         }
     if intent.is_script_related:
         return {
             "script",
             "symbol",
+            "embedding",
             "semantic",
         }
     return {
         "symbol",
+        "embedding",
         "semantic",
     }
 
@@ -1488,19 +1534,22 @@ def _channel_priority(intent: QueryIntent) -> dict[ChannelName, int]:
         return {
             "test": 0,
             "symbol": 1,
-            "script": 2,
+            "embedding": 2,
+            "script": 3,
         }
     if intent.is_script_related:
         return {
             "script": 0,
             "symbol": 1,
-            "test": 2,
+            "embedding": 2,
+            "test": 3,
         }
     return {
         "symbol": 0,
-        "semantic": 1,
-        "test": 2,
-        "script": 3,
+        "embedding": 1,
+        "semantic": 2,
+        "test": 3,
+        "script": 4,
     }
 
 

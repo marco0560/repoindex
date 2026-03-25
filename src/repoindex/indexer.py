@@ -9,6 +9,12 @@ from typing import cast
 from repoindex.docstring import validate_docstring
 from repoindex.parser_ast import parse_file
 from repoindex.scanner import file_metadata, iter_project_files
+from repoindex.semantic.embeddings import (
+    EMBEDDING_BACKEND,
+    EMBEDDING_DIM,
+    embed_text,
+    serialize_vector,
+)
 from repoindex.storage import get_db_path
 
 CallRecord = dict[str, str | int]
@@ -32,6 +38,7 @@ def _clear_index_tables(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM docstring_issues")
     conn.execute("DELETE FROM call_edges")
     conn.execute("DELETE FROM callable_refs")
+    conn.execute("DELETE FROM embeddings")
     conn.execute("DELETE FROM symbol_index")
     conn.execute("DELETE FROM imports")
     conn.execute("DELETE FROM functions")
@@ -231,6 +238,43 @@ def _resolve_call_record(
     return (None, None, 0)
 
 
+def _embedding_text(
+    *,
+    module_name: str,
+    symbol_name: str,
+    symbol_type: str,
+    signature: str | None = None,
+    docstring: str | None = None,
+) -> str:
+    """
+    Build the deterministic text payload embedded for one symbol.
+
+    Parameters
+    ----------
+    module_name : str
+        Dotted module name that owns the symbol.
+    symbol_name : str
+        Logical symbol name.
+    symbol_type : str
+        Indexed symbol type.
+    signature : str | None, optional
+        Callable signature when present.
+    docstring : str | None, optional
+        Symbol docstring when present.
+
+    Returns
+    -------
+    str
+        Joined text payload used for embedding generation.
+    """
+    parts = [symbol_type, module_name, symbol_name]
+    if signature:
+        parts.append(signature)
+    if docstring:
+        parts.append(docstring)
+    return "\n".join(parts)
+
+
 def index_repo(root: Path) -> None:
     """
     Scan repository files and populate the SQLite index.
@@ -257,6 +301,7 @@ def index_repo(root: Path) -> None:
         _clear_index_tables(conn)
 
         parsed_files: list[tuple[Path, dict[str, object], dict[str, object]]] = []
+        embedding_rows: list[tuple[str, int, str]] = []
 
         for path in iter_project_files(root):
             parsed_files.append((path, file_metadata(path), parse_file(path, root)))
@@ -316,6 +361,21 @@ def index_repo(root: Path) -> None:
                     1,
                 ),
             )
+            symbol_row_id = int(
+                conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            )
+            embedding_rows.append(
+                (
+                    "symbol",
+                    symbol_row_id,
+                    _embedding_text(
+                        module_name=module_name,
+                        symbol_name=module_name,
+                        symbol_type="module",
+                        docstring=cast(str | None, module["docstring"]),
+                    ),
+                )
+            )
 
             issues = validate_docstring(
                 cast(str | None, module["docstring"]),
@@ -364,6 +424,21 @@ def index_repo(root: Path) -> None:
                         meta["path"],
                         cls["lineno"],
                     ),
+                )
+                symbol_row_id = int(
+                    conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                )
+                embedding_rows.append(
+                    (
+                        "symbol",
+                        symbol_row_id,
+                        _embedding_text(
+                            module_name=module_name,
+                            symbol_name=str(cls["name"]),
+                            symbol_type="class",
+                            docstring=cast(str | None, cls["docstring"]),
+                        ),
+                    )
                 )
 
                 issues = validate_docstring(
@@ -417,6 +492,25 @@ def index_repo(root: Path) -> None:
                             meta["path"],
                             method["lineno"],
                         ),
+                    )
+                    symbol_row_id = int(
+                        conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    )
+                    embedding_rows.append(
+                        (
+                            "symbol",
+                            symbol_row_id,
+                            _embedding_text(
+                                module_name=module_name,
+                                symbol_name=_qualified_callable_name(
+                                    str(method["name"]),
+                                    str(cls["name"]),
+                                ),
+                                symbol_type="method",
+                                signature=cast(str | None, method["signature"]),
+                                docstring=cast(str | None, method["docstring"]),
+                            ),
+                        )
                     )
 
                     issues = validate_docstring(
@@ -474,6 +568,22 @@ def index_repo(root: Path) -> None:
                         fn["lineno"],
                     ),
                 )
+                symbol_row_id = int(
+                    conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                )
+                embedding_rows.append(
+                    (
+                        "symbol",
+                        symbol_row_id,
+                        _embedding_text(
+                            module_name=module_name,
+                            symbol_name=str(fn["name"]),
+                            symbol_type="function",
+                            signature=cast(str | None, fn["signature"]),
+                            docstring=cast(str | None, fn["docstring"]),
+                        ),
+                    )
+                )
 
                 issues = validate_docstring(
                     cast(str | None, fn["docstring"]),
@@ -511,7 +621,6 @@ def index_repo(root: Path) -> None:
 
         edges: set[tuple[str, str, str | None, str | None, int]] = set()
         refs: set[tuple[str, str, str | None, str | None, int]] = set()
-
         for _path, _meta, parsed in parsed_files:
             module = cast(dict[str, object], parsed["module"])
             functions = cast(list[dict[str, object]], parsed["functions"])
@@ -644,6 +753,23 @@ def index_repo(root: Path) -> None:
                 "(owner_module, owner_name, target_module, target_name, resolved) "
                 "VALUES (?, ?, ?, ?, ?)",
                 ref_row,
+            )
+
+        for object_type, object_id, text in sorted(
+            embedding_rows,
+            key=lambda item: (item[0], item[1], item[2]),
+        ):
+            conn.execute(
+                "INSERT INTO embeddings"
+                "(object_type, object_id, backend, dim, vector) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    object_type,
+                    object_id,
+                    EMBEDDING_BACKEND,
+                    EMBEDDING_DIM,
+                    serialize_vector(embed_text(text)),
+                ),
             )
 
         conn.commit()
