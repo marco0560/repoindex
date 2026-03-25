@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 
 from repoindex.cli import build_parser, main
 from repoindex.indexer import index_repo
+from repoindex.query.context import context_for
 from repoindex.query.exact import find_call_edges, find_callable_refs
 from repoindex.storage import get_db_path, init_db
 
@@ -265,10 +267,59 @@ def test_top_level_help_includes_examples_and_calls_command() -> None:
     parser = build_parser()
     help_text = parser.format_help()
 
+    assert 'repoindex embeddings "schema migration rules"' in help_text
     assert "repoindex calls caller" in help_text
     assert "repoindex refs _retrieve_script_candidates --incoming" in help_text
     assert "repoindex context-for --prompt" in help_text
     assert "audit-docstrings" in help_text
+
+
+def test_context_for_expands_related_cross_module_graph_symbols(
+    tmp_path: Path,
+) -> None:
+    """
+    Ensure context expansion pulls in cross-module graph-related symbols.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts graph-derived expansion from call and ref data.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    imported_data = json.loads(
+        context_for(
+            tmp_path,
+            "imported_helper",
+            as_json=True,
+        )
+    )
+    registry_data = json.loads(
+        context_for(
+            tmp_path,
+            "registry",
+            as_json=True,
+        )
+    )
+
+    imported_related = {
+        (row["module"], row["name"])
+        for row in imported_data["top_matches"] + imported_data["module_expansion"]
+    }
+    registry_expansion = {
+        (row["module"], row["name"]) for row in registry_data["module_expansion"]
+    }
+
+    assert ("pkg.a", "imported_caller") in imported_related
+    assert ("pkg.a", "registry") in imported_related
+    assert ("pkg.b", "imported_helper") in registry_expansion
 
 
 def test_context_for_help_shows_incompatibility_and_examples(

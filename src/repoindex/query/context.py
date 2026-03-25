@@ -12,7 +12,14 @@ from typing import Callable, cast
 from repoindex._version import version as __version__
 from repoindex.prompts.default import build_prompt
 from repoindex.query.classifier import QueryIntent, classify_query
-from repoindex.query.exact import docstring_issues, find_symbol
+from repoindex.query.exact import (
+    docstring_issues,
+    find_call_edges,
+    find_callable_refs,
+    find_logical_symbols,
+    find_symbol,
+    logical_symbol_name,
+)
 from repoindex.scanner import iter_project_files
 from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import get_db_path
@@ -1795,6 +1802,7 @@ def _dedupe_and_cap_references(
 def _expand_and_collect_references(
     root: Path,
     top_matches: list[SymbolRow],
+    conn: sqlite3.Connection,
 ) -> tuple[list[SymbolRow], list[ReferenceRow]]:
     """
     Perform module expansion and collect cross-module references.
@@ -1814,10 +1822,130 @@ def _expand_and_collect_references(
     Notes
     -----
     Expansion excludes private helpers and removes test or script modules to
-    keep the final context focused on reusable project code.
+    keep the final context focused on reusable project code. It also uses
+    stored call edges and callable references to pull in cross-module related
+    symbols around the primary matches.
     """
-    # --- PHASE 4: module expansion ---
     expanded: list[SymbolRow] = []
+    seen_symbols: set[SymbolRow] = set(top_matches)
+
+    def add_related_symbol(symbol: SymbolRow) -> None:
+        symbol_type, module_name, name, _file_path, _lineno = symbol
+        if symbol in seen_symbols:
+            return
+        if name.startswith("_"):
+            return
+        if symbol_type == "module" and module_name.startswith(("tests.", "scripts.")):
+            return
+        if module_name.startswith(("tests.", "scripts.")):
+            return
+        seen_symbols.add(symbol)
+        expanded.append(symbol)
+
+    # --- PHASE 4A: graph-based expansion ---
+    for symbol in top_matches:
+        symbol_type, module_name, _name, _file_path, _lineno = symbol
+        if symbol_type not in {"function", "method"}:
+            continue
+
+        logical_name = logical_symbol_name(root, symbol, conn=conn)
+
+        outgoing_edges = find_call_edges(
+            root,
+            logical_name,
+            module=module_name,
+            conn=conn,
+        )
+        incoming_edges = find_call_edges(
+            root,
+            logical_name,
+            module=module_name,
+            incoming=True,
+            conn=conn,
+        )
+        outgoing_refs = find_callable_refs(
+            root,
+            logical_name,
+            module=module_name,
+            conn=conn,
+        )
+        incoming_refs = find_callable_refs(
+            root,
+            logical_name,
+            module=module_name,
+            incoming=True,
+            conn=conn,
+        )
+
+        for (
+            _caller_module,
+            _caller_name,
+            callee_module,
+            callee_name,
+            resolved,
+        ) in outgoing_edges:
+            if not resolved or callee_module is None or callee_name is None:
+                continue
+            for related in find_logical_symbols(
+                root,
+                callee_module,
+                callee_name,
+                conn=conn,
+            ):
+                add_related_symbol(related)
+
+        for (
+            caller_module,
+            caller_name,
+            _callee_module,
+            _callee_name,
+            resolved,
+        ) in incoming_edges:
+            if not resolved:
+                continue
+            for related in find_logical_symbols(
+                root,
+                caller_module,
+                caller_name,
+                conn=conn,
+            ):
+                add_related_symbol(related)
+
+        for (
+            _owner_module,
+            _owner_name,
+            target_module,
+            target_name,
+            resolved,
+        ) in outgoing_refs:
+            if not resolved or target_module is None or target_name is None:
+                continue
+            for related in find_logical_symbols(
+                root,
+                target_module,
+                target_name,
+                conn=conn,
+            ):
+                add_related_symbol(related)
+
+        for (
+            owner_module,
+            owner_name,
+            _target_module,
+            _target_name,
+            resolved,
+        ) in incoming_refs:
+            if not resolved:
+                continue
+            for related in find_logical_symbols(
+                root,
+                owner_module,
+                owner_name,
+                conn=conn,
+            ):
+                add_related_symbol(related)
+
+    # --- PHASE 4B: module expansion ---
     seen_modules: set[str] = set()
 
     for _, module_name, _, _, _ in top_matches:
@@ -1833,12 +1961,7 @@ def _expand_and_collect_references(
             if name.startswith("_"):
                 continue
 
-            if symbol not in expanded:
-                expanded.append(symbol)
-
-    # --- REMOVE duplicates already in top_matches ---
-    top_set = set(top_matches)
-    expanded = [s for s in expanded if s not in top_set]
+            add_related_symbol(symbol)
 
     # remove duplicates by (module, name)
     seen_keys: set[tuple[str, str]] = set()
@@ -1855,8 +1978,6 @@ def _expand_and_collect_references(
     filtered: list[SymbolRow] = []
 
     for t, m, n, f, lin in deduped:
-        if m.startswith("tests.") or m.startswith("scripts."):
-            continue
         filtered.append((t, m, n, f, lin))
 
     expanded = filtered[:20]
@@ -2690,6 +2811,7 @@ def context_for(
     expanded, unique_refs = _expand_and_collect_references(
         root,
         top_matches,
+        conn,
     )
 
     # --- PHASE 6: rendering ---
