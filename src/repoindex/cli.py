@@ -31,22 +31,67 @@ def build_parser() -> argparse.ArgumentParser:
     argparse.ArgumentParser
         Parser configured with the supported repoindex subcommands.
     """
-    parser = argparse.ArgumentParser(prog="repoindex")
+    parser = argparse.ArgumentParser(
+        prog="repoindex",
+        description=(
+            "Index a repository, inspect exact symbols and static call edges, "
+            "and retrieve task-focused context."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  repoindex index\n"
+            '  repoindex context-for "find schema migration logic"\n'
+            "  repoindex context-for --prompt "
+            '"add a regression test for symbol lookup"\n'
+            "  repoindex calls caller\n"
+            "  repoindex calls imported_helper --module pkg.b --incoming"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "-V",
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
     )
-    sub = parser.add_subparsers(dest="command")
+    sub = parser.add_subparsers(
+        dest="command",
+        title="subcommands",
+        metavar="{help,index,symbol,calls,audit-docstrings,context-for}",
+    )
 
     sub.add_parser("help", help="Show help")
-    sub.add_parser("index", help="Index repository")
+    sub.add_parser(
+        "index",
+        help="Build or refresh the repository index",
+        description=(
+            "Build the repository-local SQLite index used by repoindex queries."
+        ),
+    )
 
-    symbol_parser = sub.add_parser("symbol", help="Find symbol by exact name")
-    symbol_parser.add_argument("name")
+    symbol_parser = sub.add_parser(
+        "symbol",
+        help="Find symbol by exact name",
+        description="Resolve one exact symbol name from the indexed repository.",
+        epilog=("Example:\n" "  repoindex symbol build_parser"),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    symbol_parser.add_argument("name", help="Exact symbol name to look up")
 
-    calls_parser = sub.add_parser("calls", help="Inspect indexed static call edges")
+    calls_parser = sub.add_parser(
+        "calls",
+        help="Inspect indexed static call edges",
+        description=(
+            "Inspect static heuristic call edges stored during indexing. "
+            "Use --incoming to show callers of a callee."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  repoindex calls caller\n"
+            "  repoindex calls imported_helper --module pkg.b --incoming"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     calls_parser.add_argument(
         "name",
         help="Exact logical caller or callee name to inspect",
@@ -61,10 +106,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show callers of the named callee instead of outgoing edges",
     )
 
-    sub.add_parser("audit-docstrings", help="List docstring issues")
+    sub.add_parser(
+        "audit-docstrings",
+        help="List docstring issues",
+        description="Print indexed docstring issues in deterministic order.",
+    )
 
     context_parser = sub.add_parser(
-        "context-for", help="Retrieve task-focused repository context"
+        "context-for",
+        help="Retrieve task-focused repository context",
+        description=(
+            "Retrieve task-focused repository context for a natural-language "
+            "query. --prompt and --explain are mutually exclusive."
+        ),
+        epilog=(
+            "Examples:\n"
+            '  repoindex context-for "find schema migration logic"\n'
+            '  repoindex context-for --json "static call graph"\n'
+            '  repoindex context-for --prompt "add a test for imported calls"\n'
+            "  repoindex context-for --explain "
+            '"why does symbol lookup rank this result?"'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     context_parser.add_argument(
         "query", type=str, help="Natural-language query to retrieve context for"
@@ -74,12 +137,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Output structured JSON (agent mode)",
     )
-    context_parser.add_argument(
+    mode_group = context_parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--prompt",
         action="store_true",
         help="Output a Codex-ready deterministic prompt",
     )
-    context_parser.add_argument(
+    mode_group.add_argument(
         "--explain",
         action="store_true",
         help="Show retrieval routing and merge diagnostics",
@@ -483,10 +547,6 @@ def main() -> int:
         return _run_audit_docstrings(root)
     elif args.command == "context-for":
         _ensure_index(root)
-
-        if args.prompt and args.explain:
-            print("ERROR: --prompt and --explain cannot be used together")
-            return 2
 
         result = context_for(
             root,

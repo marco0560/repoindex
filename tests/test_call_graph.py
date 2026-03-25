@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from repoindex.cli import main
+from repoindex.cli import build_parser, main
 from repoindex.indexer import index_repo
 from repoindex.query.exact import find_call_edges
 from repoindex.storage import get_db_path, init_db
@@ -180,3 +180,56 @@ def test_calls_cli_prints_incoming_edges(
     assert main() == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == "pkg.a.imported_caller -> pkg.b.imported_helper"
+
+
+def test_top_level_help_includes_examples_and_calls_command() -> None:
+    """
+    Verify the top-level help advertises key commands and examples.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts key help text fragments.
+    """
+    parser = build_parser()
+    help_text = parser.format_help()
+
+    assert "repoindex calls caller" in help_text
+    assert "repoindex context-for --prompt" in help_text
+    assert "audit-docstrings" in help_text
+
+
+def test_context_for_help_shows_incompatibility_and_examples(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Verify subcommand help exposes examples and parser-level constraints.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts help text and parser enforcement for context modes.
+    """
+    with pytest.raises(SystemExit) as help_exit:
+        build_parser().parse_args(["context-for", "-h"])
+
+    assert help_exit.value.code == 0
+
+    captured = capsys.readouterr()
+    assert "--prompt | --explain" in captured.out
+    assert "repoindex context-for --explain" in captured.out
+
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(
+            ["context-for", "--prompt", "--explain", "static call graph"]
+        )
+
+    assert exc.value.code == 2
