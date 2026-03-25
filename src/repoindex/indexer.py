@@ -10,9 +10,8 @@ from repoindex.docstring import validate_docstring
 from repoindex.parser_ast import parse_file
 from repoindex.scanner import file_metadata, iter_project_files
 from repoindex.semantic.embeddings import (
-    EMBEDDING_BACKEND,
-    EMBEDDING_DIM,
     embed_text,
+    get_embedding_backend,
     serialize_vector,
 )
 from repoindex.storage import get_db_path
@@ -296,6 +295,7 @@ def index_repo(root: Path) -> None:
     """
     db_path = get_db_path(root)
     conn = sqlite3.connect(db_path)
+    backend = get_embedding_backend()
 
     try:
         _clear_index_tables(conn)
@@ -761,13 +761,14 @@ def index_repo(root: Path) -> None:
         ):
             conn.execute(
                 "INSERT INTO embeddings"
-                "(object_type, object_id, backend, dim, vector) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "(object_type, object_id, backend, version, dim, vector) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     object_type,
                     object_id,
-                    EMBEDDING_BACKEND,
-                    EMBEDDING_DIM,
+                    backend.name,
+                    backend.version,
+                    backend.dim,
                     serialize_vector(embed_text(text)),
                 ),
             )

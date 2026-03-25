@@ -110,6 +110,7 @@ def _refresh_embeddings_schema(conn: sqlite3.Connection) -> None:
         "object_type",
         "object_id",
         "backend",
+        "version",
         "dim",
         "vector",
     ]
@@ -118,6 +119,7 @@ def _refresh_embeddings_schema(conn: sqlite3.Connection) -> None:
         return
 
     conn.execute("DROP INDEX IF EXISTS idx_embeddings_object_backend")
+    conn.execute("DROP INDEX IF EXISTS idx_embeddings_object_backend_version")
     conn.execute("DROP TABLE IF EXISTS embeddings")
 
 

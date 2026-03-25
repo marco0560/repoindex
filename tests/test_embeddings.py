@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
 
+import pytest
+
+from repoindex.cli import main
 from repoindex.indexer import index_repo
 from repoindex.query.exact import find_symbol
 from repoindex.semantic.embeddings import (
     EMBEDDING_BACKEND,
     EMBEDDING_DIM,
+    EMBEDDING_VERSION,
     embed_text,
 )
 from repoindex.semantic.search import embedding_candidates
@@ -91,7 +96,7 @@ def test_index_repo_persists_symbol_embeddings(tmp_path: Path) -> None:
     try:
         symbol_count = conn.execute("SELECT COUNT(*) FROM symbol_index").fetchone()[0]
         embedding_rows = conn.execute("""
-            SELECT object_type, backend, dim
+            SELECT object_type, backend, version, dim
             FROM embeddings
             ORDER BY object_type, object_id
             """).fetchall()
@@ -100,7 +105,8 @@ def test_index_repo_persists_symbol_embeddings(tmp_path: Path) -> None:
 
     assert len(embedding_rows) == symbol_count
     assert all(
-        row == ("symbol", EMBEDDING_BACKEND, EMBEDDING_DIM) for row in embedding_rows
+        row == ("symbol", EMBEDDING_BACKEND, EMBEDDING_VERSION, EMBEDDING_DIM)
+        for row in embedding_rows
     )
 
 
@@ -178,3 +184,42 @@ def test_embedding_channel_does_not_regress_exact_symbol_lookup(tmp_path: Path) 
             3,
         )
     ]
+
+
+def test_embeddings_cli_prints_backend_and_matches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Verify the embedding inspection CLI path.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts backend metadata and a ranked match line.
+    """
+    _write_embedding_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["repoindex", "embeddings", "schema migration rules", "--limit", "2"],
+    )
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "backend: hash-v1 version=1 dim=128" in captured.out
+    assert "pkg.sample.validate_schema_rules" in captured.out

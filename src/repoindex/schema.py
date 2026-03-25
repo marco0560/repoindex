@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 DDL = [
     """
@@ -161,13 +161,14 @@ DDL = [
         object_type TEXT NOT NULL,
         object_id INTEGER NOT NULL,
         backend TEXT NOT NULL,
+        version TEXT NOT NULL,
         dim INTEGER NOT NULL,
         vector BLOB NOT NULL
     );
     """,
     """
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_embeddings_object_backend
-    ON embeddings(object_type, object_id, backend);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_embeddings_object_backend_version
+    ON embeddings(object_type, object_id, backend, version);
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);

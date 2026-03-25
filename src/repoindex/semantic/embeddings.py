@@ -6,9 +6,51 @@ import hashlib
 import math
 import re
 import struct
+from dataclasses import dataclass
 
 EMBEDDING_BACKEND = "hash-v1"
+EMBEDDING_VERSION = "1"
 EMBEDDING_DIM = 128
+
+
+@dataclass(frozen=True)
+class EmbeddingBackendSpec:
+    """
+    Stable metadata describing the active embedding backend.
+
+    Parameters
+    ----------
+    name : str
+        Backend identifier stored in the index.
+    version : str
+        Backend-specific version used for explicit invalidation.
+    dim : int
+        Fixed vector dimensionality.
+    """
+
+    name: str
+    version: str
+    dim: int
+
+
+def get_embedding_backend() -> EmbeddingBackendSpec:
+    """
+    Return the active embedding backend specification.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    EmbeddingBackendSpec
+        Stable backend metadata used by indexing and retrieval.
+    """
+    return EmbeddingBackendSpec(
+        name=EMBEDDING_BACKEND,
+        version=EMBEDDING_VERSION,
+        dim=EMBEDDING_DIM,
+    )
 
 
 def _tokenize_embedding_text(text: str) -> list[str]:

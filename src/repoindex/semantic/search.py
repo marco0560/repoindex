@@ -6,10 +6,9 @@ import sqlite3
 from pathlib import Path
 
 from repoindex.semantic.embeddings import (
-    EMBEDDING_BACKEND,
-    EMBEDDING_DIM,
     deserialize_vector,
     embed_text,
+    get_embedding_backend,
 )
 from repoindex.storage import get_db_path
 from repoindex.types import ChannelResults, SymbolRow
@@ -69,6 +68,7 @@ def embedding_candidates(
     if conn is None:
         conn = sqlite3.connect(get_db_path(root))
 
+    backend = get_embedding_backend()
     query_vector = embed_text(query)
     if not any(query_vector):
         return []
@@ -82,16 +82,17 @@ def embedding_candidates(
                 s.name,
                 s.file_path,
                 s.lineno,
+                e.version,
                 e.dim,
                 e.vector
             FROM embeddings e
             JOIN symbol_index s
               ON e.object_type = 'symbol'
              AND e.object_id = s.id
-            WHERE e.backend = ?
+            WHERE e.backend = ? AND e.version = ?
             ORDER BY s.module_name, s.name, s.file_path, s.lineno, s.type
             """,
-            (EMBEDDING_BACKEND,),
+            (backend.name, backend.version),
         ).fetchall()
 
         results: ChannelResults = []
@@ -104,9 +105,10 @@ def embedding_candidates(
                 str(row[3]),
                 int(row[4]),
             )
-            dim = int(row[5])
-            blob = bytes(row[6])
-            if dim != EMBEDDING_DIM:
+            version = str(row[5])
+            dim = int(row[6])
+            blob = bytes(row[7])
+            if version != backend.version or dim != backend.dim:
                 continue
 
             score = _dot(query_vector, deserialize_vector(blob, dim=dim))

@@ -45,6 +45,12 @@ Query exact symbols:
 repoindex symbol build_parser
 ```
 
+Inspect embedding-only matches and backend metadata:
+
+```bash
+repoindex embeddings "schema migration rules"
+```
+
 Inspect static call edges:
 
 ```bash
@@ -138,6 +144,10 @@ Practical rule:
 - `--prompt`: agent handoff
 - `--explain`: debugging retrieval behavior
 
+The `embeddings` command is a debugging surface for the embedding channel only.
+Use it when you want backend metadata and raw embedding-ranked matches without
+the normal multi-channel merge used by `context-for`.
+
 ## Query Examples
 
 Natural-language queries:
@@ -214,6 +224,8 @@ Important limits:
 
 - it includes a deterministic in-repo embedding backend rather than a full
   external-model semantic stack
+- stored embeddings carry explicit backend and version metadata so the backend
+  can be replaced later without changing the retrieval interface
 - it does not prove behavior correctness on its own
 - it does not replace reading the referenced files
 - it does not authorize blind edits based only on retrieved snippets
@@ -223,6 +235,8 @@ Important limits:
 - `repoindex calls` only covers direct static call sites
 - `repoindex refs` should be used for callable-object references such as
   registry values, assignment values, and returned function objects
+- `context-for` uses stored call and callable-reference data to pull in
+  related cross-module symbols around top function and method matches
 
 Recommended use:
 

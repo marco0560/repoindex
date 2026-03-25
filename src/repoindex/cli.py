@@ -14,12 +14,15 @@ from repoindex.indexer import index_repo
 from repoindex.query.context import context_for
 from repoindex.query.exact import (
     docstring_issues,
+    embedding_inventory,
     find_call_edges,
     find_callable_refs,
     find_symbol,
 )
 from repoindex.scanner import iter_project_files
 from repoindex.schema import SCHEMA_VERSION
+from repoindex.semantic.embeddings import get_embedding_backend
+from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import get_db_path, get_repoindex_dir, init_db
 
 
@@ -49,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  repoindex context-for --prompt "
             '"add a regression test for symbol lookup"\n'
             '  repoindex context-for "schema migration rules"\n'
+            '  repoindex embeddings "schema migration rules"\n'
             "  repoindex calls caller\n"
             "  repoindex refs _retrieve_script_candidates --incoming\n"
             "  repoindex calls imported_helper --module pkg.b --incoming"
@@ -64,7 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(
         dest="command",
         title="subcommands",
-        metavar="{help,index,symbol,calls,refs,audit-docstrings,context-for}",
+        metavar=(
+            "{help,index,symbol,embeddings,calls,refs,audit-docstrings," "context-for}"
+        ),
     )
 
     sub.add_parser("help", help="Show help")
@@ -85,6 +91,31 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     symbol_parser.add_argument("name", help="Exact symbol name to look up")
+
+    embeddings_parser = sub.add_parser(
+        "embeddings",
+        help="Inspect embedding-channel matches",
+        description=(
+            "Inspect the active embedding backend and show top embedding-only "
+            "matches for a natural-language query."
+        ),
+        epilog=(
+            "Examples:\n"
+            '  repoindex embeddings "schema migration rules"\n'
+            '  repoindex embeddings "numpy docstring sections" --limit 3'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    embeddings_parser.add_argument(
+        "query",
+        help="Natural-language query to score against stored embeddings",
+    )
+    embeddings_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Maximum number of embedding matches to print",
+    )
 
     calls_parser = sub.add_parser(
         "calls",
@@ -291,6 +322,62 @@ def _run_audit_docstrings(root: Path) -> int:
 
     for issue_type, message in rows:
         print(f"{issue_type}: {message}")
+    return 0
+
+
+def _run_embeddings(root: Path, query: str, *, limit: int) -> int:
+    """
+    Print embedding-backend metadata and top embedding matches.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index.
+    query : str
+        Natural-language query to score.
+    limit : int
+        Maximum number of matches to print.
+
+    Returns
+    -------
+    int
+        Zero when embedding inventory exists, otherwise one.
+    """
+    backend = get_embedding_backend()
+    inventory = embedding_inventory(root)
+
+    if not inventory:
+        print("No stored embeddings found. Run: repoindex index")
+        return 1
+
+    print(
+        "backend:"
+        f" {backend.name}"
+        f" version={backend.version}"
+        f" dim={backend.dim}"
+    )
+    for stored_backend, stored_version, stored_dim, count in inventory:
+        print(
+            "stored:"
+            f" {stored_backend}"
+            f" version={stored_version}"
+            f" dim={stored_dim}"
+            f" rows={count}"
+        )
+
+    matches = embedding_candidates(
+        root,
+        query,
+        limit=limit,
+        min_score=0.0,
+    )
+    if not matches:
+        print("No embedding matches found.")
+        return 0
+
+    for score, (symbol_type, module_name, name, file_path, lineno) in matches:
+        print(f"{score:.2f} {symbol_type}: {module_name}.{name} {file_path}:{lineno}")
+
     return 0
 
 
@@ -629,6 +716,9 @@ def main() -> int:
     if args.command == "symbol":
         _ensure_index(root)
         return _run_symbol(root, args.name)
+    if args.command == "embeddings":
+        _ensure_index(root)
+        return _run_embeddings(root, args.query, limit=args.limit)
     if args.command == "calls":
         _ensure_index(root)
         return _run_calls(
