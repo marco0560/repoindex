@@ -12,7 +12,12 @@ from pathlib import Path
 from repoindex._version import version as __version__
 from repoindex.indexer import index_repo
 from repoindex.query.context import context_for
-from repoindex.query.exact import docstring_issues, find_call_edges, find_symbol
+from repoindex.query.exact import (
+    docstring_issues,
+    find_call_edges,
+    find_callable_refs,
+    find_symbol,
+)
 from repoindex.scanner import iter_project_files
 from repoindex.schema import SCHEMA_VERSION
 from repoindex.storage import get_db_path, get_repoindex_dir, init_db
@@ -44,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  repoindex context-for --prompt "
             '"add a regression test for symbol lookup"\n'
             "  repoindex calls caller\n"
+            "  repoindex refs _retrieve_script_candidates --incoming\n"
             "  repoindex calls imported_helper --module pkg.b --incoming"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -57,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(
         dest="command",
         title="subcommands",
-        metavar="{help,index,symbol,calls,audit-docstrings,context-for}",
+        metavar="{help,index,symbol,calls,refs,audit-docstrings,context-for}",
     )
 
     sub.add_parser("help", help="Show help")
@@ -104,6 +110,36 @@ def build_parser() -> argparse.ArgumentParser:
         "--incoming",
         action="store_true",
         help="Show callers of the named callee instead of outgoing edges",
+    )
+
+    refs_parser = sub.add_parser(
+        "refs",
+        help="Inspect indexed callable-object references",
+        description=(
+            "Inspect static heuristic references to callable objects such as "
+            "registry bindings, return values, and assignment values. "
+            "Use --incoming to show owners that reference a target."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  repoindex refs helper\n"
+            "  repoindex refs _retrieve_script_candidates --incoming\n"
+            "  repoindex refs imported_helper --module pkg.b --incoming"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    refs_parser.add_argument(
+        "name",
+        help="Exact logical owner or target name to inspect",
+    )
+    refs_parser.add_argument(
+        "--module",
+        help="Restrict the owner or target side to one exact module",
+    )
+    refs_parser.add_argument(
+        "--incoming",
+        action="store_true",
+        help="Show owners of the named target instead of outgoing references",
     )
 
     sub.add_parser(
@@ -305,6 +341,61 @@ def _run_calls(
         else:
             callee = "<unresolved>"
         print(f"{caller} -> {callee}")
+
+    return 0
+
+
+def _run_refs(
+    root: Path,
+    name: str,
+    *,
+    module: str | None,
+    incoming: bool,
+) -> int:
+    """
+    Print indexed callable-object references for one logical name.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index.
+    name : str
+        Exact logical owner or referenced target name to inspect.
+    module : str | None
+        Optional exact module filter for the selected side of the reference.
+    incoming : bool
+        Whether to show incoming references for a target instead of outgoing
+        references for an owner.
+
+    Returns
+    -------
+    int
+        Zero when at least one reference is found, otherwise one.
+    """
+    rows = find_callable_refs(
+        root,
+        name,
+        module=module,
+        incoming=incoming,
+    )
+
+    if not rows:
+        direction = "target" if incoming else "owner"
+        if module is None:
+            print(f"No callable references found for {direction}: {name}")
+        else:
+            print(f"No callable references found for {direction}: {module}.{name}")
+        return 1
+
+    for owner_module, owner_name, target_module, target_name, resolved in rows:
+        owner = f"{owner_module}.{owner_name}"
+        if resolved:
+            assert target_module is not None
+            assert target_name is not None
+            target = f"{target_module}.{target_name}"
+        else:
+            target = "<unresolved>"
+        print(f"{owner} => {target}")
 
     return 0
 
@@ -537,6 +628,14 @@ def main() -> int:
     if args.command == "calls":
         _ensure_index(root)
         return _run_calls(
+            root,
+            args.name,
+            module=args.module,
+            incoming=args.incoming,
+        )
+    if args.command == "refs":
+        _ensure_index(root)
+        return _run_refs(
             root,
             args.name,
             module=args.module,

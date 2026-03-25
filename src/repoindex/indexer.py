@@ -12,6 +12,7 @@ from repoindex.scanner import file_metadata, iter_project_files
 from repoindex.storage import get_db_path
 
 CallRecord = dict[str, str | int]
+ReferenceRecord = dict[str, str | int]
 
 
 def _clear_index_tables(conn: sqlite3.Connection) -> None:
@@ -30,6 +31,7 @@ def _clear_index_tables(conn: sqlite3.Connection) -> None:
     """
     conn.execute("DELETE FROM docstring_issues")
     conn.execute("DELETE FROM call_edges")
+    conn.execute("DELETE FROM callable_refs")
     conn.execute("DELETE FROM symbol_index")
     conn.execute("DELETE FROM imports")
     conn.execute("DELETE FROM functions")
@@ -208,6 +210,10 @@ def _resolve_call_record(
                 candidates.add(
                     (caller_module, _qualified_callable_name(target, caller_class))
                 )
+
+        methods = class_methods.get((caller_module, base), set())
+        if target in methods:
+            candidates.add((caller_module, _qualified_callable_name(target, base)))
 
         resolved_module_call = _resolve_module_attribute_call(
             base,
@@ -504,6 +510,7 @@ def index_repo(root: Path) -> None:
                 )
 
         edges: set[tuple[str, str, str | None, str | None, int]] = set()
+        refs: set[tuple[str, str, str | None, str | None, int]] = set()
 
         for _path, _meta, parsed in parsed_files:
             module = cast(dict[str, object], parsed["module"])
@@ -517,6 +524,7 @@ def index_repo(root: Path) -> None:
             for fn in functions:
                 caller_name = str(fn["name"])
                 calls = cast(list[CallRecord], fn["calls"])
+                callable_refs = cast(list[ReferenceRecord], fn["callable_refs"])
                 for call in calls:
                     callee_module, callee_name, resolved = _resolve_call_record(
                         call,
@@ -535,6 +543,24 @@ def index_repo(root: Path) -> None:
                             resolved,
                         )
                     )
+                for ref in callable_refs:
+                    target_module, target_name, resolved = _resolve_call_record(
+                        ref,
+                        caller_module=caller_module,
+                        caller_class=None,
+                        import_aliases=import_aliases,
+                        module_functions=module_functions,
+                        class_methods=class_methods,
+                    )
+                    refs.add(
+                        (
+                            caller_module,
+                            caller_name,
+                            target_module,
+                            target_name,
+                            resolved,
+                        )
+                    )
 
             for cls in classes:
                 class_name = str(cls["name"])
@@ -545,6 +571,10 @@ def index_repo(root: Path) -> None:
                         class_name,
                     )
                     calls = cast(list[CallRecord], method["calls"])
+                    callable_refs = cast(
+                        list[ReferenceRecord],
+                        method["callable_refs"],
+                    )
                     for call in calls:
                         callee_module, callee_name, resolved = _resolve_call_record(
                             call,
@@ -560,6 +590,24 @@ def index_repo(root: Path) -> None:
                                 caller_name,
                                 callee_module,
                                 callee_name,
+                                resolved,
+                            )
+                        )
+                    for ref in callable_refs:
+                        target_module, target_name, resolved = _resolve_call_record(
+                            ref,
+                            caller_module=caller_module,
+                            caller_class=class_name,
+                            import_aliases=import_aliases,
+                            module_functions=module_functions,
+                            class_methods=class_methods,
+                        )
+                        refs.add(
+                            (
+                                caller_module,
+                                caller_name,
+                                target_module,
+                                target_name,
                                 resolved,
                             )
                         )
@@ -579,6 +627,23 @@ def index_repo(root: Path) -> None:
                 "(caller_module, caller_name, callee_module, callee_name, resolved) "
                 "VALUES (?, ?, ?, ?, ?)",
                 edge,
+            )
+
+        for ref_row in sorted(
+            refs,
+            key=lambda item: (
+                item[0],
+                item[1],
+                item[2] or "",
+                item[3] or "",
+                item[4],
+            ),
+        ):
+            conn.execute(
+                "INSERT OR IGNORE INTO callable_refs"
+                "(owner_module, owner_name, target_module, target_name, resolved) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ref_row,
             )
 
         conn.commit()

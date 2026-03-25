@@ -47,6 +47,44 @@ def _refresh_call_edges_schema(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS call_edges")
 
 
+def _refresh_callable_refs_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``callable_refs`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(callable_refs)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "owner_module",
+        "owner_name",
+        "target_module",
+        "target_name",
+        "resolved",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_callable_refs_identity")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_refs_owner")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_refs_target")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_refs_resolved")
+    conn.execute("DROP TABLE IF EXISTS callable_refs")
+
+
 def get_repoindex_dir(root: Path) -> Path:
     """
     Return the repository-local storage directory.
@@ -121,6 +159,7 @@ def init_db(root: Path) -> None:
     conn = sqlite3.connect(db_path)
     try:
         _refresh_call_edges_schema(conn)
+        _refresh_callable_refs_schema(conn)
         for stmt in DDL:
             conn.execute(stmt)
         conn.commit()

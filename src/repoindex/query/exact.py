@@ -9,6 +9,7 @@ from repoindex.storage import get_db_path
 from repoindex.types import SymbolRow
 
 CallEdgeRow = tuple[str, str, str | None, str | None, int]
+CallableRefRow = tuple[str, str, str | None, str | None, int]
 
 
 def find_symbol(
@@ -159,6 +160,81 @@ def find_call_edges(
                 int(resolved),
             )
             for caller_module, caller_name, callee_module, callee_name, resolved in rows
+        ]
+    finally:
+        if owns_connection:
+            conn.close()
+
+
+def find_callable_refs(
+    root: Path,
+    name: str,
+    *,
+    module: str | None = None,
+    incoming: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> list[CallableRefRow]:
+    """
+    Find exact callable-object references for an owner or referenced target.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index database.
+    name : str
+        Exact logical owner or referenced target name to search for.
+    module : str | None, optional
+        Optional module qualifier used to restrict the result set.
+    incoming : bool, optional
+        When ``True``, return incoming references for the target; otherwise
+        return outgoing references for the owner.
+    conn : sqlite3.Connection | None, optional
+        Existing database connection to reuse. When omitted, the function
+        opens and closes its own connection.
+
+    Returns
+    -------
+    list[CallableRefRow]
+        Matching callable-reference rows ordered deterministically.
+    """
+    owns_connection = conn is None
+    if conn is None:
+        conn = sqlite3.connect(get_db_path(root))
+
+    direction_column = "target_name" if incoming else "owner_name"
+    module_column = "target_module" if incoming else "owner_module"
+
+    query = f"""
+        SELECT owner_module, owner_name, target_module, target_name, resolved
+        FROM callable_refs
+        WHERE {direction_column} = ?
+    """
+    params: list[str] = [name]
+
+    if module is not None:
+        query += f" AND {module_column} = ?"
+        params.append(module)
+
+    query += """
+        ORDER BY
+            owner_module,
+            owner_name,
+            COALESCE(target_module, ''),
+            COALESCE(target_name, ''),
+            resolved
+    """
+
+    try:
+        rows = conn.execute(query, tuple(params)).fetchall()
+        return [
+            (
+                str(owner_module),
+                str(owner_name),
+                None if target_module is None else str(target_module),
+                None if target_name is None else str(target_name),
+                int(resolved),
+            )
+            for owner_module, owner_name, target_module, target_name, resolved in rows
         ]
     finally:
         if owns_connection:

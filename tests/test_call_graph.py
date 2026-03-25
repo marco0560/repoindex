@@ -10,7 +10,7 @@ import pytest
 
 from repoindex.cli import build_parser, main
 from repoindex.indexer import index_repo
-from repoindex.query.exact import find_call_edges
+from repoindex.query.exact import find_call_edges, find_callable_refs
 from repoindex.storage import get_db_path, init_db
 
 
@@ -61,6 +61,14 @@ def _write_fixture(root: Path) -> None:
         "    helper()\n"
         "    helper(1)\n"
         "    return dynamic(helper)\n"
+        "\n"
+        "def registry():\n"
+        '    """Return callable references without invoking them."""\n'
+        "    return {\n"
+        '        "local": helper,\n'
+        '        "imported": external,\n'
+        '        "method": Demo.helper,\n'
+        "    }\n"
         "\n"
         "def imported_caller():\n"
         '    """Exercise straightforward imported call resolution."""\n'
@@ -136,6 +144,20 @@ def test_call_edges_are_resolved_and_deduplicated(tmp_path: Path) -> None:
         ("pkg.a", "imported_caller", "pkg.b", "imported_helper", 1),
     ]
 
+    assert find_callable_refs(tmp_path, "registry", module="pkg.a") == [
+        ("pkg.a", "registry", "pkg.a", "Demo.helper", 1),
+        ("pkg.a", "registry", "pkg.a", "helper", 1),
+        ("pkg.a", "registry", "pkg.b", "imported_helper", 1),
+    ]
+    assert find_callable_refs(
+        tmp_path,
+        "helper",
+        module="pkg.a",
+        incoming=True,
+    ) == [
+        ("pkg.a", "registry", "pkg.a", "helper", 1),
+    ]
+
 
 def test_calls_cli_prints_incoming_edges(
     tmp_path: Path,
@@ -182,6 +204,51 @@ def test_calls_cli_prints_incoming_edges(
     assert captured.out.strip() == "pkg.a.imported_caller -> pkg.b.imported_helper"
 
 
+def test_refs_cli_prints_incoming_references(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Verify the CLI inspection path for incoming callable references.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts the printed incoming reference line.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "refs",
+            "helper",
+            "--module",
+            "pkg.a",
+            "--incoming",
+        ],
+    )
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "pkg.a.registry => pkg.a.helper"
+
+
 def test_top_level_help_includes_examples_and_calls_command() -> None:
     """
     Verify the top-level help advertises key commands and examples.
@@ -199,6 +266,7 @@ def test_top_level_help_includes_examples_and_calls_command() -> None:
     help_text = parser.format_help()
 
     assert "repoindex calls caller" in help_text
+    assert "repoindex refs _retrieve_script_candidates --incoming" in help_text
     assert "repoindex context-for --prompt" in help_text
     assert "audit-docstrings" in help_text
 

@@ -180,6 +180,63 @@ def _attribute_path(node: ast.AST) -> str | None:
     return None
 
 
+def _reference_record_from_expr(
+    expr: ast.expr,
+    *,
+    kind: str,
+) -> dict[str, str | int] | None:
+    """
+    Build a callable-reference record from a direct expression.
+
+    Parameters
+    ----------
+    expr : ast.expr
+        Expression that may name a callable object.
+    kind : str
+        Stable classifier describing the surrounding expression context.
+
+    Returns
+    -------
+    dict[str, str | int] | None
+        Structured reference record, or ``None`` when the expression does not
+        statically encode a supported callable reference.
+    """
+    lineno = getattr(expr, "lineno", 0)
+    col_offset = getattr(expr, "col_offset", 0)
+
+    if isinstance(expr, ast.Name):
+        return {
+            "kind": "name",
+            "target": expr.id,
+            "lineno": lineno,
+            "col_offset": col_offset,
+            "ref_kind": kind,
+        }
+
+    if isinstance(expr, ast.Attribute):
+        dotted = _attribute_path(expr)
+        if dotted is None or "." not in dotted:
+            return {
+                "kind": "unresolved",
+                "target": "",
+                "lineno": lineno,
+                "col_offset": col_offset,
+                "ref_kind": kind,
+            }
+
+        base, target = dotted.rsplit(".", 1)
+        return {
+            "kind": "attribute",
+            "base": base,
+            "target": target,
+            "lineno": lineno,
+            "col_offset": col_offset,
+            "ref_kind": kind,
+        }
+
+    return None
+
+
 def _extract_call_records(node: ast.AST) -> list[dict[str, str | int]]:
     """
     Collect deterministic call-site records from a subtree.
@@ -262,6 +319,68 @@ def _extract_call_records(node: ast.AST) -> list[dict[str, str | int]]:
     return calls
 
 
+def _extract_callable_refs(node: ast.AST) -> list[dict[str, str | int]]:
+    """
+    Collect deterministic callable-object reference records from a subtree.
+
+    Parameters
+    ----------
+    node : ast.AST
+        AST node whose descendants should be inspected.
+
+    Returns
+    -------
+    list[dict[str, str | int]]
+        Ordered callable-reference records for direct values such as registry
+        entries, assignment values, and return values.
+    """
+    refs: list[dict[str, str | int]] = []
+
+    for child in ast.walk(node):
+        if isinstance(child, ast.Dict):
+            for value in child.values:
+                ref = _reference_record_from_expr(value, kind="mapping_value")
+                if ref is not None:
+                    refs.append(ref)
+            continue
+
+        if isinstance(child, (ast.List, ast.Tuple, ast.Set)):
+            for value in child.elts:
+                ref = _reference_record_from_expr(value, kind="sequence_item")
+                if ref is not None:
+                    refs.append(ref)
+            continue
+
+        if isinstance(child, ast.Assign):
+            ref = _reference_record_from_expr(child.value, kind="assignment_value")
+            if ref is not None:
+                refs.append(ref)
+            continue
+
+        if isinstance(child, ast.AnnAssign) and child.value is not None:
+            ref = _reference_record_from_expr(child.value, kind="assignment_value")
+            if ref is not None:
+                refs.append(ref)
+            continue
+
+        if isinstance(child, ast.Return) and child.value is not None:
+            ref = _reference_record_from_expr(child.value, kind="return_value")
+            if ref is not None:
+                refs.append(ref)
+
+    refs.sort(
+        key=lambda ref: (
+            int(ref.get("lineno", 0)),
+            int(ref.get("col_offset", 0)),
+            str(ref.get("kind", "")),
+            str(ref.get("base", "")),
+            str(ref.get("target", "")),
+            str(ref.get("ref_kind", "")),
+        )
+    )
+    return refs
+
+
 def parse_file(path: Path, root: Path) -> dict[str, Any]:
     """
     Parse a Python file into indexable metadata.
@@ -323,6 +442,7 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                             "returns_value": int(_returns_value(child)),
                             "raises": int(_raises_exception(child)),
                             "calls": _extract_call_records(child),
+                            "callable_refs": _extract_callable_refs(child),
                         }
                     )
 
@@ -344,6 +464,7 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                     "returns_value": int(_returns_value(node)),
                     "raises": int(_raises_exception(node)),
                     "calls": _extract_call_records(node),
+                    "callable_refs": _extract_callable_refs(node),
                 }
             )
 

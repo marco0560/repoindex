@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 DDL = [
     """
@@ -118,6 +118,42 @@ DDL = [
     """
     CREATE INDEX IF NOT EXISTS idx_call_edges_resolved
     ON call_edges(resolved);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS callable_refs (
+        owner_module TEXT NOT NULL,
+        owner_name TEXT NOT NULL,
+        target_module TEXT,
+        target_name TEXT,
+        resolved INTEGER NOT NULL,
+        PRIMARY KEY (
+            owner_module,
+            owner_name,
+            target_module,
+            target_name
+        )
+    );
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_callable_refs_identity
+    ON callable_refs(
+        owner_module,
+        owner_name,
+        COALESCE(target_module, ''),
+        COALESCE(target_name, '')
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_callable_refs_owner
+    ON callable_refs(owner_module, owner_name);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_callable_refs_target
+    ON callable_refs(target_module, target_name);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_callable_refs_resolved
+    ON callable_refs(resolved);
     """,
     """
     CREATE TABLE IF NOT EXISTS embeddings (
