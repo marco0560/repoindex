@@ -1,3 +1,10 @@
+# [0.31.0](https://github.com/marco0560/repoindex/compare/v0.30.0...v0.31.0) (2026-03-25)
+
+
+### Features
+
+* add incremental indexing ([acea3a9](https://github.com/marco0560/repoindex/commit/acea3a9874a1ea6d0134f021fbf8b5ac3d2902e6))
+
 # [0.30.0](https://github.com/marco0560/repoindex/compare/v0.29.1...v0.30.0) (2026-03-25)
 
 
