@@ -1,8 +1,7 @@
-# Dead code removal workflow
+# Dead code removal workflow (generic Python repo)
 
-PROJECT: repoindex
-CURRENT_VERSION: v0.27.x
-TASK: Dead-code triage and removal using the implemented AST call graph
+PROJECT: target repository
+TASK: Dead-code triage and removal using repoindex
 ROLE: Senior Engineer
 ENVIRONMENT: Codex CLI agent
 MODE: PLAN -> CONFIRM -> EXECUTE -> VERIFY (STRICT)
@@ -15,47 +14,53 @@ The current repository filesystem is the only source of truth.
 
 Rules:
 
-- NEVER assume files, symbols, or entry points not present in the repo
+- NEVER assume files, symbols, entry points, or frameworks not present in the
+  target repository
 - NEVER rely on prior conversation memory
-- If any required symbol or path is missing -> STOP and ask
+- If any required symbol, command, or path is missing -> STOP and ask
 
 ---
 
 ## ASSUMPTION
 
-Assume `repoindex` already supports a static AST-derived call graph and exposes
-grounded call-edge inspection through the current CLI and indexed database.
+Assume the target repository is a Python repository and `repoindex` is
+installed in the local `.venv`.
 
-Current grounded CLI surface:
+Assume the available CLI surface includes:
 
+- `repoindex index`
+- `repoindex symbol <name>`
 - `repoindex calls <name>`
 - `repoindex calls <name> --incoming`
-- `repoindex calls <name> --module <module>`
 - `repoindex refs <name>`
 - `repoindex refs <name> --incoming`
-- `repoindex refs <name> --module <module>`
+- `repoindex context-for "<query>"`
 
-Treat that graph as heuristic only.
+Before broad analysis, verify that:
+
+1. `.venv` exists
+2. `repoindex index` succeeds in the target repository
+
+Treat `repoindex` call and reference data as heuristic only.
 
 It is useful for triage, not proof.
 
-The graph is strongest for:
+Typical strengths:
 
 - direct same-module calls
 - straightforward same-repo imported calls
 - `self` / `cls` method calls
+- direct callable-object references such as registry values and assignment
+  values
 
-The graph is weaker for:
+Typical weaknesses:
 
 - dynamic dispatch
-- decorators and registries
+- decorators and registries with dynamic registration
 - reflective lookup
 - plugin wiring
 - unresolved attribute chains
-
-Use `repoindex refs` to inspect callable-object references such as registry
-bindings, assignment values, and returned function objects when `repoindex
-calls` is insufficient.
+- framework-specific magic
 
 ---
 
@@ -64,10 +69,11 @@ calls` is insufficient.
 Use `repoindex` to identify dead-code candidates and remove only code that is
 well-supported as unused by:
 
-- static call-graph evidence
+- static call-edge evidence
+- callable-reference evidence
 - exact symbol checks and `rg` reference checks
 - repository entry-point inspection
-- test coverage and architecture checks
+- tests and architecture checks
 
 The goal is safe dead-code removal, not aggressive deletion.
 
@@ -105,10 +111,12 @@ For each candidate symbol:
 3. Inspect the defining file
 4. Inspect possible entry points:
    - CLI registration
-   - imports from `__init__` or `__main__`
+   - exports from `__init__` or `__main__`
    - tests
    - decorators / registries
    - plugin hooks
+   - framework configuration
+   - dynamic imports or reflective lookup
 
 Determine whether the symbol is:
 
@@ -125,26 +133,27 @@ If ambiguous -> do not remove it.
 You may remove a symbol only if all of the following hold:
 
 1. `rg` confirms no meaningful references outside its own definition
-2. static call-graph inspection shows no inbound callers, or only callers that
+2. static call-edge inspection shows no inbound callers, or only callers that
    are themselves dead candidates
-2a. callable-reference inspection shows no inbound registry / assignment /
-    returned-function references, or only references from symbols that are
-    themselves dead candidates
-3. the symbol is not a public API that should remain exported
-4. the symbol is not wired through CLI, registries, decorators, plugins, or
+3. callable-reference inspection shows no inbound references, or only
+   references from symbols that are themselves dead candidates
+4. the symbol is not a public API that should remain exported
+5. the symbol is not wired through CLI, registries, decorators, plugins, or
    reflective lookup
-5. tests do not rely on it directly or indirectly
-6. Before removal, verify that no indirect dependency exists through:
-
-    - re-export (__init__)
-    - wildcard imports
-    - dynamic import patterns
-
-7. Prefer removing entire symbols over partial edits.
-   Do not partially modify functions to make them "used".
-8. After each removal batch, the repository must remain indexable by repoindex.
+6. tests do not rely on it directly or indirectly
+7. before removal, verify that no indirect dependency exists through:
+   - re-export (`__init__`)
+   - wildcard imports
+   - dynamic import patterns
+   - framework discovery rules
+8. prefer removing entire symbols over partial edits
+9. after each removal batch, the repository must remain indexable by
+   `repoindex`
 
 Absence of inbound call edges alone is NOT sufficient evidence for removal.
+
+Absence of inbound callable references alone is NOT sufficient evidence for
+removal.
 
 If any of these checks fail or remain unclear -> STOP and leave the code in
 place.
@@ -196,8 +205,8 @@ When confirmed:
 - add or update tests only when behavior/invariants change
 - do not mix dead-code removal with refactoring
 
-If a candidate becomes ambiguous during implementation, abort that candidate and
- explain why.
+If a candidate becomes ambiguous during implementation, abort that candidate
+and explain why.
 
 ---
 
@@ -206,7 +215,8 @@ If a candidate becomes ambiguous during implementation, abort that candidate and
 Provide exact commands and expected results for:
 
 - exact symbol checks with `rg`
-- `repoindex` caller/callee inspection
+- `repoindex` call-edge inspection
+- `repoindex` callable-reference inspection
 - repository validation commands
 - tests touching the affected area
 

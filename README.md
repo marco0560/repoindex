@@ -43,6 +43,19 @@ Query exact symbols:
 repoindex symbol build_parser
 ```
 
+Inspect static call edges:
+
+```bash
+repoindex calls context_for
+repoindex calls imported_helper --module pkg.b --incoming
+```
+
+Inspect callable-object references such as registry bindings:
+
+```bash
+repoindex refs _retrieve_script_candidates --module repoindex.query.context --incoming
+```
+
 Generate deterministic context for a natural-language query:
 
 ```bash
@@ -136,6 +149,19 @@ repoindex symbol context_for
 repoindex symbol validate_docstring
 ```
 
+Static call-edge inspection:
+
+```bash
+repoindex calls context_for
+repoindex calls imported_helper --module pkg.b --incoming
+```
+
+Callable-reference inspection:
+
+```bash
+repoindex refs _retrieve_script_candidates --module repoindex.query.context --incoming
+```
+
 The most useful queries are usually:
 
 - behavior-oriented
@@ -182,6 +208,9 @@ Important limits:
 - it does not replace reading the referenced files
 - it does not authorize blind edits based only on retrieved snippets
 - it is only as current as the indexed repository state
+- `repoindex calls` only covers direct static call sites
+- `repoindex refs` should be used for callable-object references such as
+  registry values, assignment values, and returned function objects
 
 Recommended use:
 
