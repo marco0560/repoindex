@@ -8,6 +8,22 @@ dependencies = [
     "jsonschema>=4.0"
 ]
 
+[project.optional-dependencies]
+dev = [
+  "black",
+  "ruff",
+  "pre-commit",
+  "pytest",
+  "pytest-cov",
+  "packaging"
+]
+
+docs = [
+  "mkdocs>=1.6",
+  "mkdocs-material>=9.7",
+  "mkdocstrings[python]>=0.24"
+]
+
 [build-system]
 requires = ["setuptools>=61", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
