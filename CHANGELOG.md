@@ -1,3 +1,11 @@
+## [0.31.1](https://github.com/marco0560/repoindex/compare/v0.31.0...v0.31.1) (2026-03-26)
+
+
+### Bug Fixes
+
+* **build:** introduced development dependencies in pyproject.toml ([ec86e71](https://github.com/marco0560/repoindex/commit/ec86e716e0acf92af0c3ca552937c4aa0f9c9397))
+* normalize windows path handling ([69c5259](https://github.com/marco0560/repoindex/commit/69c5259d148b58b3a90b30f209b1b0cb033a7aee))
+
 # [0.31.0](https://github.com/marco0560/repoindex/compare/v0.30.0...v0.31.0) (2026-03-25)
 
 
