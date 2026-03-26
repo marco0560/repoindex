@@ -1,3 +1,10 @@
+## [0.31.2](https://github.com/marco0560/repoindex/compare/v0.31.1...v0.31.2) (2026-03-26)
+
+
+### Bug Fixes
+
+* **parser:** preserve chained attribute call sites ([bb9383a](https://github.com/marco0560/repoindex/commit/bb9383aed1a1a756ad74a890a1a99253ab888944))
+
 ## [0.31.1](https://github.com/marco0560/repoindex/compare/v0.31.0...v0.31.1) (2026-03-26)
 
 
