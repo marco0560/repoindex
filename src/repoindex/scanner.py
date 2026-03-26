@@ -65,7 +65,7 @@ def _match_gitignore(path: Path, root: Path, patterns: list[str]) -> bool:
     bool
         ``True`` when the path matches at least one pattern.
     """
-    rel = str(path.relative_to(root))
+    rel = path.relative_to(root).as_posix()
 
     for pat in patterns:
         if pat.endswith("/"):

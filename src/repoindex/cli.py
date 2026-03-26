@@ -294,7 +294,7 @@ def _run_index(root: Path, *, full: bool, explain: bool) -> int:
         for decision in report.decisions:
             rel_path = Path(decision.path)
             try:
-                rel_label = str(rel_path.relative_to(root))
+                rel_label = rel_path.relative_to(root).as_posix()
             except ValueError:
                 rel_label = decision.path
             print(f"{decision.action}: {rel_label} ({decision.reason})")

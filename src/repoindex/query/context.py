@@ -628,11 +628,13 @@ def _path_bias(file_path: str) -> int:
     The bias prefers source files over scripts and tests without suppressing
     those results entirely.
     """
-    if file_path.startswith("src/"):
+    parts = Path(file_path).parts
+
+    if "src" in parts:
         return 2
-    if file_path.startswith("scripts/"):
+    if "scripts" in parts:
         return -2
-    if file_path.startswith("tests/"):
+    if "tests" in parts:
         return -1
     return 0
 
@@ -1745,7 +1747,8 @@ def _is_test_file(path: str) -> bool:
     bool
         ``True`` when the path looks like a pytest-style test module.
     """
-    return "/tests/" in path or Path(path).name.startswith("test_")
+    path_obj = Path(path)
+    return "tests" in path_obj.parts or path_obj.name.startswith("test_")
 
 
 def _dedupe_and_cap_references(
