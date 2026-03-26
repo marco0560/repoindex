@@ -161,6 +161,64 @@ def test_call_edges_are_resolved_and_deduplicated(tmp_path: Path) -> None:
     ]
 
 
+def test_chained_attribute_calls_keep_distinct_semantics(tmp_path: Path) -> None:
+    """
+    Preserve distinct raw call records for chained dynamic attribute calls.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts that chained calls produce distinct raw records and
+        index without storage collisions.
+    """
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "chain.py").write_text(
+        '"""Fixture covering chained dynamic attribute calls."""\n'
+        "\n"
+        "def chained(text, line, value):\n"
+        '    """Exercise chained dynamic attribute calls."""\n'
+        "    text.replace(\n"
+        '        "\\\\", r"\\\\"\n'
+        '    ).replace("{", r"\\\\{").replace("}", r"\\\\}")\n'
+        '    line[len("file:") :].strip().strip(\'"\')\n'
+        "    str(value).strip().lower()\n",
+        encoding="utf-8",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    conn = sqlite3.connect(get_db_path(tmp_path))
+    try:
+        rows = conn.execute("""
+            SELECT kind, base, target, lineno, col_offset
+            FROM call_records
+            WHERE owner_module = 'pkg.chain' AND owner_name = 'chained'
+            ORDER BY lineno, col_offset, kind, base, target
+            """).fetchall()
+    finally:
+        conn.close()
+
+    assert rows == [
+        ("attribute", "text", "replace", 5, 9),
+        ("attribute", "", "replace", 7, 6),
+        ("attribute", "", "replace", 7, 27),
+        ("name", "", "len", 8, 9),
+        ("attribute", "", "strip", 8, 25),
+        ("attribute", "", "strip", 8, 33),
+        ("name", "", "str", 9, 4),
+        ("attribute", "", "strip", 9, 15),
+        ("attribute", "", "lower", 9, 23),
+    ]
+
+
 def test_calls_cli_prints_incoming_edges(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

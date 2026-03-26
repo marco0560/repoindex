@@ -180,6 +180,61 @@ def _attribute_path(node: ast.AST) -> str | None:
     return None
 
 
+def _call_site_position(
+    func: ast.expr,
+    call: ast.Call,
+) -> tuple[int, int]:
+    """
+    Compute a stable source position for a call target.
+
+    Parameters
+    ----------
+    func : ast.expr
+        Callee expression stored on the ``ast.Call`` node.
+    call : ast.Call
+        Call node that owns the callee expression.
+
+    Returns
+    -------
+    tuple[int, int]
+        ``(lineno, col_offset)`` for the most specific statically known call
+        target token.
+
+    Notes
+    -----
+    Python 3.14 can report the same ``ast.Call.col_offset`` for each step in a
+    chained expression such as ``str(value).strip().lower()``. Attribute calls
+    therefore anchor their position on the attribute token instead of the outer
+    call expression.
+
+    Examples
+    --------
+    ``str(value).strip().lower()`` yields distinct positions for ``strip`` and
+    ``lower`` even though the nested ``ast.Call`` nodes share the same start
+    offset.
+    """
+    if isinstance(func, ast.Name):
+        return (
+            getattr(func, "lineno", getattr(call, "lineno", 0)),
+            getattr(func, "col_offset", getattr(call, "col_offset", 0)),
+        )
+
+    if isinstance(func, ast.Attribute):
+        lineno = getattr(func, "end_lineno", getattr(call, "lineno", 0))
+        end_col_offset = getattr(func, "end_col_offset", None)
+        if isinstance(end_col_offset, int):
+            return (lineno, end_col_offset - len(func.attr))
+        return (
+            getattr(func, "lineno", getattr(call, "lineno", 0)),
+            getattr(func, "col_offset", getattr(call, "col_offset", 0)),
+        )
+
+    return (
+        getattr(call, "lineno", 0),
+        getattr(call, "col_offset", 0),
+    )
+
+
 def _reference_record_from_expr(
     expr: ast.expr,
     *,
@@ -251,6 +306,13 @@ def _extract_call_records(node: ast.AST) -> list[dict[str, str | int]]:
     list[dict[str, str | int]]
         Ordered call-site records with the static information available for
         later resolution.
+
+    Notes
+    -----
+    Dynamic attribute receivers keep the known attribute name in the record.
+    For example, ``factory().build()`` is stored as an attribute call targeting
+    ``build`` with an empty base rather than collapsing to a fully unresolved
+    placeholder.
     """
     calls: list[dict[str, str | int]] = []
 
@@ -259,8 +321,7 @@ def _extract_call_records(node: ast.AST) -> list[dict[str, str | int]]:
             continue
 
         func = child.func
-        lineno = getattr(child, "lineno", 0)
-        col_offset = getattr(child, "col_offset", 0)
+        lineno, col_offset = _call_site_position(func, child)
 
         if isinstance(func, ast.Name):
             calls.append(
@@ -275,11 +336,24 @@ def _extract_call_records(node: ast.AST) -> list[dict[str, str | int]]:
 
         if isinstance(func, ast.Attribute):
             dotted = _attribute_path(func)
-            if dotted is None or "." not in dotted:
+            if dotted is None:
                 calls.append(
                     {
-                        "kind": "unresolved",
-                        "target": "",
+                        "kind": "attribute",
+                        "base": "",
+                        "target": func.attr,
+                        "lineno": lineno,
+                        "col_offset": col_offset,
+                    }
+                )
+                continue
+
+            if "." not in dotted:
+                calls.append(
+                    {
+                        "kind": "attribute",
+                        "base": "",
+                        "target": func.attr,
                         "lineno": lineno,
                         "col_offset": col_offset,
                     }
