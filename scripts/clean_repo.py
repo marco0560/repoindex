@@ -34,9 +34,9 @@ def git_ignored_paths() -> Iterable[Path]:
     ----------
     None
 
-    Returns
-    -------
-    collections.abc.Iterable[pathlib.Path]
+    Yields
+    ------
+    pathlib.Path
         Ignored repository-relative paths.
 
     Raises

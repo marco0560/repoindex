@@ -52,8 +52,13 @@ Audit indexed docstrings:
 repoindex audit-docstrings
 ```
 
-For Python generator functions, `audit-docstrings` expects a NumPy-style
-`Yields` section instead of `Returns`.
+For Python callables, `audit-docstrings` applies Python-aware result-section
+rules:
+
+- regular functions should document `Returns` and not `Yields`
+- generator and async-generator functions should document `Yields`
+- generators may also document `Returns` only when they explicitly use
+  `return <value>` to produce a terminal `StopIteration.value`
 
 Query exact symbols:
 

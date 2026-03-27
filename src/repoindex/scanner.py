@@ -114,9 +114,9 @@ def _iter_python_files(root: Path) -> Iterator[Path]:
     root : pathlib.Path
         Repository root to scan recursively.
 
-    Returns
-    -------
-    collections.abc.Iterator[pathlib.Path]
+    Yields
+    ------
+    pathlib.Path
         Python source files that survive exclusion filtering.
     """
     patterns = _load_gitignore(root)

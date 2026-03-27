@@ -1816,6 +1816,9 @@ def _expand_and_collect_references(
         Repository root used for file discovery and path normalization.
     top_matches : list[repoindex.types.SymbolRow]
         Primary ranked symbols for the query.
+    conn : sqlite3.Connection
+        Open database connection reused for graph lookups and symbol
+        expansion.
 
     Returns
     -------

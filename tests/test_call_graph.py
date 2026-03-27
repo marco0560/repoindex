@@ -388,7 +388,8 @@ def test_context_for_help_shows_incompatibility_and_examples(
 
     Parameters
     ----------
-    None
+    capsys : pytest.CaptureFixture[str]
+        Pytest capture fixture used to inspect emitted help text.
 
     Returns
     -------

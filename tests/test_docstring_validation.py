@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from repoindex.docstring import find_missing_sections, validate_docstring
+from repoindex.docstring import (
+    find_missing_sections,
+    find_unexpected_sections,
+    validate_docstring,
+)
 
 
 def test_find_missing_sections_respects_callable_metadata() -> None:
@@ -66,6 +70,88 @@ def test_find_missing_sections_requires_yields_for_generators() -> None:
     )
 
     assert missing == ["Yields"]
+
+
+def test_find_unexpected_sections_rejects_yields_for_regular_functions() -> None:
+    """
+    Ensure regular functions do not accept a ``Yields`` section.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts that ``Yields`` is rejected for non-generators.
+    """
+    doc = """
+    Summary.
+
+    Parameters
+    ----------
+    x : int
+        Input value.
+
+    Returns
+    -------
+    int
+        Result value.
+
+    Yields
+    ------
+    int
+        Unexpected iteration value.
+    """
+
+    unexpected = find_unexpected_sections(
+        doc,
+        allow_returns_section=True,
+        allow_yields_section=False,
+    )
+
+    assert unexpected == ["Yields"]
+
+
+def test_find_unexpected_sections_rejects_returns_for_pure_generators() -> None:
+    """
+    Ensure pure generators do not accept a ``Returns`` section.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts that ``Returns`` is rejected without a terminal value.
+    """
+    doc = """
+    Summary.
+
+    Parameters
+    ----------
+    x : int
+        Input value.
+
+    Yields
+    ------
+    int
+        Produced iteration value.
+
+    Returns
+    -------
+    int
+        Unexpected terminal value.
+    """
+
+    unexpected = find_unexpected_sections(
+        doc,
+        allow_returns_section=False,
+        allow_yields_section=True,
+    )
+
+    assert unexpected == ["Returns"]
 
 
 def test_validate_docstring_reports_missing_parameter_entry() -> None:
@@ -209,6 +295,136 @@ def test_validate_docstring_requires_yields_for_generators() -> None:
 
     assert ("missing_section", "Missing section: Yields") in issues
     assert ("missing_section", "Missing section: Returns") not in issues
+
+
+def test_validate_docstring_rejects_yields_for_regular_functions() -> None:
+    """
+    Ensure regular functions reject a ``Yields`` section.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts semantic rejection of ``Yields`` for non-generators.
+    """
+    doc = """
+    Summary.
+
+    Parameters
+    ----------
+    x : int
+        Input value.
+
+    Returns
+    -------
+    int
+        Result value.
+
+    Yields
+    ------
+    int
+        Unexpected iteration value.
+    """
+
+    issues = validate_docstring(
+        doc,
+        is_public=1,
+        parameters=["x"],
+        require_callable_sections=True,
+        returns_value=True,
+    )
+
+    assert ("unexpected_section", "Unexpected section: Yields") in issues
+
+
+def test_validate_docstring_rejects_returns_for_pure_generators() -> None:
+    """
+    Ensure pure generators reject a ``Returns`` section.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts semantic rejection of ``Returns`` for pure generators.
+    """
+    doc = """
+    Summary.
+
+    Parameters
+    ----------
+    x : int
+        Input value.
+
+    Yields
+    ------
+    int
+        Produced iteration value.
+
+    Returns
+    -------
+    int
+        Unexpected terminal value.
+    """
+
+    issues = validate_docstring(
+        doc,
+        is_public=1,
+        parameters=["x"],
+        require_callable_sections=True,
+        yields_value=True,
+    )
+
+    assert ("unexpected_section", "Unexpected section: Returns") in issues
+
+
+def test_validate_docstring_allows_returns_for_generators_with_terminal_value() -> None:
+    """
+    Ensure generators with terminal values may document both sections.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts that terminal generator returns may be documented.
+    """
+    doc = """
+    Summary.
+
+    Parameters
+    ----------
+    x : int
+        Input value.
+
+    Yields
+    ------
+    int
+        Produced iteration value.
+
+    Returns
+    -------
+    int
+        Terminal value exposed via ``StopIteration.value``.
+    """
+
+    issues = validate_docstring(
+        doc,
+        is_public=1,
+        parameters=["x"],
+        require_callable_sections=True,
+        yields_value=True,
+        returns_value=True,
+    )
+
+    assert ("unexpected_section", "Unexpected section: Returns") not in issues
 
 
 def test_validate_docstring_skips_private_missing_docstrings() -> None:

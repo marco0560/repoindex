@@ -225,6 +225,43 @@ def find_missing_sections(
     return missing
 
 
+def find_unexpected_sections(
+    doc: str,
+    *,
+    allow_returns_section: bool = False,
+    allow_yields_section: bool = False,
+) -> List[str]:
+    """
+    List NumPy sections that are present but semantically unsupported.
+
+    Parameters
+    ----------
+    doc : str
+        Docstring text to inspect.
+    allow_returns_section : bool, optional
+        Whether the ``Returns`` section is semantically valid for the audited
+        callable.
+    allow_yields_section : bool, optional
+        Whether the ``Yields`` section is semantically valid for the audited
+        callable.
+
+    Returns
+    -------
+    list[str]
+        Unexpected section names present in the docstring.
+    """
+    sections = _section_map(doc)
+    unexpected: List[str] = []
+
+    if "Returns" in sections and not allow_returns_section:
+        unexpected.append("Returns")
+
+    if "Yields" in sections and not allow_yields_section:
+        unexpected.append("Yields")
+
+    return unexpected
+
+
 def has_raises_section(doc: str) -> bool:
     """
     Check whether a docstring declares a ``Raises`` section.
@@ -249,6 +286,7 @@ def validate_docstring(
     parameters: list[str] | None = None,
     require_callable_sections: bool = False,
     yields_value: bool = False,
+    returns_value: bool = False,
     raises_exception: bool = False,
 ) -> list[tuple[str, str]]:
     """
@@ -270,6 +308,9 @@ def validate_docstring(
     yields_value : bool, optional
         Whether the callable is a generator that yields values and should use
         a ``Yields`` section instead of ``Returns``.
+    returns_value : bool, optional
+        Whether the callable explicitly returns a non-``None`` value. For
+        generators this corresponds to a terminal ``StopIteration.value``.
     raises_exception : bool, optional
         Whether the callable explicitly raises an exception.
 
@@ -306,6 +347,13 @@ def validate_docstring(
         raises_exception=raises_exception,
     ):
         issues.append(("missing_section", f"Missing section: {section}"))
+
+    for section in find_unexpected_sections(
+        doc,
+        allow_returns_section=(not yields_value) or returns_value,
+        allow_yields_section=yields_value,
+    ):
+        issues.append(("unexpected_section", f"Unexpected section: {section}"))
 
     documented_parameters = _parameter_section_names(doc)
     for parameter in parameters or []:

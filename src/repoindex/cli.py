@@ -269,6 +269,10 @@ def _run_index(root: Path, *, full: bool, explain: bool) -> int:
     ----------
     root : pathlib.Path
         Repository root whose Python files should be indexed.
+    full : bool
+        Whether to force a full rebuild instead of incremental reuse.
+    explain : bool
+        Whether to print per-file indexing decisions after the summary.
 
     Returns
     -------
