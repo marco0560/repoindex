@@ -1,3 +1,10 @@
+# [0.32.0](https://github.com/marco0560/repoindex/compare/v0.31.4...v0.32.0) (2026-03-27)
+
+
+### Features
+
+* **prefix:** add repo-root scoped query filtering ([3a64334](https://github.com/marco0560/repoindex/commit/3a64334212b190e7d6d1f67376a67b6592b77251))
+
 ## [0.31.4](https://github.com/marco0560/repoindex/compare/v0.31.3...v0.31.4) (2026-03-27)
 
 
