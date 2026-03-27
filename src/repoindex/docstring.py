@@ -9,6 +9,7 @@ from typing import List
 REQUIRED_SECTIONS = [
     "Parameters",
     "Returns",
+    "Yields",
 ]
 
 OPTIONAL_SECTIONS = [
@@ -174,7 +175,7 @@ def is_numpy_style(doc: str) -> bool:
         ``True`` when the docstring contains at least one core NumPy section.
     """
     sections = _section_map(doc)
-    return "Parameters" in sections or "Returns" in sections
+    return "Parameters" in sections or "Returns" in sections or "Yields" in sections
 
 
 def find_missing_sections(
@@ -182,6 +183,7 @@ def find_missing_sections(
     *,
     require_parameters_section: bool = False,
     require_returns_section: bool = False,
+    require_yields_section: bool = False,
     raises_exception: bool = False,
 ) -> List[str]:
     """
@@ -195,6 +197,8 @@ def find_missing_sections(
         Whether the ``Parameters`` section is required.
     require_returns_section : bool, optional
         Whether the ``Returns`` section is required.
+    require_yields_section : bool, optional
+        Whether the ``Yields`` section is required.
     raises_exception : bool, optional
         Whether the callable explicitly raises an exception.
 
@@ -211,6 +215,9 @@ def find_missing_sections(
 
     if require_returns_section and "Returns" not in sections:
         missing.append("Returns")
+
+    if require_yields_section and "Yields" not in sections:
+        missing.append("Yields")
 
     if raises_exception and "Raises" not in sections:
         missing.append("Raises")
@@ -241,6 +248,7 @@ def validate_docstring(
     *,
     parameters: list[str] | None = None,
     require_callable_sections: bool = False,
+    yields_value: bool = False,
     raises_exception: bool = False,
 ) -> list[tuple[str, str]]:
     """
@@ -257,8 +265,11 @@ def validate_docstring(
         Logical parameter names declared by the callable.
     require_callable_sections : bool, optional
         Whether the audited object is a callable that must include the
-        project-required ``Parameters`` and ``Returns`` sections even when
-        they document ``None``.
+        project-required ``Parameters`` section and either ``Returns`` or
+        ``Yields`` even when they document ``None``.
+    yields_value : bool, optional
+        Whether the callable is a generator that yields values and should use
+        a ``Yields`` section instead of ``Returns``.
     raises_exception : bool, optional
         Whether the callable explicitly raises an exception.
 
@@ -290,7 +301,8 @@ def validate_docstring(
     for section in find_missing_sections(
         doc,
         require_parameters_section=require_callable_sections,
-        require_returns_section=require_callable_sections,
+        require_returns_section=require_callable_sections and not yields_value,
+        require_yields_section=require_callable_sections and yields_value,
         raises_exception=raises_exception,
     ):
         issues.append(("missing_section", f"Missing section: {section}"))

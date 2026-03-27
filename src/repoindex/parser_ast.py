@@ -108,6 +108,25 @@ def _returns_value(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     )
 
 
+def _yields_value(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """
+    Check whether a function yields values.
+
+    Parameters
+    ----------
+    node : ast.FunctionDef | ast.AsyncFunctionDef
+        Function-like AST node to inspect.
+
+    Returns
+    -------
+    bool
+        ``True`` when the function contains ``yield`` or ``yield from``.
+    """
+    return any(
+        isinstance(child, (ast.Yield, ast.YieldFrom)) for child in ast.walk(node)
+    )
+
+
 def _raises_exception(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """
     Check whether a function explicitly raises an exception.
@@ -514,6 +533,7 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                             "is_public": _is_public(child.name),
                             "parameters": _parameter_names(child),
                             "returns_value": int(_returns_value(child)),
+                            "yields_value": int(_yields_value(child)),
                             "raises": int(_raises_exception(child)),
                             "calls": _extract_call_records(child),
                             "callable_refs": _extract_callable_refs(child),
@@ -536,6 +556,7 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                     "is_public": _is_public(node.name),
                     "parameters": _parameter_names(node),
                     "returns_value": int(_returns_value(node)),
+                    "yields_value": int(_yields_value(node)),
                     "raises": int(_raises_exception(node)),
                     "calls": _extract_call_records(node),
                     "callable_refs": _extract_callable_refs(node),

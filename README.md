@@ -52,6 +52,9 @@ Audit indexed docstrings:
 repoindex audit-docstrings
 ```
 
+For Python generator functions, `audit-docstrings` expects a NumPy-style
+`Yields` section instead of `Returns`.
+
 Query exact symbols:
 
 ```bash

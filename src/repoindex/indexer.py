@@ -1026,6 +1026,7 @@ def _store_parsed_file(
                 cast(int, method["is_public"]),
                 parameters=cast(list[str], method["parameters"]),
                 require_callable_sections=True,
+                yields_value=bool(method["yields_value"]),
                 raises_exception=bool(method["raises"]),
             ):
                 conn.execute(
@@ -1112,6 +1113,7 @@ def _store_parsed_file(
             cast(int, fn["is_public"]),
             parameters=cast(list[str], fn["parameters"]),
             require_callable_sections=True,
+            yields_value=bool(fn["yields_value"]),
             raises_exception=bool(fn["raises"]),
         ):
             conn.execute(

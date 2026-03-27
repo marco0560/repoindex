@@ -37,6 +37,37 @@ def test_find_missing_sections_respects_callable_metadata() -> None:
     assert missing == ["Returns", "Raises"]
 
 
+def test_find_missing_sections_requires_yields_for_generators() -> None:
+    """
+    Ensure generator metadata requires a ``Yields`` section instead of ``Returns``.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts generator-specific section enforcement.
+    """
+    doc = """
+    Summary.
+
+    Parameters
+    ----------
+    x : int
+        Input value.
+    """
+
+    missing = find_missing_sections(
+        doc,
+        require_parameters_section=True,
+        require_yields_section=True,
+    )
+
+    assert missing == ["Yields"]
+
+
 def test_validate_docstring_reports_missing_parameter_entry() -> None:
     """
     Ensure all declared parameters must appear in the Parameters section.
@@ -144,6 +175,40 @@ def test_validate_docstring_requires_raises_only_when_explicit_raise_exists() ->
     )
 
     assert ("missing_section", "Missing section: Raises") in issues
+
+
+def test_validate_docstring_requires_yields_for_generators() -> None:
+    """
+    Ensure generators require ``Yields`` instead of ``Returns``.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts generator-specific result-section enforcement.
+    """
+    doc = """
+    Summary.
+
+    Parameters
+    ----------
+    x : int
+        Input value.
+    """
+
+    issues = validate_docstring(
+        doc,
+        is_public=1,
+        parameters=["x"],
+        require_callable_sections=True,
+        yields_value=True,
+    )
+
+    assert ("missing_section", "Missing section: Yields") in issues
+    assert ("missing_section", "Missing section: Returns") not in issues
 
 
 def test_validate_docstring_skips_private_missing_docstrings() -> None:
