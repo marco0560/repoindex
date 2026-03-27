@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 DDL = [
     """
@@ -66,11 +66,13 @@ DDL = [
     """
     CREATE TABLE IF NOT EXISTS docstring_issues (
         id INTEGER PRIMARY KEY,
+        file_id INTEGER NOT NULL,
         function_id INTEGER,
         class_id INTEGER,
         module_id INTEGER,
         issue_type TEXT NOT NULL,
-        message TEXT NOT NULL
+        message TEXT NOT NULL,
+        FOREIGN KEY(file_id) REFERENCES files(id)
     );
     """,
     """
@@ -79,28 +81,34 @@ DDL = [
         name TEXT NOT NULL,
         type TEXT NOT NULL,
         module_name TEXT NOT NULL,
-        file_path TEXT NOT NULL,
+        file_id INTEGER NOT NULL,
         lineno INTEGER NOT NULL
+        ,
+        FOREIGN KEY(file_id) REFERENCES files(id)
     );
     """,
     """
     CREATE TABLE IF NOT EXISTS call_edges (
+        caller_file_id INTEGER NOT NULL,
         caller_module TEXT NOT NULL,
         caller_name TEXT NOT NULL,
         callee_module TEXT,
         callee_name TEXT,
         resolved INTEGER NOT NULL,
         PRIMARY KEY (
+            caller_file_id,
             caller_module,
             caller_name,
             callee_module,
             callee_name
-        )
+        ),
+        FOREIGN KEY(caller_file_id) REFERENCES files(id)
     );
     """,
     """
     CREATE UNIQUE INDEX IF NOT EXISTS idx_call_edges_identity
     ON call_edges(
+        caller_file_id,
         caller_module,
         caller_name,
         COALESCE(callee_module, ''),
@@ -109,7 +117,7 @@ DDL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_call_edges_caller
-    ON call_edges(caller_module, caller_name);
+    ON call_edges(caller_file_id, caller_module, caller_name);
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_call_edges_callee
@@ -121,22 +129,26 @@ DDL = [
     """,
     """
     CREATE TABLE IF NOT EXISTS callable_refs (
+        owner_file_id INTEGER NOT NULL,
         owner_module TEXT NOT NULL,
         owner_name TEXT NOT NULL,
         target_module TEXT,
         target_name TEXT,
         resolved INTEGER NOT NULL,
         PRIMARY KEY (
+            owner_file_id,
             owner_module,
             owner_name,
             target_module,
             target_name
-        )
+        ),
+        FOREIGN KEY(owner_file_id) REFERENCES files(id)
     );
     """,
     """
     CREATE UNIQUE INDEX IF NOT EXISTS idx_callable_refs_identity
     ON callable_refs(
+        owner_file_id,
         owner_module,
         owner_name,
         COALESCE(target_module, ''),
@@ -145,7 +157,7 @@ DDL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_callable_refs_owner
-    ON callable_refs(owner_module, owner_name);
+    ON callable_refs(owner_file_id, owner_module, owner_name);
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_callable_refs_target
@@ -157,7 +169,7 @@ DDL = [
     """,
     """
     CREATE TABLE IF NOT EXISTS call_records (
-        file_path TEXT NOT NULL,
+        file_id INTEGER NOT NULL,
         owner_module TEXT NOT NULL,
         owner_name TEXT NOT NULL,
         kind TEXT NOT NULL,
@@ -166,7 +178,7 @@ DDL = [
         lineno INTEGER NOT NULL,
         col_offset INTEGER NOT NULL,
         PRIMARY KEY (
-            file_path,
+            file_id,
             owner_module,
             owner_name,
             kind,
@@ -174,12 +186,13 @@ DDL = [
             target,
             lineno,
             col_offset
-        )
+        ),
+        FOREIGN KEY(file_id) REFERENCES files(id)
     );
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_call_records_file
-    ON call_records(file_path);
+    ON call_records(file_id);
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_call_records_owner
@@ -187,7 +200,7 @@ DDL = [
     """,
     """
     CREATE TABLE IF NOT EXISTS callable_ref_records (
-        file_path TEXT NOT NULL,
+        file_id INTEGER NOT NULL,
         owner_module TEXT NOT NULL,
         owner_name TEXT NOT NULL,
         kind TEXT NOT NULL,
@@ -197,7 +210,7 @@ DDL = [
         lineno INTEGER NOT NULL,
         col_offset INTEGER NOT NULL,
         PRIMARY KEY (
-            file_path,
+            file_id,
             owner_module,
             owner_name,
             kind,
@@ -206,12 +219,13 @@ DDL = [
             target,
             lineno,
             col_offset
-        )
+        ),
+        FOREIGN KEY(file_id) REFERENCES files(id)
     );
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_callable_ref_records_file
-    ON callable_ref_records(file_path);
+    ON callable_ref_records(file_id);
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_callable_ref_records_owner
@@ -243,5 +257,11 @@ DDL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_symbol_name ON symbol_index(name);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_symbol_file ON symbol_index(file_id);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_docstring_issues_file ON docstring_issues(file_id);
     """,
 ]

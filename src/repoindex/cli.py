@@ -11,6 +11,7 @@ from pathlib import Path
 
 from repoindex._version import version as __version__
 from repoindex.indexer import index_repo
+from repoindex.prefix import normalize_prefix
 from repoindex.query.context import context_for
 from repoindex.query.exact import (
     docstring_issues,
@@ -107,10 +108,18 @@ def build_parser() -> argparse.ArgumentParser:
         "symbol",
         help="Find symbol by exact name",
         description="Resolve one exact symbol name from the indexed repository.",
-        epilog=("Example:\n" "  repoindex symbol build_parser"),
+        epilog=(
+            "Examples:\n"
+            "  repoindex symbol build_parser\n"
+            "  repoindex symbol build_parser --prefix src/repoindex"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     symbol_parser.add_argument("name", help="Exact symbol name to look up")
+    symbol_parser.add_argument(
+        "--prefix",
+        help="Restrict results to files under this repo-root-relative path prefix",
+    )
 
     embeddings_parser = sub.add_parser(
         "embeddings",
@@ -122,7 +131,9 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             '  repoindex embeddings "schema migration rules"\n'
-            '  repoindex embeddings "numpy docstring sections" --limit 3'
+            '  repoindex embeddings "numpy docstring sections" --limit 3\n'
+            '  repoindex embeddings "numpy docstring sections" --prefix '
+            "src/repoindex/query"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -136,6 +147,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=5,
         help="Maximum number of embedding matches to print",
     )
+    embeddings_parser.add_argument(
+        "--prefix",
+        help="Restrict matches to files under this repo-root-relative path prefix",
+    )
 
     calls_parser = sub.add_parser(
         "calls",
@@ -147,6 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  repoindex calls caller\n"
+            "  repoindex calls caller --prefix src/repoindex/query\n"
             "  repoindex calls imported_helper --module pkg.b --incoming"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -164,6 +180,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show callers of the named callee instead of outgoing edges",
     )
+    calls_parser.add_argument(
+        "--prefix",
+        help="Restrict caller files to this repo-root-relative path prefix",
+    )
 
     refs_parser = sub.add_parser(
         "refs",
@@ -176,6 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  repoindex refs helper\n"
+            "  repoindex refs helper --prefix src/repoindex/query\n"
             "  repoindex refs _retrieve_script_candidates --incoming\n"
             "  repoindex refs imported_helper --module pkg.b --incoming"
         ),
@@ -194,11 +215,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show owners of the named target instead of outgoing references",
     )
+    refs_parser.add_argument(
+        "--prefix",
+        help="Restrict owner files to this repo-root-relative path prefix",
+    )
 
-    sub.add_parser(
+    audit_parser = sub.add_parser(
         "audit-docstrings",
         help="List docstring issues",
         description="Print indexed docstring issues in deterministic order.",
+        epilog=(
+            "Examples:\n"
+            "  repoindex audit-docstrings\n"
+            "  repoindex audit-docstrings --prefix src/repoindex/query"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    audit_parser.add_argument(
+        "--prefix",
+        help="Restrict issues to files under this repo-root-relative path prefix",
     )
 
     context_parser = sub.add_parser(
@@ -212,6 +247,8 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             '  repoindex context-for "find schema migration logic"\n'
+            '  repoindex context-for "find schema migration logic" --prefix '
+            "src/repoindex/query\n"
             '  repoindex context-for "schema migration rules"\n'
             '  repoindex context-for --json "static call graph"\n'
             '  repoindex context-for --prompt "add a test for imported calls"\n'
@@ -238,6 +275,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--explain",
         action="store_true",
         help="Show retrieval routing and merge diagnostics",
+    )
+    context_parser.add_argument(
+        "--prefix",
+        help="Restrict retrieval to files under this repo-root-relative path prefix",
     )
 
     return parser
@@ -305,7 +346,7 @@ def _run_index(root: Path, *, full: bool, explain: bool) -> int:
     return 0
 
 
-def _run_symbol(root: Path, name: str) -> int:
+def _run_symbol(root: Path, name: str, *, prefix: str | None = None) -> int:
     """
     Resolve and print exact symbol matches.
 
@@ -315,13 +356,15 @@ def _run_symbol(root: Path, name: str) -> int:
         Repository root containing the index.
     name : str
         Exact symbol name to look up.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict symbol files.
 
     Returns
     -------
     int
         Zero when at least one symbol is found, otherwise one.
     """
-    rows = find_symbol(root, name)
+    rows = find_symbol(root, name, prefix=prefix)
 
     if not rows:
         print(f"No symbol found: {name}")
@@ -336,7 +379,7 @@ def _run_symbol(root: Path, name: str) -> int:
     return 0
 
 
-def _run_audit_docstrings(root: Path) -> int:
+def _run_audit_docstrings(root: Path, *, prefix: str | None = None) -> int:
     """
     Print indexed docstring issues.
 
@@ -344,13 +387,15 @@ def _run_audit_docstrings(root: Path) -> int:
     ----------
     root : pathlib.Path
         Repository root containing the index.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict issue ownership.
 
     Returns
     -------
     int
         Process exit status for the audit command.
     """
-    rows = docstring_issues(root)
+    rows = docstring_issues(root, prefix=prefix)
 
     if not rows:
         print("No docstring issues found")
@@ -361,7 +406,13 @@ def _run_audit_docstrings(root: Path) -> int:
     return 0
 
 
-def _run_embeddings(root: Path, query: str, *, limit: int) -> int:
+def _run_embeddings(
+    root: Path,
+    query: str,
+    *,
+    limit: int,
+    prefix: str | None = None,
+) -> int:
     """
     Print embedding-backend metadata and top embedding matches.
 
@@ -373,6 +424,8 @@ def _run_embeddings(root: Path, query: str, *, limit: int) -> int:
         Natural-language query to score.
     limit : int
         Maximum number of matches to print.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict matched files.
 
     Returns
     -------
@@ -406,6 +459,7 @@ def _run_embeddings(root: Path, query: str, *, limit: int) -> int:
         query,
         limit=limit,
         min_score=0.0,
+        prefix=prefix,
     )
     if not matches:
         print("No embedding matches found.")
@@ -423,6 +477,7 @@ def _run_calls(
     *,
     module: str | None,
     incoming: bool,
+    prefix: str | None = None,
 ) -> int:
     """
     Print indexed static call edges for one logical name.
@@ -438,6 +493,8 @@ def _run_calls(
     incoming : bool
         Whether to show incoming edges for a callee instead of outgoing edges
         for a caller.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict caller files.
 
     Returns
     -------
@@ -449,6 +506,7 @@ def _run_calls(
         name,
         module=module,
         incoming=incoming,
+        prefix=prefix,
     )
 
     if not rows:
@@ -478,6 +536,7 @@ def _run_refs(
     *,
     module: str | None,
     incoming: bool,
+    prefix: str | None = None,
 ) -> int:
     """
     Print indexed callable-object references for one logical name.
@@ -493,6 +552,8 @@ def _run_refs(
     incoming : bool
         Whether to show incoming references for a target instead of outgoing
         references for an owner.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict owner files.
 
     Returns
     -------
@@ -504,6 +565,7 @@ def _run_refs(
         name,
         module=module,
         incoming=incoming,
+        prefix=prefix,
     )
 
     if not rows:
@@ -596,6 +658,37 @@ def _write_index_metadata(root: Path, data: dict[str, str]) -> None:
     """
     path = get_repoindex_dir(root) / "metadata.json"
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _resolve_prefix_argument(
+    parser: argparse.ArgumentParser,
+    root: Path,
+    prefix: str | None,
+) -> str | None:
+    """
+    Normalize one CLI prefix argument or terminate with a parser error.
+
+    Parameters
+    ----------
+    parser : argparse.ArgumentParser
+        Active top-level parser used for error reporting.
+    root : pathlib.Path
+        Repository root that anchors the prefix.
+    prefix : str | None
+        User-supplied repo-root-relative prefix.
+
+    Returns
+    -------
+    str | None
+        Absolute normalized prefix path, or ``None`` when unset.
+    """
+    if prefix is not None and Path(prefix).is_absolute():
+        parser.error("Prefix must be relative to the repository root.")
+    try:
+        return normalize_prefix(root, prefix)
+    except ValueError as exc:
+        parser.error(str(exc))
+        return None
 
 
 def _ensure_index(root: Path) -> None:
@@ -700,7 +793,7 @@ def _ensure_index(root: Path) -> None:
                 return
 
             # --- STALENESS CHECK: file count mismatch ---
-            cursor = conn.execute("SELECT COUNT(DISTINCT file_path) FROM symbol_index")
+            cursor = conn.execute("SELECT COUNT(DISTINCT file_id) FROM symbol_index")
             indexed_files = cursor.fetchone()[0]
 
             current_files = len(list(iter_project_files(root)))
@@ -744,6 +837,7 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     root = Path.cwd()
+    prefix = _resolve_prefix_argument(parser, root, getattr(args, "prefix", None))
 
     if args.command in (None, "help"):
         return _run_help(parser)
@@ -751,10 +845,10 @@ def main() -> int:
         return _run_index(root, full=args.full, explain=args.explain)
     if args.command == "symbol":
         _ensure_index(root)
-        return _run_symbol(root, args.name)
+        return _run_symbol(root, args.name, prefix=prefix)
     if args.command == "embeddings":
         _ensure_index(root)
-        return _run_embeddings(root, args.query, limit=args.limit)
+        return _run_embeddings(root, args.query, limit=args.limit, prefix=prefix)
     if args.command == "calls":
         _ensure_index(root)
         return _run_calls(
@@ -762,6 +856,7 @@ def main() -> int:
             args.name,
             module=args.module,
             incoming=args.incoming,
+            prefix=prefix,
         )
     if args.command == "refs":
         _ensure_index(root)
@@ -770,16 +865,18 @@ def main() -> int:
             args.name,
             module=args.module,
             incoming=args.incoming,
+            prefix=prefix,
         )
     if args.command == "audit-docstrings":
         _ensure_index(root)
-        return _run_audit_docstrings(root)
+        return _run_audit_docstrings(root, prefix=prefix)
     elif args.command == "context-for":
         _ensure_index(root)
 
         result = context_for(
             root,
             args.query,
+            prefix=prefix,
             as_json=args.json,
             as_prompt=args.prompt,
             explain=args.explain,

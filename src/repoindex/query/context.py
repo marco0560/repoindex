@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable, cast
 
 from repoindex._version import version as __version__
+from repoindex.prefix import normalize_prefix, path_has_prefix, prefix_clause
 from repoindex.prompts.default import build_prompt
 from repoindex.query.classifier import QueryIntent, classify_query
 from repoindex.query.exact import (
@@ -381,7 +382,9 @@ def _extract_code_context(
         Signature, truncated docstring, and code snippet for the symbol.
     """
     symbol_type, _module_name, name, file_path, lineno = symbol
-    path = root / file_path
+    path = Path(file_path)
+    if not path.is_absolute():
+        path = root / path
 
     if path in cache:
         source, source_lines, tree = cache[path]
@@ -474,7 +477,12 @@ def _extract_code_context(
     return (None, None, _snippet_from_lines(source_lines, lineno))
 
 
-def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
+def _symbols_in_module(
+    root: Path,
+    module: str,
+    *,
+    prefix: str | None = None,
+) -> list[SymbolRow]:
     """
     Retrieve indexed symbols belonging to a module.
 
@@ -484,6 +492,8 @@ def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
         Repository root containing the index database.
     module : str
         Dotted module name to expand.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict symbol files.
 
     Returns
     -------
@@ -492,14 +502,19 @@ def _symbols_in_module(root: Path, module: str) -> list[SymbolRow]:
     """
     conn = sqlite3.connect(get_db_path(root))
     try:
+        normalized_prefix = normalize_prefix(root, prefix)
+        prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
         rows = conn.execute(
-            """
-            SELECT type, module_name, name, file_path, lineno
-            FROM symbol_index
-            WHERE module_name = ?
+            f"""
+            SELECT s.type, s.module_name, s.name, f.path, s.lineno
+            FROM symbol_index s
+            JOIN files f
+              ON s.file_id = f.id
+            WHERE s.module_name = ?
+            {prefix_sql}
             LIMIT 20
             """,
-            (module,),
+            (module, *prefix_params),
         ).fetchall()
     finally:
         conn.close()
@@ -554,11 +569,7 @@ def _find_references(
             except (OSError, UnicodeDecodeError):
                 continue
             file_cache[path] = lines
-        try:
-            rel = path.relative_to(root)
-            file_path = str(rel)
-        except ValueError:
-            file_path = str(path)
+        file_path = str(path)
 
         for lineno, line in enumerate(lines, start=1):
             stripped = line.strip()
@@ -803,6 +814,7 @@ def _retrieve_symbol_candidates(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
+    prefix: str | None,
 ) -> ChannelResults:
     """
     Retrieve and score symbol-channel candidates for a query.
@@ -817,6 +829,8 @@ def _retrieve_symbol_candidates(
         Active database connection.
     intent : QueryIntent
         Structured classification of the query.
+    prefix : str | None
+        Absolute normalized prefix used to restrict candidate files.
 
     Returns
     -------
@@ -828,25 +842,35 @@ def _retrieve_symbol_candidates(
     This phase applies deterministic scoring only. It does not perform
     final deduplication or pruning.
     """
-    matches = find_symbol(root, query, conn=conn)
+    matches = find_symbol(root, query, prefix=prefix, conn=conn)
     query_tokens = sorted(_tokenize(query))
 
     candidate_map: dict[SymbolRow, None] = {match: None for match in matches}
 
     search_terms = sorted({token for token in query_tokens if len(token) >= 4})
+    prefix_sql, prefix_params = prefix_clause(prefix, "f.path")
 
     for term in search_terms:
         rows = conn.execute(
-            """
-            SELECT type, module_name, name, file_path, lineno
-            FROM symbol_index
-            WHERE name = ?
-               OR name LIKE ?
-               OR module_name LIKE ?
-            ORDER BY type, module_name, file_path, lineno
+            f"""
+            SELECT s.type, s.module_name, s.name, f.path, s.lineno
+            FROM symbol_index s
+            JOIN files f
+              ON s.file_id = f.id
+            WHERE (s.name = ?
+               OR s.name LIKE ?
+               OR s.module_name LIKE ?)
+            {prefix_sql}
+            ORDER BY s.type, s.module_name, f.path, s.lineno
             LIMIT ?
             """,
-            (term, f"%{term}%", f"%{term}%", SYMBOL_TERM_MATCH_LIMIT),
+            (
+                term,
+                f"%{term}%",
+                f"%{term}%",
+                *prefix_params,
+                SYMBOL_TERM_MATCH_LIMIT,
+            ),
         ).fetchall()
 
         for row in rows:
@@ -866,13 +890,17 @@ def _retrieve_symbol_candidates(
         )
     else:
         rows = conn.execute(
-            """
-            SELECT type, module_name, name, file_path, lineno
-            FROM symbol_index
-            ORDER BY module_name, name, file_path, lineno
+            f"""
+            SELECT s.type, s.module_name, s.name, f.path, s.lineno
+            FROM symbol_index s
+            JOIN files f
+              ON s.file_id = f.id
+            WHERE 1 = 1
+            {prefix_sql}
+            ORDER BY s.module_name, s.name, f.path, s.lineno
             LIMIT ?
             """,
-            (SYMBOL_FALLBACK_SCAN_LIMIT,),
+            (*prefix_params, SYMBOL_FALLBACK_SCAN_LIMIT),
         ).fetchall()
         all_candidates = [
             (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
@@ -979,6 +1007,7 @@ def _retrieve_test_candidates(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
+    prefix: str | None,
 ) -> ChannelResults:
     """
     Retrieve candidates for the test channel.
@@ -993,12 +1022,15 @@ def _retrieve_test_candidates(
         Open database connection.
     intent : repoindex.query.classifier.QueryIntent
         Structured query classification.
+    prefix : str | None
+        Absolute normalized prefix used to restrict candidate files.
 
     Returns
     -------
     repoindex.types.ChannelResults
         Empty channel results. Test-specific retrieval is not implemented.
     """
+    del root, query, conn, intent, prefix
     return []
 
 
@@ -1007,6 +1039,7 @@ def _retrieve_script_candidates(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
+    prefix: str | None,
 ) -> ChannelResults:
     """
     Retrieve candidates for the script channel.
@@ -1021,12 +1054,15 @@ def _retrieve_script_candidates(
         Open database connection.
     intent : repoindex.query.classifier.QueryIntent
         Structured query classification.
+    prefix : str | None
+        Absolute normalized prefix used to restrict candidate files.
 
     Returns
     -------
     repoindex.types.ChannelResults
         Empty channel results. Script-specific retrieval is not implemented.
     """
+    del root, query, conn, intent, prefix
     return []
 
 
@@ -1160,6 +1196,7 @@ def _build_channel_bundles(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
+    prefix: str | None,
 ) -> list[ChannelBundle]:
     """
     Execute the enabled retrieval channels for a query.
@@ -1174,6 +1211,8 @@ def _build_channel_bundles(
         Open database connection.
     intent : repoindex.query.classifier.QueryIntent
         Structured query classification.
+    prefix : str | None
+        Absolute normalized prefix used to restrict candidate files.
 
     Returns
     -------
@@ -1182,7 +1221,7 @@ def _build_channel_bundles(
     """
     channel_fns = _get_channel_functions(intent)
 
-    return [(name, fn(root, query, conn, intent)) for name, fn in channel_fns]
+    return [(name, fn(root, query, conn, intent, prefix)) for name, fn in channel_fns]
 
 
 def _get_channel_functions(
@@ -1191,7 +1230,7 @@ def _get_channel_functions(
     tuple[
         ChannelName,
         Callable[
-            [Path, str, sqlite3.Connection, QueryIntent],
+            [Path, str, sqlite3.Connection, QueryIntent, str | None],
             ChannelResults,
         ],
     ]
@@ -1215,6 +1254,7 @@ def _get_channel_functions(
                     str,
                     sqlite3.Connection,
                     repoindex.query.classifier.QueryIntent,
+                    str | None,
                 ],
                 repoindex.types.ChannelResults,
             ],
@@ -1237,6 +1277,7 @@ def _retrieve_semantic_candidates(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
+    prefix: str | None,
 ) -> ChannelResults:
     """
     Deterministic semantic channel with independent candidate retrieval.
@@ -1253,6 +1294,8 @@ def _retrieve_semantic_candidates(
     intent : repoindex.query.classifier.QueryIntent
         Structured query classification. The current implementation does not
         use it directly.
+    prefix : str | None
+        Absolute normalized prefix used to restrict candidate files.
 
     Returns
     -------
@@ -1272,14 +1315,19 @@ def _retrieve_semantic_candidates(
     if not tokens:
         return []
 
+    prefix_sql, prefix_params = prefix_clause(prefix, "f.path")
     rows = conn.execute(
-        """
-        SELECT type, module_name, name, file_path, lineno
-        FROM symbol_index
-        ORDER BY module_name, name, file_path, lineno
+        f"""
+        SELECT s.type, s.module_name, s.name, f.path, s.lineno
+        FROM symbol_index s
+        JOIN files f
+          ON s.file_id = f.id
+        WHERE 1 = 1
+        {prefix_sql}
+        ORDER BY s.module_name, s.name, f.path, s.lineno
         LIMIT ?
         """,
-        (SEMANTIC_SCAN_LIMIT,),
+        (*prefix_params, SEMANTIC_SCAN_LIMIT),
     ).fetchall()
 
     results: ChannelResults = []
@@ -1345,6 +1393,7 @@ def _retrieve_embedding_candidates(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
+    prefix: str | None,
 ) -> ChannelResults:
     """
     Retrieve ranked candidates from the stored embedding channel.
@@ -1360,6 +1409,8 @@ def _retrieve_embedding_candidates(
     intent : repoindex.query.classifier.QueryIntent
         Structured query classification. The current implementation does not
         use it directly.
+    prefix : str | None
+        Absolute normalized prefix used to restrict candidate files.
 
     Returns
     -------
@@ -1372,6 +1423,7 @@ def _retrieve_embedding_candidates(
         query,
         limit=EMBEDDING_RESULT_LIMIT,
         min_score=EMBEDDING_MIN_SCORE,
+        prefix=prefix,
         conn=conn,
     )
 
@@ -1379,7 +1431,7 @@ def _retrieve_embedding_candidates(
 def _channel_registry() -> dict[
     ChannelName,
     Callable[
-        [Path, str, sqlite3.Connection, QueryIntent],
+        [Path, str, sqlite3.Connection, QueryIntent, str | None],
         ChannelResults,
     ],
 ]:
@@ -1400,6 +1452,7 @@ def _channel_registry() -> dict[
                 str,
                 sqlite3.Connection,
                 repoindex.query.classifier.QueryIntent,
+                str | None,
             ],
             repoindex.types.ChannelResults,
         ],
@@ -1421,7 +1474,7 @@ def _filter_channels_by_intent(
         tuple[
             ChannelName,
             Callable[
-                [Path, str, sqlite3.Connection, QueryIntent],
+                [Path, str, sqlite3.Connection, QueryIntent, str | None],
                 ChannelResults,
             ],
         ]
@@ -1430,7 +1483,7 @@ def _filter_channels_by_intent(
     tuple[
         ChannelName,
         Callable[
-            [Path, str, sqlite3.Connection, QueryIntent],
+            [Path, str, sqlite3.Connection, QueryIntent, str | None],
             ChannelResults,
         ],
     ]
@@ -1596,6 +1649,8 @@ def _issue_driven_symbols(
     root: Path,
     query: str,
     conn: sqlite3.Connection,
+    *,
+    prefix: str | None = None,
 ) -> list[SymbolRow]:
     """
     Rank symbols that are implicated by matching docstring issues.
@@ -1608,13 +1663,16 @@ def _issue_driven_symbols(
         User query string.
     conn : sqlite3.Connection
         Open database connection.
+    prefix : str | None, optional
+        Absolute normalized prefix used to restrict issue ownership and symbol
+        files.
 
     Returns
     -------
     list[repoindex.types.SymbolRow]
         Small set of issue-related symbols ordered by heuristic score.
     """
-    issue_rows = docstring_issues(root, conn=conn)
+    issue_rows = docstring_issues(root, prefix=prefix, conn=conn)
     query_tokens = _tokenize(query)
     scored: dict[SymbolRow, int] = {}
 
@@ -1648,7 +1706,7 @@ def _issue_driven_symbols(
         if symbol_name in GENERIC_NAMES:
             continue
 
-        for symbol in find_symbol(root, symbol_name, conn=conn):
+        for symbol in find_symbol(root, symbol_name, prefix=prefix, conn=conn):
             module_name = symbol[1]
 
             # Reject obvious noise
@@ -1684,6 +1742,8 @@ def _collect_doc_issues_and_related(
     query: str,
     top_matches: list[SymbolRow],
     conn: sqlite3.Connection,
+    *,
+    prefix: str | None = None,
 ) -> tuple[list[tuple[str, str]], list[SymbolRow]]:
     """
     Collect related docstring issues and derive additional related symbols.
@@ -1698,13 +1758,16 @@ def _collect_doc_issues_and_related(
         Primary ranked symbols for the query.
     conn : sqlite3.Connection
         Open database connection.
+    prefix : str | None, optional
+        Absolute normalized prefix used to restrict issue ownership and symbol
+        files.
 
     Returns
     -------
     tuple[list[tuple[str, str]], list[repoindex.types.SymbolRow]]
         Related docstring issue rows and derived related symbols.
     """
-    issue_rows = docstring_issues(root, conn=conn)
+    issue_rows = docstring_issues(root, prefix=prefix, conn=conn)
 
     issue_rows_filtered: list[tuple[str, str]] = []
 
@@ -1728,7 +1791,9 @@ def _collect_doc_issues_and_related(
         parts = message.split(":")[0].split()
         if len(parts) >= 2:
             symbol_name = parts[-1]
-            related_symbols.extend(find_symbol(root, symbol_name, conn=conn))
+            related_symbols.extend(
+                find_symbol(root, symbol_name, prefix=prefix, conn=conn)
+            )
 
     return doc_issues, related_symbols
 
@@ -1806,6 +1871,8 @@ def _expand_and_collect_references(
     root: Path,
     top_matches: list[SymbolRow],
     conn: sqlite3.Connection,
+    *,
+    prefix: str | None = None,
 ) -> tuple[list[SymbolRow], list[ReferenceRow]]:
     """
     Perform module expansion and collect cross-module references.
@@ -1819,6 +1886,9 @@ def _expand_and_collect_references(
     conn : sqlite3.Connection
         Open database connection reused for graph lookups and symbol
         expansion.
+    prefix : str | None, optional
+        Absolute normalized prefix used to restrict owner files, expanded
+        symbols, and scanned references.
 
     Returns
     -------
@@ -1860,6 +1930,7 @@ def _expand_and_collect_references(
             root,
             logical_name,
             module=module_name,
+            prefix=prefix,
             conn=conn,
         )
         incoming_edges = find_call_edges(
@@ -1867,12 +1938,14 @@ def _expand_and_collect_references(
             logical_name,
             module=module_name,
             incoming=True,
+            prefix=prefix,
             conn=conn,
         )
         outgoing_refs = find_callable_refs(
             root,
             logical_name,
             module=module_name,
+            prefix=prefix,
             conn=conn,
         )
         incoming_refs = find_callable_refs(
@@ -1880,6 +1953,7 @@ def _expand_and_collect_references(
             logical_name,
             module=module_name,
             incoming=True,
+            prefix=prefix,
             conn=conn,
         )
 
@@ -1896,6 +1970,7 @@ def _expand_and_collect_references(
                 root,
                 callee_module,
                 callee_name,
+                prefix=prefix,
                 conn=conn,
             ):
                 add_related_symbol(related)
@@ -1913,6 +1988,7 @@ def _expand_and_collect_references(
                 root,
                 caller_module,
                 caller_name,
+                prefix=prefix,
                 conn=conn,
             ):
                 add_related_symbol(related)
@@ -1930,6 +2006,7 @@ def _expand_and_collect_references(
                 root,
                 target_module,
                 target_name,
+                prefix=prefix,
                 conn=conn,
             ):
                 add_related_symbol(related)
@@ -1947,6 +2024,7 @@ def _expand_and_collect_references(
                 root,
                 owner_module,
                 owner_name,
+                prefix=prefix,
                 conn=conn,
             ):
                 add_related_symbol(related)
@@ -1960,7 +2038,7 @@ def _expand_and_collect_references(
 
         seen_modules.add(module_name)
 
-        for symbol in _symbols_in_module(root, module_name):
+        for symbol in _symbols_in_module(root, module_name, prefix=prefix):
             name = symbol[2]
 
             # --- FILTER: skip internal helpers ---
@@ -1989,7 +2067,9 @@ def _expand_and_collect_references(
     expanded = filtered[:20]
 
     symbol_names = {name for _, _, name, _, _ in top_matches if name}
-    project_files = list(iter_project_files(root))
+    project_files = [
+        path for path in iter_project_files(root) if path_has_prefix(path, prefix)
+    ]
 
     # --- PHASE 5: cross-module references ---
     top_files = {file_path for _, _, _, file_path, _ in top_matches}
@@ -2666,6 +2746,7 @@ def context_for(
     root: Path,
     query: str,
     *,
+    prefix: str | None = None,
     as_json: bool = False,
     as_prompt: bool = False,
     explain: bool = False,
@@ -2679,6 +2760,8 @@ def context_for(
         Root directory of the indexed repository.
     query : str
         Query string used to retrieve relevant symbols and context.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict files and references.
     as_json : bool, optional
         Whether to emit the JSON representation.
     as_prompt : bool, optional
@@ -2707,11 +2790,12 @@ def context_for(
     sqlite3.Error
         If the repository index cannot be opened or queried.
     """
+    normalized_prefix = normalize_prefix(root, prefix)
     conn = sqlite3.connect(get_db_path(root))
     intent: QueryIntent = classify_query(query)
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
-    bundles = _build_channel_bundles(root, query, conn, intent)
+    bundles = _build_channel_bundles(root, query, conn, intent, normalized_prefix)
 
     if explain:
         top_matches, provenance = _merge_ranked_channel_bundles_explain(bundles)
@@ -2743,7 +2827,12 @@ def context_for(
 
     # --- PHASE 2B: issue-driven candidate enrichment ---
     if _is_issue_query(query):
-        for symbol in _issue_driven_symbols(root, query, conn):
+        for symbol in _issue_driven_symbols(
+            root,
+            query,
+            conn,
+            prefix=normalized_prefix,
+        ):
             if symbol not in top_matches:
                 top_matches.append(symbol)
 
@@ -2803,6 +2892,7 @@ def context_for(
         query,
         top_matches,
         conn,
+        prefix=normalized_prefix,
     )
 
     doc_issues = doc_issues[:MAX_ISSUES]
@@ -2818,6 +2908,7 @@ def context_for(
         root,
         top_matches,
         conn,
+        prefix=normalized_prefix,
     )
 
     # --- PHASE 6: rendering ---

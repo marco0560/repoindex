@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from repoindex.prefix import normalize_prefix, prefix_clause
 from repoindex.semantic.embeddings import (
     deserialize_vector,
     embed_text,
@@ -39,6 +40,7 @@ def embedding_candidates(
     *,
     limit: int,
     min_score: float,
+    prefix: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> ChannelResults:
     """
@@ -54,6 +56,8 @@ def embedding_candidates(
         Maximum number of ranked results to return.
     min_score : float
         Minimum similarity threshold for emitted results.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict matched symbol files.
     conn : sqlite3.Connection | None, optional
         Existing database connection to reuse. When omitted, the function
         opens and closes its own connection.
@@ -65,6 +69,7 @@ def embedding_candidates(
         symbol identity.
     """
     owns_connection = conn is None
+    normalized_prefix = normalize_prefix(root, prefix)
     if conn is None:
         conn = sqlite3.connect(get_db_path(root))
 
@@ -74,13 +79,14 @@ def embedding_candidates(
         return []
 
     try:
+        prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 s.type,
                 s.module_name,
                 s.name,
-                s.file_path,
+                f.path,
                 s.lineno,
                 e.version,
                 e.dim,
@@ -89,10 +95,13 @@ def embedding_candidates(
             JOIN symbol_index s
               ON e.object_type = 'symbol'
              AND e.object_id = s.id
+            JOIN files f
+              ON s.file_id = f.id
             WHERE e.backend = ? AND e.version = ?
-            ORDER BY s.module_name, s.name, s.file_path, s.lineno, s.type
+            {prefix_sql}
+            ORDER BY s.module_name, s.name, f.path, s.lineno, s.type
             """,
-            (backend.name, backend.version),
+            (backend.name, backend.version, *prefix_params),
         ).fetchall()
 
         results: ChannelResults = []

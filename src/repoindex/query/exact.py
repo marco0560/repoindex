@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from repoindex.prefix import normalize_prefix, prefix_clause
 from repoindex.storage import get_db_path
 from repoindex.types import SymbolRow
 
@@ -14,7 +15,11 @@ EmbeddingInventoryRow = tuple[str, str, int, int]
 
 
 def find_symbol(
-    root: Path, name: str, conn: sqlite3.Connection | None = None
+    root: Path,
+    name: str,
+    *,
+    prefix: str | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> list[SymbolRow]:
     """
     Find exact symbol-name matches in the index.
@@ -25,6 +30,8 @@ def find_symbol(
         Repository root containing the index database.
     name : str
         Exact symbol name to search for.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict symbol files.
     conn : sqlite3.Connection | None, optional
         Existing database connection to reuse. When omitted, the function
         opens and closes its own connection.
@@ -35,18 +42,23 @@ def find_symbol(
         Matching symbol rows ordered deterministically.
     """
     owns_connection = conn is None
+    normalized_prefix = normalize_prefix(root, prefix)
 
     if conn is None:
         conn = sqlite3.connect(get_db_path(root))
     try:
+        prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
         rows = conn.execute(
-            """
-            SELECT type, module_name, name, file_path, lineno
-            FROM symbol_index
-            WHERE name = ?
-            ORDER BY type, module_name, file_path, lineno
+            f"""
+            SELECT s.type, s.module_name, s.name, f.path, s.lineno
+            FROM symbol_index s
+            JOIN files f
+              ON s.file_id = f.id
+            WHERE s.name = ?
+            {prefix_sql}
+            ORDER BY s.type, s.module_name, f.path, s.lineno
             """,
-            (name,),
+            (name, *prefix_params),
         ).fetchall()
 
         return [
@@ -58,7 +70,10 @@ def find_symbol(
 
 
 def docstring_issues(
-    root: Path, conn: sqlite3.Connection | None = None
+    root: Path,
+    *,
+    prefix: str | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> list[tuple[str, str]]:
     """
     Return indexed docstring validation issues.
@@ -67,6 +82,8 @@ def docstring_issues(
     ----------
     root : pathlib.Path
         Repository root containing the index database.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict issue ownership.
     conn : sqlite3.Connection | None, optional
         Existing database connection to reuse. When omitted, the function
         opens and closes its own connection.
@@ -77,14 +94,23 @@ def docstring_issues(
         Issue rows as ``(issue_type, message)`` tuples.
     """
     owns_connection = conn is None
+    normalized_prefix = normalize_prefix(root, prefix)
     if conn is None:
         conn = sqlite3.connect(get_db_path(root))
     try:
-        rows = conn.execute("""
-            SELECT issue_type, message
-            FROM docstring_issues
-            ORDER BY issue_type, message
-            """).fetchall()
+        prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
+        rows = conn.execute(
+            f"""
+            SELECT di.issue_type, di.message
+            FROM docstring_issues di
+            JOIN files f
+              ON di.file_id = f.id
+            WHERE 1 = 1
+            {prefix_sql}
+            ORDER BY di.issue_type, di.message
+            """,
+            tuple(prefix_params),
+        ).fetchall()
 
         return [(str(t), str(m)) for t, m in rows]
     finally:
@@ -98,6 +124,7 @@ def find_call_edges(
     *,
     module: str | None = None,
     incoming: bool = False,
+    prefix: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> list[CallEdgeRow]:
     """
@@ -114,6 +141,8 @@ def find_call_edges(
     incoming : bool, optional
         When ``True``, return incoming edges for the callee; otherwise return
         outgoing edges for the caller.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict caller files.
     conn : sqlite3.Connection | None, optional
         Existing database connection to reuse. When omitted, the function
         opens and closes its own connection.
@@ -124,18 +153,28 @@ def find_call_edges(
         Matching call-edge rows ordered deterministically.
     """
     owns_connection = conn is None
+    normalized_prefix = normalize_prefix(root, prefix)
     if conn is None:
         conn = sqlite3.connect(get_db_path(root))
 
     direction_column = "callee_name" if incoming else "caller_name"
     module_column = "callee_module" if incoming else "caller_module"
+    prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
 
     query = f"""
-        SELECT caller_module, caller_name, callee_module, callee_name, resolved
-        FROM call_edges
+        SELECT
+            ce.caller_module,
+            ce.caller_name,
+            ce.callee_module,
+            ce.callee_name,
+            ce.resolved
+        FROM call_edges ce
+        JOIN files f
+          ON ce.caller_file_id = f.id
         WHERE {direction_column} = ?
+        {prefix_sql}
     """
-    params: list[str] = [name]
+    params: list[str] = [name, *prefix_params]
 
     if module is not None:
         query += f" AND {module_column} = ?"
@@ -173,6 +212,7 @@ def find_callable_refs(
     *,
     module: str | None = None,
     incoming: bool = False,
+    prefix: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> list[CallableRefRow]:
     """
@@ -189,6 +229,8 @@ def find_callable_refs(
     incoming : bool, optional
         When ``True``, return incoming references for the target; otherwise
         return outgoing references for the owner.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict owner files.
     conn : sqlite3.Connection | None, optional
         Existing database connection to reuse. When omitted, the function
         opens and closes its own connection.
@@ -199,18 +241,28 @@ def find_callable_refs(
         Matching callable-reference rows ordered deterministically.
     """
     owns_connection = conn is None
+    normalized_prefix = normalize_prefix(root, prefix)
     if conn is None:
         conn = sqlite3.connect(get_db_path(root))
 
     direction_column = "target_name" if incoming else "owner_name"
     module_column = "target_module" if incoming else "owner_module"
+    prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
 
     query = f"""
-        SELECT owner_module, owner_name, target_module, target_name, resolved
-        FROM callable_refs
+        SELECT
+            cr.owner_module,
+            cr.owner_name,
+            cr.target_module,
+            cr.target_name,
+            cr.resolved
+        FROM callable_refs cr
+        JOIN files f
+          ON cr.owner_file_id = f.id
         WHERE {direction_column} = ?
+        {prefix_sql}
     """
-    params: list[str] = [name]
+    params: list[str] = [name, *prefix_params]
 
     if module is not None:
         query += f" AND {module_column} = ?"
@@ -247,6 +299,7 @@ def find_logical_symbols(
     module_name: str,
     logical_name: str,
     *,
+    prefix: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> list[SymbolRow]:
     """
@@ -260,6 +313,8 @@ def find_logical_symbols(
         Dotted module that owns the logical symbol.
     logical_name : str
         Logical symbol identity such as ``helper`` or ``Class.method``.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict symbol files.
     conn : sqlite3.Connection | None, optional
         Existing database connection to reuse. When omitted, the function
         opens and closes its own connection.
@@ -270,45 +325,54 @@ def find_logical_symbols(
         Matching indexed symbol rows ordered deterministically.
     """
     owns_connection = conn is None
+    normalized_prefix = normalize_prefix(root, prefix)
     if conn is None:
         conn = sqlite3.connect(get_db_path(root))
 
     try:
         if "." in logical_name:
             class_name, method_name = logical_name.rsplit(".", 1)
+            prefix_sql, prefix_params = prefix_clause(normalized_prefix, "fp.path")
             rows = conn.execute(
-                """
+                f"""
                 SELECT
                     s.type,
                     s.module_name,
                     s.name,
-                    s.file_path,
+                    fp.path,
                     s.lineno
-                FROM functions f
+                FROM functions fn
                 JOIN classes c
-                  ON f.class_id = c.id
+                  ON fn.class_id = c.id
                 JOIN modules m
-                  ON f.module_id = m.id
+                  ON fn.module_id = m.id
                 JOIN symbol_index s
                   ON s.type = 'method'
                  AND s.module_name = m.name
-                 AND s.name = f.name
-                 AND s.lineno = f.lineno
-                WHERE m.name = ? AND c.name = ? AND f.name = ?
-                ORDER BY s.file_path, s.lineno, s.name
+                 AND s.name = fn.name
+                 AND s.lineno = fn.lineno
+                JOIN files fp
+                  ON s.file_id = fp.id
+                WHERE m.name = ? AND c.name = ? AND fn.name = ?
+                {prefix_sql}
+                ORDER BY fp.path, s.lineno, s.name
                 """,
-                (module_name, class_name, method_name),
+                (module_name, class_name, method_name, *prefix_params),
             ).fetchall()
         else:
+            prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
             rows = conn.execute(
-                """
-                SELECT type, module_name, name, file_path, lineno
-                FROM symbol_index
-                WHERE module_name = ?
-                  AND (name = ? OR (type = 'module' AND module_name = ?))
-                ORDER BY type, module_name, file_path, lineno
+                f"""
+                SELECT s.type, s.module_name, s.name, f.path, s.lineno
+                FROM symbol_index s
+                JOIN files f
+                  ON s.file_id = f.id
+                WHERE s.module_name = ?
+                  AND (s.name = ? OR (s.type = 'module' AND s.module_name = ?))
+                {prefix_sql}
+                ORDER BY s.type, s.module_name, f.path, s.lineno
                 """,
-                (module_name, logical_name, logical_name),
+                (module_name, logical_name, logical_name, *prefix_params),
             ).fetchall()
 
         return [

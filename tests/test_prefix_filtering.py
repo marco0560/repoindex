@@ -1,0 +1,322 @@
+"""Tests for repo-root-relative prefix filtering across query surfaces."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+from repoindex.cli import main
+from repoindex.indexer import index_repo
+from repoindex.prefix import normalize_prefix
+from repoindex.query.context import context_for
+from repoindex.query.exact import (
+    docstring_issues,
+    find_call_edges,
+    find_callable_refs,
+    find_symbol,
+)
+from repoindex.semantic.search import embedding_candidates
+from repoindex.storage import init_db
+
+
+def _write_prefix_fixture(root: Path) -> None:
+    """
+    Write a multi-domain fixture used to test prefix filtering.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Temporary repository root to populate.
+
+    Returns
+    -------
+    None
+        The fixture files are created under ``root``.
+    """
+    pkg = root / "pkg"
+    other = root / "other"
+    pkg.mkdir()
+    other.mkdir()
+
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (other / "__init__.py").write_text("", encoding="utf-8")
+
+    (pkg / "b.py").write_text(
+        '"""Prefix fixture helper module."""\n'
+        "\n"
+        "def imported_helper():\n"
+        '    """Schema migration helper for pkg callers."""\n'
+        "    return 1\n"
+        "\n"
+        "def shared_symbol():\n"
+        '    """Schema migration symbol owned by pkg.b."""\n'
+        "    return 2\n"
+        "\n"
+        "def undocumented_pkg():\n"
+        "    return 3\n",
+        encoding="utf-8",
+    )
+
+    (pkg / "a.py").write_text(
+        '"""Prefix fixture caller module."""\n'
+        "\n"
+        "from pkg.b import imported_helper as external\n"
+        "\n"
+        "def caller():\n"
+        '    """Call the pkg helper."""\n'
+        "    external()\n"
+        "    return 1\n"
+        "\n"
+        "def registry():\n"
+        '    """Return a callable reference without invoking it."""\n'
+        "    return external\n",
+        encoding="utf-8",
+    )
+
+    (other / "c.py").write_text(
+        '"""Independent fixture module outside pkg."""\n'
+        "\n"
+        "def shared_symbol():\n"
+        '    """Schema migration symbol owned by other.c."""\n'
+        "    return 4\n"
+        "\n"
+        "def undocumented_other():\n"
+        "    return 5\n",
+        encoding="utf-8",
+    )
+
+
+def test_find_symbol_respects_prefix(tmp_path: Path) -> None:
+    """
+    Restrict exact symbol lookup to files under one prefix.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts exact symbol filtering by defining-file prefix.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    pkg_rows = find_symbol(tmp_path, "shared_symbol", prefix="pkg")
+    other_rows = find_symbol(tmp_path, "shared_symbol", prefix="other")
+
+    assert len(pkg_rows) == 1
+    assert pkg_rows[0][1] == "pkg.b"
+    assert len(other_rows) == 1
+    assert other_rows[0][1] == "other.c"
+
+
+def test_embedding_candidates_respect_prefix(tmp_path: Path) -> None:
+    """
+    Restrict embedding matches to files under the selected prefix.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts embedding-channel filtering by file prefix.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    matches = embedding_candidates(
+        tmp_path,
+        "schema migration helper",
+        limit=5,
+        min_score=0.0,
+        prefix="pkg/b.py",
+    )
+
+    assert matches
+    assert all(symbol[3] == str(tmp_path / "pkg" / "b.py") for _, symbol in matches)
+
+
+def test_call_and_ref_queries_filter_on_owner_prefix(tmp_path: Path) -> None:
+    """
+    Apply prefix filtering to caller-owned edges and references.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts owner-side prefix semantics for calls and refs.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    assert find_call_edges(
+        tmp_path,
+        "imported_helper",
+        module="pkg.b",
+        incoming=True,
+        prefix="pkg/a.py",
+    ) == [("pkg.a", "caller", "pkg.b", "imported_helper", 1)]
+    assert (
+        find_call_edges(
+            tmp_path,
+            "imported_helper",
+            module="pkg.b",
+            incoming=True,
+            prefix="pkg/b.py",
+        )
+        == []
+    )
+
+    assert find_callable_refs(
+        tmp_path,
+        "imported_helper",
+        module="pkg.b",
+        incoming=True,
+        prefix="pkg/a.py",
+    ) == [("pkg.a", "registry", "pkg.b", "imported_helper", 1)]
+    assert (
+        find_callable_refs(
+            tmp_path,
+            "imported_helper",
+            module="pkg.b",
+            incoming=True,
+            prefix="pkg/b.py",
+        )
+        == []
+    )
+
+
+def test_docstring_audit_respects_prefix(tmp_path: Path) -> None:
+    """
+    Restrict docstring issues to the selected defining-file prefix.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts prefix-filtered audit messages.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    pkg_issues = docstring_issues(tmp_path, prefix="pkg")
+    other_issues = docstring_issues(tmp_path, prefix="other")
+
+    assert any(
+        "Function undocumented_pkg: Missing docstring" == msg for _, msg in pkg_issues
+    )
+    assert all("undocumented_other" not in msg for _, msg in pkg_issues)
+    assert any(
+        "Function undocumented_other: Missing docstring" == msg
+        for _, msg in other_issues
+    )
+    assert all("undocumented_pkg" not in msg for _, msg in other_issues)
+
+
+def test_context_for_respects_prefix_across_symbols_and_references(
+    tmp_path: Path,
+) -> None:
+    """
+    Restrict context retrieval, expansion, and references to one prefix.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts all returned files stay within the selected prefix.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    prefix = normalize_prefix(tmp_path, "pkg/b.py")
+    assert prefix is not None
+
+    payload = json.loads(
+        context_for(
+            tmp_path,
+            "imported_helper",
+            prefix="pkg/b.py",
+            as_json=True,
+        )
+    )
+
+    symbol_files = [
+        row["file"] for row in payload["top_matches"] + payload["module_expansion"]
+    ]
+    assert symbol_files
+    assert all(path == prefix for path in symbol_files)
+    assert payload["references"] == []
+
+
+def test_cli_prefix_is_applied_and_rejects_escape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Apply CLI prefix filtering and reject prefixes outside the repository.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts one successful scoped CLI run and one parser error.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["repoindex", "symbol", "shared_symbol", "--prefix", "pkg"],
+    )
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "pkg.b.shared_symbol" in captured.out
+    assert "other.c.shared_symbol" not in captured.out
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["repoindex", "symbol", "shared_symbol", "--prefix", "../escape"],
+    )
+    with pytest.raises(SystemExit) as exc:
+        main()
+
+    assert exc.value.code == 2

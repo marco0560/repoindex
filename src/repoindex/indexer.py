@@ -361,71 +361,45 @@ def _delete_indexed_file_data(conn: sqlite3.Connection, file_path: str) -> None:
     None
         The rows are deleted in place on ``conn``.
     """
+    file_row = conn.execute(
+        "SELECT id FROM files WHERE path = ?",
+        (file_path,),
+    ).fetchone()
+    if file_row is None:
+        return
+
+    file_id = int(file_row[0])
+
     module_ids = [
         int(row[0])
         for row in conn.execute(
             """
-            SELECT m.id
-            FROM modules m
-            JOIN files f
-              ON m.file_id = f.id
-            WHERE f.path = ?
+            SELECT id
+            FROM modules
+            WHERE file_id = ?
             """,
-            (file_path,),
+            (file_id,),
         ).fetchall()
     ]
-    class_ids: list[int] = []
-    function_ids: list[int] = []
     symbol_ids = [
         int(row[0])
         for row in conn.execute(
-            "SELECT id FROM symbol_index WHERE file_path = ?",
-            (file_path,),
+            "SELECT id FROM symbol_index WHERE file_id = ?",
+            (file_id,),
         ).fetchall()
     ]
 
     if module_ids:
-        class_ids = [
-            int(row[0])
-            for row in conn.execute(
-                "SELECT id FROM classes WHERE module_id IN "
-                f"({_placeholders(module_ids)})",
-                tuple(module_ids),
-            ).fetchall()
-        ]
-        function_ids = [
-            int(row[0])
-            for row in conn.execute(
-                "SELECT id FROM functions WHERE module_id IN "
-                f"({_placeholders(module_ids)})",
-                tuple(module_ids),
-            ).fetchall()
-        ]
+        if symbol_ids:
+            conn.execute(
+                f"DELETE FROM embeddings WHERE object_type = 'symbol' "
+                f"AND object_id IN ({_placeholders(symbol_ids)})",
+                tuple(symbol_ids),
+            )
 
-    if symbol_ids:
         conn.execute(
-            f"DELETE FROM embeddings WHERE object_type = 'symbol' "
-            f"AND object_id IN ({_placeholders(symbol_ids)})",
-            tuple(symbol_ids),
-        )
-
-    if function_ids:
-        conn.execute(
-            "DELETE FROM docstring_issues WHERE function_id IN "
-            f"({_placeholders(function_ids)})",
-            tuple(function_ids),
-        )
-    if class_ids:
-        conn.execute(
-            "DELETE FROM docstring_issues WHERE class_id IN "
-            f"({_placeholders(class_ids)})",
-            tuple(class_ids),
-        )
-    if module_ids:
-        conn.execute(
-            "DELETE FROM docstring_issues WHERE module_id IN "
-            f"({_placeholders(module_ids)})",
-            tuple(module_ids),
+            "DELETE FROM docstring_issues WHERE file_id = ?",
+            (file_id,),
         )
         conn.execute(
             f"DELETE FROM imports WHERE module_id IN ({_placeholders(module_ids)})",
@@ -443,10 +417,17 @@ def _delete_indexed_file_data(conn: sqlite3.Connection, file_path: str) -> None:
             f"DELETE FROM modules WHERE id IN ({_placeholders(module_ids)})",
             tuple(module_ids),
         )
+    elif symbol_ids:
+        conn.execute(
+            f"DELETE FROM embeddings WHERE object_type = 'symbol' "
+            f"AND object_id IN ({_placeholders(symbol_ids)})",
+            tuple(symbol_ids),
+        )
+        conn.execute("DELETE FROM docstring_issues WHERE file_id = ?", (file_id,))
 
-    conn.execute("DELETE FROM symbol_index WHERE file_path = ?", (file_path,))
-    conn.execute("DELETE FROM call_records WHERE file_path = ?", (file_path,))
-    conn.execute("DELETE FROM callable_ref_records WHERE file_path = ?", (file_path,))
+    conn.execute("DELETE FROM symbol_index WHERE file_id = ?", (file_id,))
+    conn.execute("DELETE FROM call_records WHERE file_id = ?", (file_id,))
+    conn.execute("DELETE FROM callable_ref_records WHERE file_id = ?", (file_id,))
     conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
 
 
@@ -475,6 +456,27 @@ def _current_embedding_state_matches(
     if not rows:
         return True
     return rows == [(backend.name, backend.version)]
+
+
+def _prune_orphaned_embeddings(conn: sqlite3.Connection) -> None:
+    """
+    Remove embedding rows whose indexed symbol owner no longer exists.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+
+    Returns
+    -------
+    None
+        Orphaned embedding rows are deleted in place.
+    """
+    conn.execute("""
+        DELETE FROM embeddings
+        WHERE object_type = 'symbol'
+          AND object_id NOT IN (SELECT id FROM symbol_index)
+        """)
 
 
 def _load_existing_file_hashes(conn: sqlite3.Connection) -> dict[str, str]:
@@ -525,7 +527,9 @@ def _count_reused_embeddings(
         JOIN symbol_index s
           ON e.object_type = 'symbol'
          AND e.object_id = s.id
-        WHERE s.file_path IN ({placeholders})
+        JOIN files f
+          ON s.file_id = f.id
+        WHERE f.path IN ({placeholders})
         """,
         tuple(reused_paths),
     ).fetchone()
@@ -668,15 +672,40 @@ def _rebuild_graph_indexes(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM call_edges")
     conn.execute("DELETE FROM callable_refs")
 
-    edges: set[tuple[str, str, str | None, str | None, int]] = set()
-    refs: set[tuple[str, str, str | None, str | None, int]] = set()
+    edges: set[tuple[int, str, str, str | None, str | None, int]] = set()
+    refs: set[tuple[int, str, str, str | None, str | None, int]] = set()
 
     call_rows = conn.execute("""
-        SELECT owner_module, owner_name, kind, base, target, lineno, col_offset
+        SELECT
+            file_id,
+            owner_module,
+            owner_name,
+            kind,
+            base,
+            target,
+            lineno,
+            col_offset
         FROM call_records
-        ORDER BY owner_module, owner_name, lineno, col_offset, kind, base, target
+        ORDER BY
+            file_id,
+            owner_module,
+            owner_name,
+            lineno,
+            col_offset,
+            kind,
+            base,
+            target
         """).fetchall()
-    for owner_module, owner_name, kind, base, target, _lineno, _col_offset in call_rows:
+    for (
+        file_id,
+        owner_module,
+        owner_name,
+        kind,
+        base,
+        target,
+        _lineno,
+        _col_offset,
+    ) in call_rows:
         record = cast(
             CallRecord,
             {
@@ -697,6 +726,7 @@ def _rebuild_graph_indexes(conn: sqlite3.Connection) -> None:
         )
         edges.add(
             (
+                int(file_id),
                 caller_module,
                 caller_name,
                 callee_module,
@@ -706,9 +736,10 @@ def _rebuild_graph_indexes(conn: sqlite3.Connection) -> None:
         )
 
     ref_rows = conn.execute("""
-        SELECT owner_module, owner_name, kind, base, target, lineno, col_offset
+        SELECT file_id, owner_module, owner_name, kind, base, target, lineno, col_offset
         FROM callable_ref_records
         ORDER BY
+            file_id,
             owner_module,
             owner_name,
             lineno,
@@ -717,7 +748,16 @@ def _rebuild_graph_indexes(conn: sqlite3.Connection) -> None:
             base,
             target
         """).fetchall()
-    for owner_module, owner_name, kind, base, target, _lineno, _col_offset in ref_rows:
+    for (
+        file_id,
+        owner_module,
+        owner_name,
+        kind,
+        base,
+        target,
+        _lineno,
+        _col_offset,
+    ) in ref_rows:
         record = cast(
             CallRecord,
             {
@@ -738,6 +778,7 @@ def _rebuild_graph_indexes(conn: sqlite3.Connection) -> None:
         )
         refs.add(
             (
+                int(file_id),
                 caller_module,
                 caller_name,
                 target_module,
@@ -751,15 +792,16 @@ def _rebuild_graph_indexes(conn: sqlite3.Connection) -> None:
         key=lambda item: (
             item[0],
             item[1],
-            item[2] or "",
+            item[2],
             item[3] or "",
-            item[4],
+            item[4] or "",
+            item[5],
         ),
     ):
         conn.execute(
             "INSERT OR IGNORE INTO call_edges"
-            "(caller_module, caller_name, callee_module, callee_name, resolved) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "(caller_file_id, caller_module, caller_name, callee_module, "
+            "callee_name, resolved) VALUES (?, ?, ?, ?, ?, ?)",
             edge,
         )
 
@@ -768,32 +810,33 @@ def _rebuild_graph_indexes(conn: sqlite3.Connection) -> None:
         key=lambda item: (
             item[0],
             item[1],
-            item[2] or "",
+            item[2],
             item[3] or "",
-            item[4],
+            item[4] or "",
+            item[5],
         ),
     ):
         conn.execute(
             "INSERT OR IGNORE INTO callable_refs"
-            "(owner_module, owner_name, target_module, target_name, resolved) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "(owner_file_id, owner_module, owner_name, target_module, "
+            "target_name, resolved) VALUES (?, ?, ?, ?, ?, ?)",
             ref_row,
         )
 
 
 def _record_tuple(
-    file_path: str,
+    file_id: int,
     owner_module: str,
     owner_name: str,
     record: dict[str, str | int],
-) -> tuple[str, str, str, str, str, str, int, int]:
+) -> tuple[int, str, str, str, str, str, int, int]:
     """
     Normalize one raw call-style record for SQLite persistence.
 
     Parameters
     ----------
-    file_path : str
-        Absolute owner file path.
+    file_id : int
+        Integer identifier of the owner file.
     owner_module : str
         Owning module name.
     owner_name : str
@@ -803,11 +846,11 @@ def _record_tuple(
 
     Returns
     -------
-    tuple[str, str, str, str, str, str, int, int]
+    tuple[int, str, str, str, str, str, int, int]
         Normalized SQLite row values.
     """
     return (
-        file_path,
+        file_id,
         owner_module,
         owner_name,
         str(record.get("kind", "unresolved")),
@@ -845,20 +888,20 @@ def _store_parsed_file(
         Number of embeddings recomputed for the file.
     """
     embedding_rows: list[tuple[str, int, str]] = []
-    call_rows: list[tuple[str, str, str, str, str, str, int, int]] = []
-    ref_rows: list[tuple[str, str, str, str, str, str, str, int, int]] = []
+    call_rows: list[tuple[int, str, str, str, str, str, int, int]] = []
+    ref_rows: list[tuple[int, str, str, str, str, str, str, int, int]] = []
 
     module = cast(dict[str, object], parsed["module"])
     classes = cast(list[dict[str, object]], parsed["classes"])
     functions = cast(list[dict[str, object]], parsed["functions"])
     imports = cast(list[dict[str, object]], parsed["imports"])
 
-    file_path = str(meta["path"])
     cur = conn.execute(
         "INSERT INTO files(path, hash, mtime, size) VALUES (?, ?, ?, ?)",
         (meta["path"], meta["hash"], meta["mtime"], meta["size"]),
     )
-    file_id = cur.lastrowid
+    assert cur.lastrowid is not None
+    file_id = int(cur.lastrowid)
     module_name = str(module["name"])
 
     cur = conn.execute(
@@ -873,12 +916,13 @@ def _store_parsed_file(
     )
     module_id = cur.lastrowid
 
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO symbol_index"
-        "(name, type, module_name, file_path, lineno) VALUES (?, ?, ?, ?, ?)",
-        (module_name, "module", module_name, file_path, 1),
+        "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
+        (module_name, "module", module_name, file_id, 1),
     )
-    symbol_row_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    assert cur.lastrowid is not None
+    symbol_row_id = int(cur.lastrowid)
     embedding_rows.append(
         (
             "symbol",
@@ -898,9 +942,10 @@ def _store_parsed_file(
     ):
         conn.execute(
             "INSERT INTO docstring_issues"
-            "(function_id, class_id, module_id, issue_type, message) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "(file_id, function_id, class_id, module_id, issue_type, message) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
+                file_id,
                 None,
                 None,
                 module_id,
@@ -926,18 +971,19 @@ def _store_parsed_file(
         )
         class_id = cur.lastrowid
 
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO symbol_index"
-            "(name, type, module_name, file_path, lineno) VALUES (?, ?, ?, ?, ?)",
+            "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
             (
                 cls["name"],
                 "class",
                 module_name,
-                file_path,
+                file_id,
                 cls["lineno"],
             ),
         )
-        symbol_row_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        assert cur.lastrowid is not None
+        symbol_row_id = int(cur.lastrowid)
         embedding_rows.append(
             (
                 "symbol",
@@ -957,9 +1003,10 @@ def _store_parsed_file(
         ):
             conn.execute(
                 "INSERT INTO docstring_issues"
-                "(function_id, class_id, module_id, issue_type, message) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "(file_id, function_id, class_id, module_id, issue_type, message) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
+                    file_id,
                     None,
                     class_id,
                     None,
@@ -993,20 +1040,19 @@ def _store_parsed_file(
             )
             function_id = cur.lastrowid
 
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO symbol_index"
-                "(name, type, module_name, file_path, lineno) VALUES (?, ?, ?, ?, ?)",
+                "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
                 (
                     method["name"],
                     "method",
                     module_name,
-                    file_path,
+                    file_id,
                     method["lineno"],
                 ),
             )
-            symbol_row_id = int(
-                conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-            )
+            assert cur.lastrowid is not None
+            symbol_row_id = int(cur.lastrowid)
             embedding_rows.append(
                 (
                     "symbol",
@@ -1032,9 +1078,10 @@ def _store_parsed_file(
             ):
                 conn.execute(
                     "INSERT INTO docstring_issues"
-                    "(function_id, class_id, module_id, issue_type, message) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "(file_id, function_id, class_id, module_id, issue_type, message) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
                     (
+                        file_id,
                         function_id,
                         None,
                         None,
@@ -1045,12 +1092,12 @@ def _store_parsed_file(
 
             for call in cast(list[CallRecord], method["calls"]):
                 call_rows.append(
-                    _record_tuple(file_path, module_name, logical_name, call)
+                    _record_tuple(file_id, module_name, logical_name, call)
                 )
             for ref in cast(list[ReferenceRecord], method["callable_refs"]):
                 ref_rows.append(
                     (
-                        file_path,
+                        file_id,
                         module_name,
                         logical_name,
                         str(ref.get("kind", "unresolved")),
@@ -1083,18 +1130,19 @@ def _store_parsed_file(
         )
         function_id = cur.lastrowid
 
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO symbol_index"
-            "(name, type, module_name, file_path, lineno) VALUES (?, ?, ?, ?, ?)",
+            "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
             (
                 fn["name"],
                 "function",
                 module_name,
-                file_path,
+                file_id,
                 fn["lineno"],
             ),
         )
-        symbol_row_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        assert cur.lastrowid is not None
+        symbol_row_id = int(cur.lastrowid)
         embedding_rows.append(
             (
                 "symbol",
@@ -1120,9 +1168,10 @@ def _store_parsed_file(
         ):
             conn.execute(
                 "INSERT INTO docstring_issues"
-                "(function_id, class_id, module_id, issue_type, message) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "(file_id, function_id, class_id, module_id, issue_type, message) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
+                    file_id,
                     function_id,
                     None,
                     None,
@@ -1132,13 +1181,11 @@ def _store_parsed_file(
             )
 
         for call in cast(list[CallRecord], fn["calls"]):
-            call_rows.append(
-                _record_tuple(file_path, module_name, str(fn["name"]), call)
-            )
+            call_rows.append(_record_tuple(file_id, module_name, str(fn["name"]), call))
         for ref in cast(list[ReferenceRecord], fn["callable_refs"]):
             ref_rows.append(
                 (
-                    file_path,
+                    file_id,
                     module_name,
                     str(fn["name"]),
                     str(ref.get("kind", "unresolved")),
@@ -1164,7 +1211,7 @@ def _store_parsed_file(
     for row in sorted(call_rows):
         conn.execute(
             "INSERT INTO call_records"
-            "(file_path, owner_module, owner_name, kind, base, target, "
+            "(file_id, owner_module, owner_name, kind, base, target, "
             "lineno, col_offset) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             row,
@@ -1173,7 +1220,7 @@ def _store_parsed_file(
     for ref_row in sorted(ref_rows):
         conn.execute(
             "INSERT INTO callable_ref_records"
-            "(file_path, owner_module, owner_name, kind, ref_kind, base, "
+            "(file_id, owner_module, owner_name, kind, ref_kind, base, "
             "target, lineno, col_offset) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             ref_row,
@@ -1225,6 +1272,7 @@ def index_repo(
     backend = get_embedding_backend()
 
     try:
+        _prune_orphaned_embeddings(conn)
         current_metadata = {
             str(path): file_metadata(path) for path in sorted(iter_project_files(root))
         }

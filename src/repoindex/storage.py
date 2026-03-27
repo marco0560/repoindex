@@ -30,6 +30,7 @@ def _refresh_call_edges_schema(conn: sqlite3.Connection) -> None:
 
     current = [str(row[1]) for row in columns]
     expected = [
+        "caller_file_id",
         "caller_module",
         "caller_name",
         "callee_module",
@@ -68,6 +69,7 @@ def _refresh_callable_refs_schema(conn: sqlite3.Connection) -> None:
 
     current = [str(row[1]) for row in columns]
     expected = [
+        "owner_file_id",
         "owner_module",
         "owner_name",
         "target_module",
@@ -106,7 +108,7 @@ def _refresh_call_records_schema(conn: sqlite3.Connection) -> None:
 
     current = [str(row[1]) for row in columns]
     expected = [
-        "file_path",
+        "file_id",
         "owner_module",
         "owner_name",
         "kind",
@@ -145,7 +147,7 @@ def _refresh_callable_ref_records_schema(conn: sqlite3.Connection) -> None:
 
     current = [str(row[1]) for row in columns]
     expected = [
-        "file_path",
+        "file_id",
         "owner_module",
         "owner_name",
         "kind",
@@ -162,6 +164,82 @@ def _refresh_callable_ref_records_schema(conn: sqlite3.Connection) -> None:
     conn.execute("DROP INDEX IF EXISTS idx_callable_ref_records_file")
     conn.execute("DROP INDEX IF EXISTS idx_callable_ref_records_owner")
     conn.execute("DROP TABLE IF EXISTS callable_ref_records")
+
+
+def _refresh_docstring_issues_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``docstring_issues`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(docstring_issues)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "id",
+        "file_id",
+        "function_id",
+        "class_id",
+        "module_id",
+        "issue_type",
+        "message",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_docstring_issues_file")
+    conn.execute("DROP TABLE IF EXISTS docstring_issues")
+
+
+def _refresh_symbol_index_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``symbol_index`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(symbol_index)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "id",
+        "name",
+        "type",
+        "module_name",
+        "file_id",
+        "lineno",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_embeddings_object_backend_version")
+    conn.execute("DROP TABLE IF EXISTS embeddings")
+    conn.execute("DROP INDEX IF EXISTS idx_symbol_name")
+    conn.execute("DROP INDEX IF EXISTS idx_symbol_file")
+    conn.execute("DROP TABLE IF EXISTS symbol_index")
 
 
 def _refresh_embeddings_schema(conn: sqlite3.Connection) -> None:
@@ -279,6 +357,8 @@ def init_db(root: Path) -> None:
         _refresh_callable_refs_schema(conn)
         _refresh_call_records_schema(conn)
         _refresh_callable_ref_records_schema(conn)
+        _refresh_docstring_issues_schema(conn)
+        _refresh_symbol_index_schema(conn)
         _refresh_embeddings_schema(conn)
         for stmt in DDL:
             conn.execute(stmt)

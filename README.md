@@ -50,6 +50,7 @@ Audit indexed docstrings:
 
 ```bash
 repoindex audit-docstrings
+repoindex audit-docstrings --prefix src/repoindex/query
 ```
 
 For Python callables, `audit-docstrings` applies Python-aware result-section
@@ -64,12 +65,14 @@ Query exact symbols:
 
 ```bash
 repoindex symbol build_parser
+repoindex symbol build_parser --prefix src/repoindex
 ```
 
 Inspect embedding-only matches and backend metadata:
 
 ```bash
 repoindex embeddings "schema migration rules"
+repoindex embeddings "schema migration rules" --prefix src/repoindex/query
 ```
 
 Inspect static call edges:
@@ -77,18 +80,21 @@ Inspect static call edges:
 ```bash
 repoindex calls context_for
 repoindex calls imported_helper --module pkg.b --incoming
+repoindex calls imported_helper --module pkg.b --incoming --prefix src/repoindex/query
 ```
 
 Inspect callable-object references such as registry bindings:
 
 ```bash
 repoindex refs _retrieve_script_candidates --module repoindex.query.context --incoming
+repoindex refs _retrieve_script_candidates --incoming --prefix src/repoindex/query
 ```
 
 Generate deterministic context for a natural-language query:
 
 ```bash
 repoindex context-for "missing numpy docstring"
+repoindex context-for "missing numpy docstring" --prefix src/repoindex
 ```
 
 Embedding-assisted retrieval works best for natural-language queries such as:
@@ -101,6 +107,7 @@ Emit structured JSON for agent workflows:
 
 ```bash
 repoindex context-for "missing numpy docstring" --json
+repoindex context-for "missing numpy docstring" --json --prefix src/repoindex/query
 ```
 
 Emit a prompt-oriented view:
@@ -108,6 +115,36 @@ Emit a prompt-oriented view:
 ```bash
 repoindex context-for "parse inventory validation flow" --prompt
 ```
+
+## Using `--prefix`
+
+Use `--prefix <path>` to scope supported read/query subcommands to one
+repo-root-relative directory or file.
+
+Examples:
+
+```bash
+repoindex symbol build_parser --prefix src/repoindex
+repoindex embeddings "schema migration rules" --prefix src/repoindex/query
+repoindex calls imported_helper --module pkg.b --incoming --prefix src/repoindex/query
+repoindex refs _retrieve_script_candidates --incoming --prefix src/repoindex/query
+repoindex audit-docstrings --prefix src/repoindex/query
+repoindex context-for "missing numpy docstring" --json --prefix src/repoindex/query
+```
+
+Semantics:
+
+- `symbol --prefix P NAME`: only symbols whose defining file is under `P`
+- `embeddings --prefix P QUERY`: only matched symbols whose file is under `P`
+- `context-for --prefix P QUERY`: retrieval, expansion, issues, and references
+  are restricted to files under `P`
+- `calls --prefix P NAME`: only call edges whose caller file is under `P`
+- `refs --prefix P NAME`: only callable-object references whose owner file is
+  under `P`
+- `audit-docstrings --prefix P`: only issues for symbols defined under `P`
+
+`--prefix` must be relative to the repository root. It may point to either a
+directory or a single file.
 
 ## Using `--prompt`
 
