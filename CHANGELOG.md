@@ -1,3 +1,10 @@
+## [0.31.4](https://github.com/marco0560/repoindex/compare/v0.31.3...v0.31.4) (2026-03-27)
+
+
+### Bug Fixes
+
+* **docstring:** enforce python result-section semantics ([16f0f81](https://github.com/marco0560/repoindex/commit/16f0f8132fb916f4e225b5a92765cf62dd567da8))
+
 ## [0.31.3](https://github.com/marco0560/repoindex/compare/v0.31.2...v0.31.3) (2026-03-27)
 
 
