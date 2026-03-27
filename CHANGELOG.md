@@ -1,3 +1,10 @@
+## [0.31.3](https://github.com/marco0560/repoindex/compare/v0.31.2...v0.31.3) (2026-03-27)
+
+
+### Bug Fixes
+
+* **docstring:** require Yields for generator audits ([3a87e66](https://github.com/marco0560/repoindex/commit/3a87e6693617dc82183e58c7dce936e50588cca3))
+
 ## [0.31.2](https://github.com/marco0560/repoindex/compare/v0.31.1...v0.31.2) (2026-03-26)
 
 
