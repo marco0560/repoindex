@@ -1,3 +1,10 @@
+# [0.33.0](https://github.com/marco0560/repoindex/compare/v0.32.0...v0.33.0) (2026-03-28)
+
+
+### Features
+
+* **query:** add json output for exact query subcommands ([f3dd5e5](https://github.com/marco0560/repoindex/commit/f3dd5e5b190748aab125e28437303b4cf1b7f529))
+
 # [0.32.0](https://github.com/marco0560/repoindex/compare/v0.31.4...v0.32.0) (2026-03-27)
 
 
