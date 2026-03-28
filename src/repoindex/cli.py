@@ -26,6 +26,8 @@ from repoindex.semantic.embeddings import get_embedding_backend
 from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import get_db_path, get_repoindex_dir, init_db
 
+QUERY_JSON_SCHEMA_VERSION = "1.0"
+
 
 def build_parser() -> argparse.ArgumentParser:
     """
@@ -111,11 +113,17 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  repoindex symbol build_parser\n"
+            "  repoindex symbol build_parser --json\n"
             "  repoindex symbol build_parser --prefix src/repoindex"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     symbol_parser.add_argument("name", help="Exact symbol name to look up")
+    symbol_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON for machine consumption",
+    )
     symbol_parser.add_argument(
         "--prefix",
         help="Restrict results to files under this repo-root-relative path prefix",
@@ -131,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             '  repoindex embeddings "schema migration rules"\n'
+            '  repoindex embeddings "schema migration rules" --json\n'
             '  repoindex embeddings "numpy docstring sections" --limit 3\n'
             '  repoindex embeddings "numpy docstring sections" --prefix '
             "src/repoindex/query"
@@ -148,6 +157,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of embedding matches to print",
     )
     embeddings_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON for machine consumption",
+    )
+    embeddings_parser.add_argument(
         "--prefix",
         help="Restrict matches to files under this repo-root-relative path prefix",
     )
@@ -162,6 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  repoindex calls caller\n"
+            "  repoindex calls caller --json\n"
             "  repoindex calls caller --prefix src/repoindex/query\n"
             "  repoindex calls imported_helper --module pkg.b --incoming"
         ),
@@ -181,6 +196,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show callers of the named callee instead of outgoing edges",
     )
     calls_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON for machine consumption",
+    )
+    calls_parser.add_argument(
         "--prefix",
         help="Restrict caller files to this repo-root-relative path prefix",
     )
@@ -196,6 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  repoindex refs helper\n"
+            "  repoindex refs helper --json\n"
             "  repoindex refs helper --prefix src/repoindex/query\n"
             "  repoindex refs _retrieve_script_candidates --incoming\n"
             "  repoindex refs imported_helper --module pkg.b --incoming"
@@ -216,6 +237,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show owners of the named target instead of outgoing references",
     )
     refs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON for machine consumption",
+    )
+    refs_parser.add_argument(
         "--prefix",
         help="Restrict owner files to this repo-root-relative path prefix",
     )
@@ -227,9 +253,15 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  repoindex audit-docstrings\n"
+            "  repoindex audit-docstrings --json\n"
             "  repoindex audit-docstrings --prefix src/repoindex/query"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    audit_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON for machine consumption",
     )
     audit_parser.add_argument(
         "--prefix",
@@ -282,6 +314,62 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def _emit_json(payload: dict[str, object]) -> None:
+    """
+    Print a JSON payload with deterministic formatting.
+
+    Parameters
+    ----------
+    payload : dict[str, object]
+        JSON-serializable payload to render.
+
+    Returns
+    -------
+    None
+        The formatted JSON is printed to standard output.
+    """
+    print(json.dumps(payload, indent=2))
+
+
+def _query_payload(
+    command: str,
+    status: str,
+    query: dict[str, object],
+    results: list[dict[str, object]],
+    **extra: object,
+) -> dict[str, object]:
+    """
+    Build the shared JSON envelope for exact/query subcommands.
+
+    Parameters
+    ----------
+    command : str
+        Subcommand name that produced the payload.
+    status : str
+        Query status such as ``ok`` or ``no_matches``.
+    query : dict[str, object]
+        Machine-readable query arguments.
+    results : list[dict[str, object]]
+        Result rows for the selected subcommand.
+    **extra : object
+        Additional top-level JSON fields for command-specific metadata.
+
+    Returns
+    -------
+    dict[str, object]
+        Shared JSON envelope for the CLI query subcommands.
+    """
+    payload: dict[str, object] = {
+        "schema_version": QUERY_JSON_SCHEMA_VERSION,
+        "command": command,
+        "status": status,
+        "query": query,
+        "results": results,
+    }
+    payload.update(extra)
+    return payload
 
 
 def _run_help(parser: argparse.ArgumentParser) -> int:
@@ -346,7 +434,14 @@ def _run_index(root: Path, *, full: bool, explain: bool) -> int:
     return 0
 
 
-def _run_symbol(root: Path, name: str, *, prefix: str | None = None) -> int:
+def _run_symbol(
+    root: Path,
+    name: str,
+    *,
+    prefix: str | None = None,
+    as_json: bool = False,
+    query_prefix: str | None = None,
+) -> int:
     """
     Resolve and print exact symbol matches.
 
@@ -358,6 +453,10 @@ def _run_symbol(root: Path, name: str, *, prefix: str | None = None) -> int:
         Exact symbol name to look up.
     prefix : str | None, optional
         Repo-root-relative path prefix used to restrict symbol files.
+    as_json : bool, optional
+        Whether to render structured JSON output.
+    query_prefix : str | None, optional
+        User-facing repo-root-relative prefix echoed in JSON output.
 
     Returns
     -------
@@ -365,6 +464,26 @@ def _run_symbol(root: Path, name: str, *, prefix: str | None = None) -> int:
         Zero when at least one symbol is found, otherwise one.
     """
     rows = find_symbol(root, name, prefix=prefix)
+
+    if as_json:
+        _emit_json(
+            _query_payload(
+                "symbol",
+                "ok" if rows else "no_matches",
+                {"name": name, "prefix": query_prefix},
+                [
+                    {
+                        "type": symbol_type,
+                        "module": module_name,
+                        "name": symbol_name,
+                        "file": file_path,
+                        "lineno": lineno,
+                    }
+                    for symbol_type, module_name, symbol_name, file_path, lineno in rows
+                ],
+            )
+        )
+        return 0 if rows else 1
 
     if not rows:
         print(f"No symbol found: {name}")
@@ -379,7 +498,13 @@ def _run_symbol(root: Path, name: str, *, prefix: str | None = None) -> int:
     return 0
 
 
-def _run_audit_docstrings(root: Path, *, prefix: str | None = None) -> int:
+def _run_audit_docstrings(
+    root: Path,
+    *,
+    prefix: str | None = None,
+    as_json: bool = False,
+    query_prefix: str | None = None,
+) -> int:
     """
     Print indexed docstring issues.
 
@@ -389,6 +514,10 @@ def _run_audit_docstrings(root: Path, *, prefix: str | None = None) -> int:
         Repository root containing the index.
     prefix : str | None, optional
         Repo-root-relative path prefix used to restrict issue ownership.
+    as_json : bool, optional
+        Whether to render structured JSON output.
+    query_prefix : str | None, optional
+        User-facing repo-root-relative prefix echoed in JSON output.
 
     Returns
     -------
@@ -396,6 +525,20 @@ def _run_audit_docstrings(root: Path, *, prefix: str | None = None) -> int:
         Process exit status for the audit command.
     """
     rows = docstring_issues(root, prefix=prefix)
+
+    if as_json:
+        _emit_json(
+            _query_payload(
+                "audit-docstrings",
+                "ok" if rows else "no_matches",
+                {"prefix": query_prefix},
+                [
+                    {"type": issue_type, "message": message}
+                    for issue_type, message in rows
+                ],
+            )
+        )
+        return 0
 
     if not rows:
         print("No docstring issues found")
@@ -412,6 +555,8 @@ def _run_embeddings(
     *,
     limit: int,
     prefix: str | None = None,
+    as_json: bool = False,
+    query_prefix: str | None = None,
 ) -> int:
     """
     Print embedding-backend metadata and top embedding matches.
@@ -426,6 +571,10 @@ def _run_embeddings(
         Maximum number of matches to print.
     prefix : str | None, optional
         Repo-root-relative path prefix used to restrict matched files.
+    as_json : bool, optional
+        Whether to render structured JSON output.
+    query_prefix : str | None, optional
+        User-facing repo-root-relative prefix echoed in JSON output.
 
     Returns
     -------
@@ -436,8 +585,80 @@ def _run_embeddings(
     inventory = embedding_inventory(root)
 
     if not inventory:
+        if as_json:
+            _emit_json(
+                _query_payload(
+                    "embeddings",
+                    "not_indexed",
+                    {
+                        "text": query,
+                        "limit": limit,
+                        "prefix": query_prefix,
+                    },
+                    [],
+                    backend={
+                        "name": backend.name,
+                        "version": backend.version,
+                        "dim": backend.dim,
+                    },
+                    inventory=[],
+                )
+            )
+            return 1
         print("No stored embeddings found. Run: repoindex index")
         return 1
+
+    matches = embedding_candidates(
+        root,
+        query,
+        limit=limit,
+        min_score=0.0,
+        prefix=prefix,
+    )
+    if as_json:
+        _emit_json(
+            _query_payload(
+                "embeddings",
+                "ok" if matches else "no_matches",
+                {
+                    "text": query,
+                    "limit": limit,
+                    "prefix": query_prefix,
+                },
+                [
+                    {
+                        "score": round(score, 2),
+                        "type": symbol_type,
+                        "module": module_name,
+                        "name": name,
+                        "file": file_path,
+                        "lineno": lineno,
+                    }
+                    for score, (
+                        symbol_type,
+                        module_name,
+                        name,
+                        file_path,
+                        lineno,
+                    ) in matches
+                ],
+                backend={
+                    "name": backend.name,
+                    "version": backend.version,
+                    "dim": backend.dim,
+                },
+                inventory=[
+                    {
+                        "backend": stored_backend,
+                        "version": stored_version,
+                        "dim": stored_dim,
+                        "rows": count,
+                    }
+                    for stored_backend, stored_version, stored_dim, count in inventory
+                ],
+            )
+        )
+        return 0
 
     print(
         "backend:"
@@ -454,13 +675,6 @@ def _run_embeddings(
             f" rows={count}"
         )
 
-    matches = embedding_candidates(
-        root,
-        query,
-        limit=limit,
-        min_score=0.0,
-        prefix=prefix,
-    )
     if not matches:
         print("No embedding matches found.")
         return 0
@@ -478,6 +692,8 @@ def _run_calls(
     module: str | None,
     incoming: bool,
     prefix: str | None = None,
+    as_json: bool = False,
+    query_prefix: str | None = None,
 ) -> int:
     """
     Print indexed static call edges for one logical name.
@@ -495,6 +711,10 @@ def _run_calls(
         for a caller.
     prefix : str | None, optional
         Repo-root-relative path prefix used to restrict caller files.
+    as_json : bool, optional
+        Whether to render structured JSON output.
+    query_prefix : str | None, optional
+        User-facing repo-root-relative prefix echoed in JSON output.
 
     Returns
     -------
@@ -508,6 +728,37 @@ def _run_calls(
         incoming=incoming,
         prefix=prefix,
     )
+
+    if as_json:
+        _emit_json(
+            _query_payload(
+                "calls",
+                "ok" if rows else "no_matches",
+                {
+                    "name": name,
+                    "module": module,
+                    "incoming": incoming,
+                    "prefix": query_prefix,
+                },
+                [
+                    {
+                        "caller_module": caller_module,
+                        "caller_name": caller_name,
+                        "callee_module": callee_module,
+                        "callee_name": callee_name,
+                        "resolved": bool(resolved),
+                    }
+                    for (
+                        caller_module,
+                        caller_name,
+                        callee_module,
+                        callee_name,
+                        resolved,
+                    ) in rows
+                ],
+            )
+        )
+        return 0 if rows else 1
 
     if not rows:
         direction = "callee" if incoming else "caller"
@@ -537,6 +788,8 @@ def _run_refs(
     module: str | None,
     incoming: bool,
     prefix: str | None = None,
+    as_json: bool = False,
+    query_prefix: str | None = None,
 ) -> int:
     """
     Print indexed callable-object references for one logical name.
@@ -554,6 +807,10 @@ def _run_refs(
         references for an owner.
     prefix : str | None, optional
         Repo-root-relative path prefix used to restrict owner files.
+    as_json : bool, optional
+        Whether to render structured JSON output.
+    query_prefix : str | None, optional
+        User-facing repo-root-relative prefix echoed in JSON output.
 
     Returns
     -------
@@ -567,6 +824,37 @@ def _run_refs(
         incoming=incoming,
         prefix=prefix,
     )
+
+    if as_json:
+        _emit_json(
+            _query_payload(
+                "refs",
+                "ok" if rows else "no_matches",
+                {
+                    "name": name,
+                    "module": module,
+                    "incoming": incoming,
+                    "prefix": query_prefix,
+                },
+                [
+                    {
+                        "owner_module": owner_module,
+                        "owner_name": owner_name,
+                        "target_module": target_module,
+                        "target_name": target_name,
+                        "resolved": bool(resolved),
+                    }
+                    for (
+                        owner_module,
+                        owner_name,
+                        target_module,
+                        target_name,
+                        resolved,
+                    ) in rows
+                ],
+            )
+        )
+        return 0 if rows else 1
 
     if not rows:
         direction = "target" if incoming else "owner"
@@ -837,7 +1125,8 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     root = Path.cwd()
-    prefix = _resolve_prefix_argument(parser, root, getattr(args, "prefix", None))
+    raw_prefix = getattr(args, "prefix", None)
+    prefix = _resolve_prefix_argument(parser, root, raw_prefix)
 
     if args.command in (None, "help"):
         return _run_help(parser)
@@ -845,10 +1134,23 @@ def main() -> int:
         return _run_index(root, full=args.full, explain=args.explain)
     if args.command == "symbol":
         _ensure_index(root)
-        return _run_symbol(root, args.name, prefix=prefix)
+        return _run_symbol(
+            root,
+            args.name,
+            prefix=prefix,
+            as_json=args.json,
+            query_prefix=raw_prefix,
+        )
     if args.command == "embeddings":
         _ensure_index(root)
-        return _run_embeddings(root, args.query, limit=args.limit, prefix=prefix)
+        return _run_embeddings(
+            root,
+            args.query,
+            limit=args.limit,
+            prefix=prefix,
+            as_json=args.json,
+            query_prefix=raw_prefix,
+        )
     if args.command == "calls":
         _ensure_index(root)
         return _run_calls(
@@ -857,6 +1159,8 @@ def main() -> int:
             module=args.module,
             incoming=args.incoming,
             prefix=prefix,
+            as_json=args.json,
+            query_prefix=raw_prefix,
         )
     if args.command == "refs":
         _ensure_index(root)
@@ -866,10 +1170,17 @@ def main() -> int:
             module=args.module,
             incoming=args.incoming,
             prefix=prefix,
+            as_json=args.json,
+            query_prefix=raw_prefix,
         )
     if args.command == "audit-docstrings":
         _ensure_index(root)
-        return _run_audit_docstrings(root, prefix=prefix)
+        return _run_audit_docstrings(
+            root,
+            prefix=prefix,
+            as_json=args.json,
+            query_prefix=raw_prefix,
+        )
     elif args.command == "context-for":
         _ensure_index(root)
 

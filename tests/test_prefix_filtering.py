@@ -320,3 +320,282 @@ def test_cli_prefix_is_applied_and_rejects_escape(
         main()
 
     assert exc.value.code == 2
+
+
+def test_symbol_cli_json_includes_prefix_and_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Emit structured JSON for exact symbol lookup.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts the shared JSON envelope for `symbol`.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["repoindex", "symbol", "shared_symbol", "--json", "--prefix", "pkg"],
+    )
+
+    assert main() == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["schema_version"] == "1.0"
+    assert payload["command"] == "symbol"
+    assert payload["status"] == "ok"
+    assert payload["query"] == {"name": "shared_symbol", "prefix": "pkg"}
+    assert payload["results"] == [
+        {
+            "type": "function",
+            "module": "pkg.b",
+            "name": "shared_symbol",
+            "file": str(tmp_path / "pkg" / "b.py"),
+            "lineno": 7,
+        }
+    ]
+
+
+def test_calls_and_refs_cli_json_emit_structured_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Emit structured JSON for graph-relation subcommands.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts structured owner-side filtering for calls and refs.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "calls",
+            "imported_helper",
+            "--module",
+            "pkg.b",
+            "--incoming",
+            "--json",
+            "--prefix",
+            "pkg/a.py",
+        ],
+    )
+
+    assert main() == 0
+    calls_payload = json.loads(capsys.readouterr().out)
+    assert calls_payload["command"] == "calls"
+    assert calls_payload["status"] == "ok"
+    assert calls_payload["query"] == {
+        "name": "imported_helper",
+        "module": "pkg.b",
+        "incoming": True,
+        "prefix": "pkg/a.py",
+    }
+    assert calls_payload["results"] == [
+        {
+            "caller_module": "pkg.a",
+            "caller_name": "caller",
+            "callee_module": "pkg.b",
+            "callee_name": "imported_helper",
+            "resolved": True,
+        }
+    ]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "refs",
+            "imported_helper",
+            "--module",
+            "pkg.b",
+            "--incoming",
+            "--json",
+            "--prefix",
+            "pkg/a.py",
+        ],
+    )
+
+    assert main() == 0
+    refs_payload = json.loads(capsys.readouterr().out)
+    assert refs_payload["command"] == "refs"
+    assert refs_payload["status"] == "ok"
+    assert refs_payload["query"] == {
+        "name": "imported_helper",
+        "module": "pkg.b",
+        "incoming": True,
+        "prefix": "pkg/a.py",
+    }
+    assert refs_payload["results"] == [
+        {
+            "owner_module": "pkg.a",
+            "owner_name": "registry",
+            "target_module": "pkg.b",
+            "target_name": "imported_helper",
+            "resolved": True,
+        }
+    ]
+
+
+def test_embeddings_and_audit_cli_json_emit_shared_envelope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Emit structured JSON for embeddings and docstring auditing.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts command-specific metadata and filtered results.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "embeddings",
+            "schema migration helper",
+            "--json",
+            "--limit",
+            "3",
+            "--prefix",
+            "pkg/b.py",
+        ],
+    )
+
+    assert main() == 0
+    embeddings_payload = json.loads(capsys.readouterr().out)
+    assert embeddings_payload["command"] == "embeddings"
+    assert embeddings_payload["status"] == "ok"
+    assert embeddings_payload["query"] == {
+        "text": "schema migration helper",
+        "limit": 3,
+        "prefix": "pkg/b.py",
+    }
+    assert embeddings_payload["backend"]["name"]
+    assert embeddings_payload["inventory"]
+    assert embeddings_payload["results"]
+    assert all(
+        row["file"] == str(tmp_path / "pkg" / "b.py")
+        for row in embeddings_payload["results"]
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "audit-docstrings",
+            "--json",
+            "--prefix",
+            "pkg",
+        ],
+    )
+
+    assert main() == 0
+    audit_payload = json.loads(capsys.readouterr().out)
+    assert audit_payload["command"] == "audit-docstrings"
+    assert audit_payload["status"] == "ok"
+    assert audit_payload["query"] == {"prefix": "pkg"}
+    messages = {row["message"] for row in audit_payload["results"]}
+    assert "Function undocumented_pkg: Missing docstring" in messages
+    assert all("undocumented_other" not in message for message in messages)
+
+
+def test_json_cli_reports_no_matches_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Preserve empty-result semantics in JSON mode.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts no-match status and exit code for exact queries.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "symbol",
+            "shared_symbol",
+            "--json",
+            "--prefix",
+            "missing",
+        ],
+    )
+
+    assert main() == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "symbol"
+    assert payload["status"] == "no_matches"
+    assert payload["results"] == []

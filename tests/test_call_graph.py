@@ -329,6 +329,7 @@ def test_top_level_help_includes_examples_and_calls_command() -> None:
     assert "repoindex calls caller" in help_text
     assert "repoindex refs _retrieve_script_candidates --incoming" in help_text
     assert "repoindex context-for --prompt" in help_text
+    assert 'repoindex context-for "find schema migration logic"' in help_text
     assert "audit-docstrings" in help_text
 
 
@@ -418,3 +419,37 @@ def test_context_for_help_shows_incompatibility_and_examples(
         )
 
     assert exc.value.code == 2
+
+
+def test_query_subcommand_help_includes_json_examples(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Verify exact/query subcommands advertise JSON output in help text.
+
+    Parameters
+    ----------
+    capsys : pytest.CaptureFixture[str]
+        Pytest capture fixture used to inspect emitted help text.
+
+    Returns
+    -------
+    None
+        The test asserts JSON help text on representative subcommands.
+    """
+    expected_examples = {
+        "symbol": "repoindex symbol build_parser --json",
+        "embeddings": 'repoindex embeddings "schema migration rules" --json',
+        "calls": "repoindex calls caller --json",
+        "refs": "repoindex refs helper --json",
+        "audit-docstrings": "repoindex audit-docstrings --json",
+    }
+
+    for command, example in expected_examples.items():
+        with pytest.raises(SystemExit) as help_exit:
+            build_parser().parse_args([command, "-h"])
+
+        assert help_exit.value.code == 0
+        output = capsys.readouterr().out
+        assert "--json" in output
+        assert example in output

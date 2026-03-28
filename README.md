@@ -50,6 +50,7 @@ Audit indexed docstrings:
 
 ```bash
 repoindex audit-docstrings
+repoindex audit-docstrings --json
 repoindex audit-docstrings --prefix src/repoindex/query
 ```
 
@@ -65,6 +66,7 @@ Query exact symbols:
 
 ```bash
 repoindex symbol build_parser
+repoindex symbol build_parser --json
 repoindex symbol build_parser --prefix src/repoindex
 ```
 
@@ -72,6 +74,7 @@ Inspect embedding-only matches and backend metadata:
 
 ```bash
 repoindex embeddings "schema migration rules"
+repoindex embeddings "schema migration rules" --json
 repoindex embeddings "schema migration rules" --prefix src/repoindex/query
 ```
 
@@ -79,6 +82,7 @@ Inspect static call edges:
 
 ```bash
 repoindex calls context_for
+repoindex calls context_for --json
 repoindex calls imported_helper --module pkg.b --incoming
 repoindex calls imported_helper --module pkg.b --incoming --prefix src/repoindex/query
 ```
@@ -87,6 +91,7 @@ Inspect callable-object references such as registry bindings:
 
 ```bash
 repoindex refs _retrieve_script_candidates --module repoindex.query.context --incoming
+repoindex refs _retrieve_script_candidates --incoming --json
 repoindex refs _retrieve_script_candidates --incoming --prefix src/repoindex/query
 ```
 
@@ -146,6 +151,56 @@ Semantics:
 `--prefix` must be relative to the repository root. It may point to either a
 directory or a single file.
 
+## Using `--json`
+
+Use `--json` on the exact/query subcommands when another tool or agent needs a
+machine-readable result instead of human-oriented text.
+
+Supported subcommands:
+
+- `symbol`
+- `embeddings`
+- `calls`
+- `refs`
+- `audit-docstrings`
+- `context-for`
+
+Examples:
+
+```bash
+repoindex symbol build_parser --json
+repoindex embeddings "schema migration rules" --json --prefix src/repoindex/query
+repoindex calls imported_helper --module pkg.b --incoming --json
+repoindex refs _retrieve_script_candidates --incoming --json --prefix src/repoindex/query
+repoindex audit-docstrings --json --prefix src/repoindex/query
+repoindex context-for "missing numpy docstring" --json
+```
+
+For `symbol`, `embeddings`, `calls`, `refs`, and `audit-docstrings`, the JSON
+contract uses a lightweight shared envelope:
+
+```json
+{
+  "schema_version": "1.0",
+  "command": "symbol",
+  "status": "ok",
+  "query": {
+    "name": "build_parser",
+    "prefix": "src/repoindex"
+  },
+  "results": []
+}
+```
+
+Status values:
+
+- `ok`: one or more results were found
+- `no_matches`: the filtered query returned no results
+- `not_indexed`: the command requires indexed embedding data that is not present
+
+`context-for --json` keeps its existing richer retrieval schema. It is not part
+of the lightweight query-envelope contract above.
+
 ## Using `--prompt`
 
 Use `repoindex context-for "<query>" --prompt` when you want a compact,
@@ -181,6 +236,7 @@ Use JSON when another tool or agent workflow needs structured output:
 
 ```bash
 repoindex context-for "missing numpy docstring" --json
+repoindex symbol build_parser --json
 ```
 
 Use prompt mode when you want a copy-ready task preamble:
