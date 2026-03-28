@@ -33,6 +33,9 @@ nav:
   - Scripts: scripts.md
   - Release checklist: release/checklist.md
   - Release process: release/process.md
+  - Process:
+      - Branching: process/branching.md
+      - Decisions: process/decisions.md
   - ADRs:
       - Index: adr/index.md
       - ADR-001: adr/ADR-001-rrf-multichannel.md

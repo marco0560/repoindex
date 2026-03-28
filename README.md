@@ -7,6 +7,21 @@ It builds a SQLite index inside the target repository, supports exact symbol
 lookup, docstring auditing, deterministic local semantic embeddings, and
 deterministic context generation for natural-language queries.
 
+## Repository Documentation
+
+The repository-local operational and contributor documentation is organized
+under `docs/`.
+
+Start with:
+
+- `docs/getting_started.md`
+- `docs/CONTRIBUTING.md`
+- `docs/release/checklist.md`
+- `docs/release/process.md`
+- `docs/process/branching.md`
+- `docs/process/decisions.md`
+- `docs/adr/index.md`
+
 ## Install for Local Development
 
 Install `repoindex` into the virtual environment of the repository you want to

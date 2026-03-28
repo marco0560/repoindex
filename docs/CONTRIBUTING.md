@@ -41,6 +41,13 @@ git release-audit
 The local release contract is documented in `docs/release/checklist.md` and
 `docs/release/process.md`.
 
+## Branching and decisions
+
+Repository branch and ADR workflow guidance is documented in:
+
+- `docs/process/branching.md`
+- `docs/process/decisions.md`
+
 ## Context exploration
 
 Before broad patching work:

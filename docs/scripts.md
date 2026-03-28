@@ -27,6 +27,10 @@ repository's conventional-commit contract.
 Clean ignored repository artifacts using Git as the source of truth rather than
 custom filesystem heuristics.
 
+## `scripts/new_decision.py`
+
+Create a new ADR file under `docs/adr/` and append it to the ADR index.
+
 ## `scripts/release_audit.sh`
 
 Run conservative release-readiness checks for the current branch and repository

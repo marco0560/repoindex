@@ -52,6 +52,10 @@ def git_alias_entries() -> list[tuple[str, str]]:
             ),
         ),
         (
+            "alias.new-decision",
+            "!bash scripts/run_with_repo_python.sh scripts/new_decision.py",
+        ),
+        (
             "alias.install-repo-config",
             (
                 "!bash scripts/run_with_repo_python.sh "

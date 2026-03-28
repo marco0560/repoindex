@@ -17,6 +17,7 @@ This documentation set is intentionally small for now. It covers:
 - how to install and use the current tool locally
 - how contributors should validate changes
 - the small set of repository-owned helper scripts
+- the branch and ADR workflow used for repository governance
 - the active ADR trail
 
 ## Current architecture status
