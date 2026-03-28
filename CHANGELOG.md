@@ -1,3 +1,10 @@
+## [0.33.1](https://github.com/marco0560/repoindex/compare/v0.33.0...v0.33.1) (2026-03-28)
+
+
+### Bug Fixes
+
+* **release:** publish github releases ([208ce21](https://github.com/marco0560/repoindex/commit/208ce212f39f028cdd0316809e400d9256873288))
+
 # [0.33.0](https://github.com/marco0560/repoindex/compare/v0.32.0...v0.33.0) (2026-03-28)
 
 
