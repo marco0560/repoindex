@@ -66,7 +66,21 @@ def git_alias_entries() -> list[tuple[str, str]]:
             "alias.docs-build",
             "!bash -lc 'source .venv/bin/activate && mkdocs build --strict'",
         ),
+        (
+            "alias.gen-issues",
+            (
+                "!f() { rm -f issues.json; timeout 10s gh api graphql "
+                '-f query=\'query {repository(owner: "marco0560", '
+                'name: "repoindex") {issues(first: 100, states: OPEN, '
+                "orderBy: {field: CREATED_AT, direction: ASC}) {nodes "
+                "{number, title, body, url, labels(first: 20) "
+                "{nodes {name}}, milestone {number, title}, comments "
+                "{totalCount}}}}}' > issues.json; }; f"
+            ),
+        ),
         ("alias.release-audit", "!bash scripts/release_audit.sh"),
+        ("alias.release-check", "!bash scripts/release_system_selfcheck.sh"),
+        ("alias.rel", "!bash scripts/release_rel.sh"),
         (
             "alias.safe-push",
             (

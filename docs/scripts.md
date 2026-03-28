@@ -36,6 +36,10 @@ Create a new ADR file under `docs/adr/` and append it to the ADR index.
 Run conservative release-readiness checks for the current branch and repository
 state.
 
+## `scripts/release_rel.sh`
+
+Run the guarded release push path used by `git rel`.
+
 ## `scripts/tag_guard.sh`
 
 Validate that a proposed release tag matches the expected `vX.Y.Z` pattern.
@@ -44,6 +48,10 @@ Validate that a proposed release tag matches the expected `vX.Y.Z` pattern.
 
 Validate that `CHANGELOG.md` is structurally consistent with the latest
 reachable release tag.
+
+## `scripts/release_system_selfcheck.sh`
+
+Run a read-only consistency check of the installed local release tooling.
 
 ## `scripts/ri_fix.py`
 

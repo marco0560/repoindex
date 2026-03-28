@@ -7,5 +7,5 @@
 5. Run `mypy .`.
 6. Run `pytest`.
 7. Run `git release-audit`.
-8. Push the releasable commits to `main`.
+8. Push the releasable commits with `git rel`.
 9. Confirm the GitHub release workflow creates the expected tag and GitHub release.

@@ -23,6 +23,6 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: python -m mypy .
+        entry: bash scripts/run_with_repo_python.sh -m mypy .
         language: system
         pass_filenames: false
