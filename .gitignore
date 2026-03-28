@@ -30,6 +30,7 @@ dist/
 *.egg-info/
 src/repoindex/_version.py
 repo.tar.xz
+site/
 
 # Coverage
 .coverage

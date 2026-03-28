@@ -33,4 +33,9 @@ nav:
   - Scripts: scripts.md
   - Release checklist: release/checklist.md
   - Release process: release/process.md
-  - ADRs: adr/index.md
+  - ADRs:
+      - Index: adr/index.md
+      - ADR-001: adr/ADR-001-rrf-multichannel.md
+      - ADR-002: adr/ADR-002-prefix-filtering.md
+      - ADR-003: adr/ADR-003-query-json-output.md
+      - ADR-004: adr/ADR-004-pluggable-backends-migration-plan.md
