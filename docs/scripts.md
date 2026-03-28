@@ -1,5 +1,20 @@
 # Scripts
 
+## `scripts/bootstrap_dev_environment.py`
+
+Create `.venv`, install development and documentation dependencies, install
+repo-local Git configuration, and optionally run the validation surface.
+
+## `scripts/install_repo_git_config.py`
+
+Install the repo-local Git configuration expected by this repository,
+including hooks, commit template, and sanctioned aliases.
+
+## `scripts/run_with_repo_python.sh`
+
+Resolve the repository Python interpreter deterministically and execute Python
+arguments through it.
+
 ## `scripts/check_commit_messages.py`
 
 Validate commit headers for semantic-release compatibility.

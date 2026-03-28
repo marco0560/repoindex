@@ -1,6 +1,15 @@
 # Getting Started
 
-## Local development install
+## Bootstrap this repository
+
+Create the local development environment and install the repo-local Git
+configuration:
+
+```bash
+python3 scripts/bootstrap_dev_environment.py
+```
+
+## Install into another repository
 
 Install `repoindex` into the virtual environment of the repository you want to
 analyze.
@@ -37,9 +46,9 @@ repoindex context-for "schema migration rules"
 repoindex context-for "missing numpy docstring" --json
 ```
 
-## Current validation surface
+## Validation surface
 
-The repository currently expects contributors to run:
+The repository expects contributors to run:
 
 ```bash
 git check

@@ -19,6 +19,17 @@ pytest
 
 Use the repository-local `.venv` for all Python-facing tools.
 
+## Bootstrap
+
+A fresh clone can be initialized with:
+
+```bash
+python3 scripts/bootstrap_dev_environment.py
+```
+
+That bootstrap flow creates `.venv`, installs development and documentation
+dependencies, and installs repo-local Git configuration.
+
 ## Context exploration
 
 Before broad patching work:
