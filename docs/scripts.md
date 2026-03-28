@@ -27,6 +27,20 @@ repository's conventional-commit contract.
 Clean ignored repository artifacts using Git as the source of truth rather than
 custom filesystem heuristics.
 
+## `scripts/release_audit.sh`
+
+Run conservative release-readiness checks for the current branch and repository
+state.
+
+## `scripts/tag_guard.sh`
+
+Validate that a proposed release tag matches the expected `vX.Y.Z` pattern.
+
+## `scripts/changelog_guard.sh`
+
+Validate that `CHANGELOG.md` is structurally consistent with the latest
+reachable release tag.
+
 ## `scripts/ri_fix.py`
 
 Repository helper for local maintenance tasks used during development.

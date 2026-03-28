@@ -31,4 +31,6 @@ nav:
   - Getting started: getting_started.md
   - Contributing: CONTRIBUTING.md
   - Scripts: scripts.md
+  - Release checklist: release/checklist.md
+  - Release process: release/process.md
   - ADRs: adr/index.md

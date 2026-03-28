@@ -30,6 +30,17 @@ python3 scripts/bootstrap_dev_environment.py
 That bootstrap flow creates `.venv`, installs development and documentation
 dependencies, and installs repo-local Git configuration.
 
+## Release discipline
+
+Before pushing release-bearing changes to `main`, run:
+
+```bash
+git release-audit
+```
+
+The local release contract is documented in `docs/release/checklist.md` and
+`docs/release/process.md`.
+
 ## Context exploration
 
 Before broad patching work:

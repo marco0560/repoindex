@@ -38,4 +38,7 @@ echo "▶ Running mypy"
 "$PYTHON_BIN" -m mypy .
 
 echo "▶ Running test suite"
-exec "$PYTHON_BIN" -m pytest -q
+"$PYTHON_BIN" -m pytest -q
+
+echo "▶ Running release audit"
+exec "$REPO_ROOT/scripts/release_audit.sh"

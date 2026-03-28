@@ -62,6 +62,14 @@ def git_alias_entries() -> list[tuple[str, str]]:
             "alias.docs-build",
             "!bash -lc 'source .venv/bin/activate && mkdocs build --strict'",
         ),
+        ("alias.release-audit", "!bash scripts/release_audit.sh"),
+        (
+            "alias.safe-push",
+            (
+                "!bash scripts/release_audit.sh && git fetch && "
+                "git pull --ff-only && git push"
+            ),
+        ),
     ]
 
 
