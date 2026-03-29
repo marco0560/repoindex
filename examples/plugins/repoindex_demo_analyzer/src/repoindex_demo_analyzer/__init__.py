@@ -81,4 +81,4 @@ def build_analyzer() -> LanguageAnalyzer:
     repoindex.contracts.LanguageAnalyzer
         Example analyzer instance cast to the public plugin contract.
     """
-    return cast(LanguageAnalyzer, DemoAnalyzer())
+    return cast("LanguageAnalyzer", DemoAnalyzer())

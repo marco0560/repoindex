@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import tree_sitter_c
+if TYPE_CHECKING:
+    from pathlib import Path
+
 from tree_sitter import Language, Node, Parser
+from tree_sitter_c import language
 
 from repoindex.models import (
     AnalysisResult,
@@ -19,7 +22,7 @@ from repoindex.models import (
 )
 
 _C_SUFFIXES = {".c", ".h"}
-_LANGUAGE = Language(tree_sitter_c.language())
+_LANGUAGE = Language(language())
 
 
 def _new_parser() -> Parser:
@@ -514,13 +517,37 @@ def _declaration_name(node: Node, source: bytes) -> str | None:
     return None
 
 
+def _resolve_declaration_docstring(
+    attached_comments: dict[int, str],
+    node: Node,
+    inherited_comment: str | None = None,
+) -> str | None:
+    """
+    Resolve the best docstring to attach to one declaration node.
+
+    Parameters
+    ----------
+    attached_comments : dict[int, str]
+        Leading comment summaries keyed by declaration start byte.
+    node : tree_sitter.Node
+        Declaration node whose docstring should be resolved.
+    inherited_comment : str | None, optional
+        Leading comment summary inherited from an owning declaration node.
+
+    Returns
+    -------
+    str | None
+        Attached comment when present, otherwise the inherited comment.
+    """
+    return attached_comments.get(node.start_byte, inherited_comment)
+
+
 def _append_declaration(
     declarations: list[DeclarationArtifact],
     node: Node,
     source: bytes,
     *,
-    attached_comments: dict[int, str],
-    inherited_comment: str | None = None,
+    docstring: str | None,
     kind: DeclarationKind,
 ) -> None:
     """
@@ -534,10 +561,8 @@ def _append_declaration(
         Declaration node being normalized.
     source : bytes
         Full source buffer.
-    attached_comments : dict[int, str]
-        Leading comment summaries keyed by declaration start byte.
-    inherited_comment : str | None, optional
-        Leading comment summary inherited from an owning declaration node.
+    docstring : str | None
+        Docstring to attach to the declaration.
     kind : str
         Stable declaration classifier.
 
@@ -556,7 +581,7 @@ def _append_declaration(
             kind=kind,
             lineno=node.start_point.row + 1,
             signature=" ".join(_node_text(node, source).split()),
-            docstring=attached_comments.get(node.start_byte, inherited_comment),
+            docstring=docstring,
         )
     )
 
@@ -586,7 +611,7 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
                 declarations,
                 child,
                 source,
-                attached_comments=attached_comments,
+                docstring=_resolve_declaration_docstring(attached_comments, child),
                 kind="struct",
             )
             continue
@@ -596,7 +621,7 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
                 declarations,
                 child,
                 source,
-                attached_comments=attached_comments,
+                docstring=_resolve_declaration_docstring(attached_comments, child),
                 kind="enum",
             )
             continue
@@ -611,8 +636,11 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
                     declarations,
                     named_child,
                     source,
-                    attached_comments=attached_comments,
-                    inherited_comment=child_comment,
+                    docstring=_resolve_declaration_docstring(
+                        attached_comments,
+                        named_child,
+                        inherited_comment=child_comment,
+                    ),
                     kind="struct",
                 )
             elif named_child.type == "enum_specifier":
@@ -620,8 +648,11 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
                     declarations,
                     named_child,
                     source,
-                    attached_comments=attached_comments,
-                    inherited_comment=child_comment,
+                    docstring=_resolve_declaration_docstring(
+                        attached_comments,
+                        named_child,
+                        inherited_comment=child_comment,
+                    ),
                     kind="enum",
                 )
 
@@ -629,7 +660,7 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
             declarations,
             child,
             source,
-            attached_comments=attached_comments,
+            docstring=_resolve_declaration_docstring(attached_comments, child),
             kind="typedef",
         )
 

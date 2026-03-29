@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import shutil
 import subprocess
-from collections.abc import Sequence
-from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING
 
-from repoindex.contracts import LanguageAnalyzer
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+    from pathlib import Path
+
+    from repoindex.contracts import LanguageAnalyzer
 
 EXCLUDED_DIRS = {
     ".repoindex",
@@ -22,6 +25,7 @@ EXCLUDED_DIRS = {
     "dist",
 }
 CANONICAL_SOURCE_DIRS: tuple[str, ...] = ("src", "tests", "scripts")
+GIT_EXE = shutil.which("git") or "git"
 
 
 def discovery_file_globs(analyzers: Sequence[LanguageAnalyzer]) -> tuple[str, ...]:
@@ -141,10 +145,7 @@ def _is_excluded(path: Path, root: Path, patterns: list[str]) -> bool:
     if any(part in EXCLUDED_DIRS for part in path.parts):
         return True
 
-    if _match_gitignore(path, root, patterns):
-        return True
-
-    return False
+    return bool(_match_gitignore(path, root, patterns))
 
 
 def _iter_source_files(
@@ -215,7 +216,7 @@ def iter_project_files(
     """
     try:
         result = subprocess.run(
-            ["git", "ls-files", "--cached", *discovery_file_globs(analyzers)],
+            [GIT_EXE, "ls-files", "--cached", *discovery_file_globs(analyzers)],
             cwd=root,
             capture_output=True,
             text=True,
@@ -321,7 +322,7 @@ def iter_canonical_project_files(root: Path) -> Iterator[Path]:
     """
     try:
         result = subprocess.run(
-            ["git", "ls-files", "--cached", "--", *CANONICAL_SOURCE_DIRS],
+            [GIT_EXE, "ls-files", "--cached", "--", *CANONICAL_SOURCE_DIRS],
             cwd=root,
             capture_output=True,
             text=True,

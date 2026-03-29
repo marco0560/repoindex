@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
 
 from repoindex.models import (
     AnalysisResult,
@@ -38,7 +40,7 @@ def _int_value(value: object, *, default: int = 0) -> int:
     """
     if value is None:
         return default
-    return int(cast(int | str, value))
+    return int(cast("int | str", value))
 
 
 def _optional_int_value(value: object) -> int | None:
@@ -57,7 +59,7 @@ def _optional_int_value(value: object) -> int | None:
     """
     if value is None:
         return None
-    return int(cast(int | str, value))
+    return int(cast("int | str", value))
 
 
 def _call_kind(value: object) -> CallKind:
@@ -83,7 +85,7 @@ def _call_kind(value: object) -> CallKind:
     if kind not in {"name", "attribute", "unresolved"}:
         msg = f"Unsupported call kind: {kind}"
         raise ValueError(msg)
-    return cast(CallKind, kind)
+    return cast("CallKind", kind)
 
 
 def _reference_kind(value: object) -> CallableReferenceKind:
@@ -114,7 +116,7 @@ def _reference_kind(value: object) -> CallableReferenceKind:
     }:
         msg = f"Unsupported callable reference kind: {kind}"
         raise ValueError(msg)
-    return cast(CallableReferenceKind, kind)
+    return cast("CallableReferenceKind", kind)
 
 
 def _import_kind(value: object) -> ImportKind:
@@ -140,7 +142,7 @@ def _import_kind(value: object) -> ImportKind:
     if kind not in {"import", "include_local", "include_system"}:
         msg = f"Unsupported import kind: {kind}"
         raise ValueError(msg)
-    return cast(ImportKind, kind)
+    return cast("ImportKind", kind)
 
 
 def _call_site_from_mapping(raw: Mapping[str, object]) -> CallSite:
@@ -204,16 +206,16 @@ def _function_from_mapping(raw: Mapping[str, object]) -> FunctionArtifact:
     repoindex.models.FunctionArtifact
         Normalized function artifact.
     """
-    call_rows = cast(Sequence[Mapping[str, object]], raw.get("calls", ()))
-    ref_rows = cast(Sequence[Mapping[str, object]], raw.get("callable_refs", ()))
-    parameters = cast(Sequence[object], raw.get("parameters", ()))
+    call_rows = cast("Sequence[Mapping[str, object]]", raw.get("calls", ()))
+    ref_rows = cast("Sequence[Mapping[str, object]]", raw.get("callable_refs", ()))
+    parameters = cast("Sequence[object]", raw.get("parameters", ()))
 
     return FunctionArtifact(
         name=str(raw["name"]),
         lineno=_int_value(raw["lineno"]),
         end_lineno=_optional_int_value(raw.get("end_lineno")),
         signature=str(raw["signature"]),
-        docstring=cast(str | None, raw.get("docstring")),
+        docstring=cast("str | None", raw.get("docstring")),
         has_docstring=_int_value(raw.get("has_docstring", 0)),
         is_method=_int_value(raw.get("is_method", 0)),
         is_public=_int_value(raw.get("is_public", 0)),
@@ -223,7 +225,7 @@ def _function_from_mapping(raw: Mapping[str, object]) -> FunctionArtifact:
         raises=_int_value(raw.get("raises", 0)),
         has_asserts=_int_value(raw.get("has_asserts", 0)),
         decorators=tuple(
-            str(value) for value in cast(Sequence[object], raw.get("decorators", ()))
+            str(value) for value in cast("Sequence[object]", raw.get("decorators", ()))
         ),
         calls=tuple(_call_site_from_mapping(row) for row in call_rows),
         callable_refs=tuple(_callable_reference_from_mapping(row) for row in ref_rows),
@@ -249,16 +251,16 @@ def analysis_result_from_parsed(
     repoindex.models.AnalysisResult
         Normalized analyzer output for one file.
     """
-    module = cast(Mapping[str, object], parsed["module"])
-    classes = cast(Sequence[Mapping[str, object]], parsed.get("classes", ()))
-    functions = cast(Sequence[Mapping[str, object]], parsed.get("functions", ()))
-    imports = cast(Sequence[Mapping[str, object]], parsed.get("imports", ()))
+    module = cast("Mapping[str, object]", parsed["module"])
+    classes = cast("Sequence[Mapping[str, object]]", parsed.get("classes", ()))
+    functions = cast("Sequence[Mapping[str, object]]", parsed.get("functions", ()))
+    imports = cast("Sequence[Mapping[str, object]]", parsed.get("imports", ()))
 
     return AnalysisResult(
         source_path=source_path,
         module=ModuleArtifact(
             name=str(module["name"]),
-            docstring=cast(str | None, module.get("docstring")),
+            docstring=cast("str | None", module.get("docstring")),
             has_docstring=_int_value(module.get("has_docstring", 0)),
         ),
         classes=tuple(
@@ -266,12 +268,13 @@ def analysis_result_from_parsed(
                 name=str(class_row["name"]),
                 lineno=_int_value(class_row["lineno"]),
                 end_lineno=_optional_int_value(class_row.get("end_lineno")),
-                docstring=cast(str | None, class_row.get("docstring")),
+                docstring=cast("str | None", class_row.get("docstring")),
                 has_docstring=_int_value(class_row.get("has_docstring", 0)),
                 methods=tuple(
                     _function_from_mapping(method_row)
                     for method_row in cast(
-                        Sequence[Mapping[str, object]], class_row.get("methods", ())
+                        "Sequence[Mapping[str, object]]",
+                        class_row.get("methods", ()),
                     )
                 ),
             )
@@ -282,7 +285,7 @@ def analysis_result_from_parsed(
         imports=tuple(
             ImportArtifact(
                 name=str(import_row["name"]),
-                alias=cast(str | None, import_row.get("alias")),
+                alias=cast("str | None", import_row.get("alias")),
                 lineno=_int_value(import_row["lineno"]),
                 kind=_import_kind(import_row.get("kind", "import")),
             )

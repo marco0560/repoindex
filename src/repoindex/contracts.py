@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from repoindex.models import AnalysisResult, FileMetadataSnapshot
-from repoindex.types import IncludeEdgeRow
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
+    from repoindex.models import AnalysisResult, FileMetadataSnapshot
+    from repoindex.types import IncludeEdgeRow
 
 
 @runtime_checkable

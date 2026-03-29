@@ -14,8 +14,11 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
-from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 # Paths that should never be removed, even if ignored by git
 PROTECTED_PATHS = {
@@ -24,6 +27,7 @@ PROTECTED_PATHS = {
     Path("node_modules"),
     Path("src/repoindex/_version.py"),
 }
+GIT_EXE = shutil.which("git") or "git"
 
 
 def git_ignored_paths() -> Iterable[Path]:
@@ -45,7 +49,7 @@ def git_ignored_paths() -> Iterable[Path]:
         If ``git status --ignored --porcelain`` fails.
     """
     result = subprocess.run(
-        ["git", "status", "--ignored", "--porcelain"],
+        [GIT_EXE, "status", "--ignored", "--porcelain"],
         capture_output=True,
         text=True,
         check=True,

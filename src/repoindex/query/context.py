@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from repoindex._version import version as __version__
 from repoindex.prefix import normalize_prefix, path_has_prefix, prefix_clause
@@ -40,6 +41,9 @@ from repoindex.types import (
     ReferenceRow,
     SymbolRow,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # Current schema version
 SCHEMA_VERSION = "1.1"
@@ -470,12 +474,12 @@ def _snippet_from_node(
     start = getattr(node, "lineno", 1) - 1
 
     # --- include decorators if present ---
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        if node.decorator_list:
-            try:
-                start = min(d.lineno for d in node.decorator_list) - 1
-            except (AttributeError, ValueError):
-                pass
+    if (
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        and node.decorator_list
+    ):
+        with contextlib.suppress(AttributeError, ValueError):
+            start = min(d.lineno for d in node.decorator_list) - 1
 
     # Determine end (best-effort)
     end = getattr(node, "end_lineno", None)
@@ -490,7 +494,8 @@ def _snippet_from_node(
     if body:
         doc = ast.get_docstring(
             cast(
-                ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Module, node
+                "ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Module",
+                node,
             ),
             clean=False,
         )
@@ -595,9 +600,11 @@ def _extract_code_context(
         func_candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
 
         for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.name == name:
-                    func_candidates.append(node)
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == name
+            ):
+                func_candidates.append(node)
 
         if func_candidates:
             node = min(func_candidates, key=lambda n: abs(n.lineno - lineno))
@@ -617,9 +624,11 @@ def _extract_code_context(
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 for child in node.body:
-                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        if child.name == name:
-                            method_candidates.append(child)
+                    if (
+                        isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and child.name == name
+                    ):
+                        method_candidates.append(child)
 
         if method_candidates:
             node = min(method_candidates, key=lambda n: abs(n.lineno - lineno))
@@ -3131,13 +3140,13 @@ def _render_context_json(
                 symbol_type, module_name, name, _, lineno = symbol
                 role = _classify_file_role(symbol[3], module_name)
                 role_bias = _file_role_bias(role, intent)
-                merge_channels = cast(dict[str, float], merge_details["channels"])
-                merge_families = cast(dict[str, float], merge_details["families"])
-                merge_rrf_score = cast(float, merge_details["rrf_score"])
-                merge_evidence_bonus = cast(float, merge_details["evidence_bonus"])
-                merge_role_bonus = cast(float, merge_details["role_bonus"])
-                merge_score = cast(float, merge_details["merge_score"])
-                merge_winner = cast(str, merge_details["winner"])
+                merge_channels = cast("dict[str, float]", merge_details["channels"])
+                merge_families = cast("dict[str, float]", merge_details["families"])
+                merge_rrf_score = cast("float", merge_details["rrf_score"])
+                merge_evidence_bonus = cast("float", merge_details["evidence_bonus"])
+                merge_role_bonus = cast("float", merge_details["role_bonus"])
+                merge_score = cast("float", merge_details["merge_score"])
+                merge_winner = cast("str", merge_details["winner"])
 
                 merge_entries.append(
                     {
@@ -3468,13 +3477,13 @@ def _append_explain_sections(
             lines.append(label)
             role = _classify_file_role(symbol[3], module_name)
             role_bias = _file_role_bias(role, intent)
-            merge_rrf_score = cast(float, merge_details["rrf_score"])
-            merge_evidence_bonus = cast(float, merge_details["evidence_bonus"])
-            merge_role_bonus = cast(float, merge_details["role_bonus"])
-            merge_score = cast(float, merge_details["merge_score"])
+            merge_rrf_score = cast("float", merge_details["rrf_score"])
+            merge_evidence_bonus = cast("float", merge_details["evidence_bonus"])
+            merge_role_bonus = cast("float", merge_details["role_bonus"])
+            merge_score = cast("float", merge_details["merge_score"])
             lines.append(
                 "  "
-                f"winner={cast(str, merge_details['winner'])} "
+                f"winner={cast('str', merge_details['winner'])} "
                 f"rrf_score={merge_rrf_score:.4f} "
                 f"evidence_bonus={merge_evidence_bonus:.4f} "
                 f"role_bonus={merge_role_bonus:.4f} "
@@ -3482,11 +3491,11 @@ def _append_explain_sections(
             )
             lines.append("  " f"role={role} " f"role_bias={role_bias}")
 
-            family_scores = cast(dict[str, float], merge_details["families"])
+            family_scores = cast("dict[str, float]", merge_details["families"])
             for family_name, score in family_scores.items():
                 lines.append(f"  family.{family_name}: {score:.2f}")
 
-            channel_scores = cast(dict[str, float], merge_details["channels"])
+            channel_scores = cast("dict[str, float]", merge_details["channels"])
             for channel_name, score in channel_scores.items():
                 lines.append(f"  channel.{channel_name}: {score:.2f}")
 
@@ -3729,8 +3738,7 @@ def context_for(
 
         confidence = base + (0.1 * overlap)
 
-        if confidence > 1.0:
-            confidence = 1.0
+        confidence = min(confidence, 1.0)
 
         confidence_map[symbol] = confidence
 

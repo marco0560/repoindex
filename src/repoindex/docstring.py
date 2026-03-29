@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import inspect
 import re
-from typing import List
 
 REQUIRED_SECTIONS = [
     "Parameters",
@@ -185,7 +184,7 @@ def find_missing_sections(
     require_returns_section: bool = False,
     require_yields_section: bool = False,
     raises_exception: bool = False,
-) -> List[str]:
+) -> list[str]:
     """
     List required or conditional NumPy sections missing from a docstring.
 
@@ -208,7 +207,7 @@ def find_missing_sections(
         Missing section names implied by the supplied callable metadata.
     """
     sections = _section_map(doc)
-    missing: List[str] = []
+    missing: list[str] = []
 
     if require_parameters_section and "Parameters" not in sections:
         missing.append("Parameters")
@@ -230,7 +229,7 @@ def find_unexpected_sections(
     *,
     allow_returns_section: bool = False,
     allow_yields_section: bool = False,
-) -> List[str]:
+) -> list[str]:
     """
     List NumPy sections that are present but semantically unsupported.
 
@@ -251,7 +250,7 @@ def find_unexpected_sections(
         Unexpected section names present in the docstring.
     """
     sections = _section_map(doc)
-    unexpected: List[str] = []
+    unexpected: list[str] = []
 
     if "Returns" in sections and not allow_returns_section:
         unexpected.append("Returns")

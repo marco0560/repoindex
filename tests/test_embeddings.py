@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from repoindex.cli import main
 from repoindex.indexer import index_repo
@@ -19,6 +17,11 @@ from repoindex.semantic.embeddings import (
 )
 from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import get_db_path, init_db
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def _write_embedding_fixture(root: Path) -> None:

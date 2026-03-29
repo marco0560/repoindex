@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,6 +18,9 @@ from repoindex.query.exact import (
     find_include_edges,
 )
 from repoindex.storage import get_db_path, init_db
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _write_fixture(root: Path) -> None:

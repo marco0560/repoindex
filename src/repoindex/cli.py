@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -38,6 +39,8 @@ from repoindex.schema import SCHEMA_VERSION
 from repoindex.semantic.embeddings import get_embedding_backend
 from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import get_db_path, get_repoindex_dir, init_db
+
+GIT_EXE = shutil.which("git") or "git"
 
 QUERY_JSON_SCHEMA_VERSION = "1.0"
 
@@ -1227,14 +1230,14 @@ def _get_head_commit(root: Path) -> str | None:
     """
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            [GIT_EXE, "rev-parse", "HEAD"],
             cwd=root,
             capture_output=True,
             text=True,
             check=True,
         )
         return result.stdout.strip()
-    except Exception:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
 
@@ -1258,7 +1261,7 @@ def _read_index_metadata(root: Path) -> dict[str, str]:
         return {}
     try:
         return dict(json.loads(path.read_text(encoding="utf-8")))
-    except Exception:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
 
 
@@ -1348,11 +1351,11 @@ def _ensure_index(root: Path) -> None:
             commit = _get_head_commit(root)
             if commit:
                 _write_index_metadata(root, {"commit": commit})
-        except Exception as e:
+        except (OSError, sqlite3.Error, RuntimeError, ValueError) as e:
             print("ERROR: failed to build index automatically")
             print("Run manually: repoindex index")
             print(f"Details: {e}")
-            raise SystemExit(1)
+            raise SystemExit(1) from e
 
         print("[repoindex] Index ready", file=sys.stderr)
         return
@@ -1370,7 +1373,8 @@ def _ensure_index(root: Path) -> None:
                 "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1"
             )
             if cursor.fetchone() is None:
-                raise RuntimeError("empty or invalid database schema")
+                msg = "empty or invalid database schema"
+                raise RuntimeError(msg)
 
             # --- GIT STALENESS CHECK ---
             current_commit = _get_head_commit(root)
@@ -1494,11 +1498,11 @@ def _ensure_index(root: Path) -> None:
         finally:
             conn.close()
 
-    except Exception as e:
+    except (OSError, sqlite3.Error, RuntimeError, ValueError) as e:
         print("ERROR: repository index is corrupted or unreadable")
         print("Suggested fix: repoindex index")
         print(f"Details: {e}")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
 
 def _run_plugins(*, as_json: bool = False) -> int:
@@ -1638,7 +1642,7 @@ def main() -> int:
         )
     if args.command == "plugins":
         return _run_plugins(as_json=args.json)
-    elif args.command == "context-for":
+    if args.command == "context-for":
         _ensure_index(root)
 
         result = context_for(

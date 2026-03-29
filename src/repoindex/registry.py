@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import importlib
-import importlib.metadata as metadata
 import os
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from importlib import metadata
 from typing import TYPE_CHECKING, Literal, cast
 
 from repoindex.contracts import IndexBackend, LanguageAnalyzer
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+    from pathlib import Path
+
     from repoindex.indexer import SQLiteIndexBackend
 
 DEFAULT_INDEX_BACKEND = "sqlite"
@@ -185,7 +186,7 @@ def _registered_language_analyzer_factories() -> (
     from repoindex.analyzers.python import PythonAnalyzer
 
     factories: list[Callable[[], LanguageAnalyzer]] = [
-        cast(Callable[[], LanguageAnalyzer], PythonAnalyzer)
+        cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer)
     ]
     c_factory = _optional_language_analyzer_factory(
         "repoindex.analyzers.c",
@@ -270,8 +271,7 @@ def _optional_language_analyzer_factory(
             return None
         raise
 
-    factory = cast(Callable[[], LanguageAnalyzer], getattr(module, class_name))
-    return factory
+    return cast("Callable[[], LanguageAnalyzer]", getattr(module, class_name))
 
 
 def _entry_points_for_group(group: str) -> list[metadata.EntryPoint]:
@@ -351,7 +351,7 @@ def _load_entry_point_plugin(
             detail="entry point is not callable",
         )
 
-    factory = cast(Callable[[], object], loaded_object)
+    factory = cast("Callable[[], object]", loaded_object)
 
     try:
         instance = factory()
@@ -717,12 +717,10 @@ def active_index_backend() -> SQLiteIndexBackend:
     ValueError
         If the configured backend name is not registered.
     """
-    from repoindex.indexer import SQLiteIndexBackend
-
     configured_name = configured_index_backend_name()
     plugins, _registrations = _plugin_snapshot("backend")
     registry = {
-        plugin.name: cast(type[SQLiteIndexBackend], plugin.factory)
+        plugin.name: cast("type[SQLiteIndexBackend]", plugin.factory)
         for plugin in plugins
     }
     factory = registry.get(configured_name)
@@ -782,6 +780,6 @@ def active_language_analyzers() -> list[LanguageAnalyzer]:
     """
     plugins, _registrations = _plugin_snapshot("analyzer")
     factories = [
-        cast(Callable[[], LanguageAnalyzer], plugin.factory) for plugin in plugins
+        cast("Callable[[], LanguageAnalyzer]", plugin.factory) for plugin in plugins
     ]
     return _instantiate_language_analyzers(factories)

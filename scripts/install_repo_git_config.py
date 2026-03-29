@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+
+GIT_EXE = shutil.which("git") or "git"
 
 
 def git_alias_entries() -> list[tuple[str, str]]:
@@ -106,7 +109,7 @@ def main() -> int:
     """
 
     for key, value in git_alias_entries():
-        subprocess.run(["git", "config", "--local", key, value], check=True)
+        subprocess.run([GIT_EXE, "config", "--local", key, value], check=True)
     return 0
 
 

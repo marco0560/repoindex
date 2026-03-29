@@ -8,8 +8,11 @@ based on repoindex context.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
+
+REPOINDEX_EXE = shutil.which("repoindex") or "repoindex"
 
 
 def _print_help() -> None:
@@ -67,7 +70,7 @@ def main() -> None:
 
     try:
         result = subprocess.run(
-            ["repoindex", "context-for", query, "--prompt"],
+            [REPOINDEX_EXE, "context-for", query, "--prompt"],
             check=True,
             capture_output=True,
             text=True,

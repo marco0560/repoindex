@@ -25,4 +25,4 @@ def build_backend() -> IndexBackend:
     repoindex.contracts.IndexBackend
         Example backend instance cast to the public plugin contract.
     """
-    return cast(IndexBackend, DemoBackend())
+    return cast("IndexBackend", DemoBackend())

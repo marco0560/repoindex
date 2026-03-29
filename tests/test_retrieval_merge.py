@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from repoindex.query.classifier import classify_query
 from repoindex.query.context import (
     MERGE_RESULT_LIMIT,
@@ -10,7 +12,9 @@ from repoindex.query.context import (
     _diversify_merged_symbols_explain,
     _merge_ranked_channel_bundles_explain,
 )
-from repoindex.types import ChannelResults, SymbolRow
+
+if TYPE_CHECKING:
+    from repoindex.types import ChannelResults, SymbolRow
 
 
 def _symbol(

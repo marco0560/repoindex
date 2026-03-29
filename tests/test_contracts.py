@@ -7,8 +7,7 @@ import json
 import sqlite3
 import subprocess
 from pathlib import Path
-
-from pytest import MonkeyPatch
+from typing import TYPE_CHECKING
 
 from repoindex.analyzers import CAnalyzer, PythonAnalyzer
 from repoindex.contracts import IndexBackend, LanguageAnalyzer
@@ -32,6 +31,9 @@ from repoindex.registry import (
     active_language_analyzers,
     missing_language_analyzer_hint,
 )
+
+if TYPE_CHECKING:
+    from pytest import MonkeyPatch
 from repoindex.scanner import (
     discovery_file_globs,
     iter_canonical_project_files,
@@ -103,7 +105,7 @@ class _FakeBackend:
         None
             This fake backend keeps no state.
         """
-        return None
+        return
 
     def load_existing_file_hashes(self, root: Path) -> dict[str, str]:
         """
@@ -137,7 +139,7 @@ class _FakeBackend:
         None
             This fake backend keeps no state.
         """
-        return None
+        return
 
     def persist_analysis(
         self,
@@ -197,7 +199,7 @@ class _FakeBackend:
         None
             This fake backend keeps no state.
         """
-        return None
+        return
 
     def find_include_edges(
         self,
@@ -366,8 +368,9 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
 
     def fake_import_module(name: str, package: str | None = None) -> object:
         if name == "repoindex.analyzers.c":
+            msg = "No module named 'tree_sitter_c'"
             raise ModuleNotFoundError(
-                "No module named 'tree_sitter_c'",
+                msg,
                 name="tree_sitter_c",
             )
         return real_import_module(name, package)
@@ -405,8 +408,9 @@ def test_select_language_analyzer_reports_optional_extra_hint(
 
     def fake_import_module(name: str, package: str | None = None) -> object:
         if name == "repoindex.analyzers.c":
+            msg = "No module named 'tree_sitter_c'"
             raise ModuleNotFoundError(
-                "No module named 'tree_sitter_c'",
+                msg,
                 name="tree_sitter_c",
             )
         return real_import_module(name, package)
@@ -420,7 +424,8 @@ def test_select_language_analyzer_reports_optional_extra_hint(
     except ValueError as exc:
         message = str(exc)
     else:
-        raise AssertionError("expected ValueError for missing optional C analyzer")
+        msg = "expected ValueError for missing optional C analyzer"
+        raise AssertionError(msg)
 
     assert "No language analyzer registered for path: native/sample.c" in message
     assert "repoindex[c]" in message
@@ -981,7 +986,8 @@ def test_active_index_backend_rejects_unknown_configured_backend(
     except ValueError as exc:
         message = str(exc)
     else:
-        raise AssertionError("expected ValueError for unsupported backend")
+        msg = "expected ValueError for unsupported backend"
+        raise AssertionError(msg)
 
     assert "Unsupported repoindex backend 'unknown'" in message
     assert "sqlite" in message
@@ -1011,7 +1017,8 @@ def test_instantiating_language_analyzers_requires_a_non_empty_registry() -> Non
     except ValueError as exc:
         assert str(exc) == "No language analyzers are registered for repoindex"
     else:
-        raise AssertionError("expected ValueError for empty analyzer registry")
+        msg = "expected ValueError for empty analyzer registry"
+        raise AssertionError(msg)
 
 
 def test_sqlite_index_backend_persists_and_deletes_normalized_analysis(
@@ -1129,7 +1136,8 @@ def test_select_language_analyzer_uses_first_supporting_analyzer(
             return False
 
         def analyze_file(self, path: Path, root: Path) -> AnalysisResult:
-            raise AssertionError("should not be called")
+            msg = "should not be called"
+            raise AssertionError(msg)
 
     analyzer = _select_language_analyzer(
         tmp_path / "sample.py",

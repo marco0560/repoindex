@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ HEADER_RE = re.compile(
 )
 SAFE_SCOPE_RE = re.compile(r"^[a-z0-9/_-]+$")
 ZERO_SHA = "0" * 40
+GIT_EXE = shutil.which("git") or "git"
 
 
 @dataclass(frozen=True)
@@ -59,7 +61,7 @@ def git_stdout(*args: str) -> str:
     """
 
     result = subprocess.run(
-        ["git", *args],
+        [GIT_EXE, *args],
         capture_output=True,
         text=True,
         check=True,
@@ -147,7 +149,8 @@ def resolve_revision_range(base: str | None, head: str | None) -> str:
         return f"{base}..{head}"
     if head:
         return head
-    raise ValueError("A head revision is required.")
+    msg = "A head revision is required."
+    raise ValueError(msg)
 
 
 def main() -> int:

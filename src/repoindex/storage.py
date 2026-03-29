@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from repoindex.schema import DDL, SCHEMA_VERSION
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _refresh_call_edges_schema(conn: sqlite3.Connection) -> None:
@@ -542,5 +545,5 @@ def init_db(root: Path) -> None:
         "schema_version": str(SCHEMA_VERSION),
     }
 
-    with open(get_metadata_path(root), "w", encoding="utf-8") as f:
+    with get_metadata_path(root).open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)

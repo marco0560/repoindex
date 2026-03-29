@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from repoindex.indexer import index_repo
 from repoindex.query.context import context_for
 from repoindex.query.exact import find_symbol
 from repoindex.storage import init_db
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _write_phase2_fixture(root: Path) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -20,6 +20,9 @@ from repoindex.query.exact import (
 )
 from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import init_db
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _write_prefix_fixture(root: Path) -> None:
@@ -223,11 +226,11 @@ def test_docstring_audit_respects_prefix(tmp_path: Path) -> None:
     other_issues = docstring_issues(tmp_path, prefix="other")
 
     assert any(
-        "Function undocumented_pkg: Missing docstring" == msg for _, msg in pkg_issues
+        msg == "Function undocumented_pkg: Missing docstring" for _, msg in pkg_issues
     )
     assert all("undocumented_other" not in msg for _, msg in pkg_issues)
     assert any(
-        "Function undocumented_other: Missing docstring" == msg
+        msg == "Function undocumented_other: Missing docstring"
         for _, msg in other_issues
     )
     assert all("undocumented_pkg" not in msg for _, msg in other_issues)

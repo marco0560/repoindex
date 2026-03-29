@@ -7,9 +7,8 @@ import sqlite3
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from repoindex.contracts import LanguageAnalyzer
 from repoindex.docstring import validate_docstring
 from repoindex.models import (
     AnalysisResult,
@@ -39,7 +38,10 @@ from repoindex.semantic.embeddings import (
     serialize_vector,
 )
 from repoindex.storage import get_db_path, init_db
-from repoindex.types import ChannelResults, IncludeEdgeRow, SymbolRow
+
+if TYPE_CHECKING:
+    from repoindex.contracts import LanguageAnalyzer
+    from repoindex.types import ChannelResults, IncludeEdgeRow, SymbolRow
 
 CallRecord = dict[str, str | int]
 ReferenceRecord = dict[str, str | int]
@@ -1147,7 +1149,7 @@ def _rebuild_graph_indexes(conn: sqlite3.Connection) -> None:
         _col_offset,
     ) in call_rows:
         record = cast(
-            CallRecord,
+            "CallRecord",
             {
                 "kind": str(kind),
                 "base": str(base),
@@ -1199,7 +1201,7 @@ def _rebuild_graph_indexes(conn: sqlite3.Connection) -> None:
         _col_offset,
     ) in ref_rows:
         record = cast(
-            CallRecord,
+            "CallRecord",
             {
                 "kind": str(kind),
                 "base": str(base),
@@ -2120,8 +2122,8 @@ def _snapshot_from_metadata(meta: dict[str, object]) -> FileMetadataSnapshot:
     repoindex.models.FileMetadataSnapshot
         Normalized file metadata snapshot.
     """
-    mtime = cast(float | int, meta["mtime"])
-    size = cast(int | str, meta["size"])
+    mtime = cast("float | int", meta["mtime"])
+    size = cast("int | str", meta["size"])
     return FileMetadataSnapshot(
         path=Path(str(meta["path"])),
         sha256=str(meta["hash"]),

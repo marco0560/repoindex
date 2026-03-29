@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
 import sqlite3
-from pathlib import Path
 
 from repoindex.indexer import index_repo
 from repoindex.query.exact import docstring_issues, find_symbol
@@ -65,5 +69,5 @@ def test_index_and_queries(tmp_path: Path) -> None:
     issues = docstring_issues(tmp_path)
     messages = [message for _issue_type, message in issues]
     assert any(
-        "Method Demo.method: Missing docstring" == message for message in messages
+        message == "Method Demo.method: Missing docstring" for message in messages
     )

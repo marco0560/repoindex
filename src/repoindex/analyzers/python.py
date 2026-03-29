@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from repoindex.models import AnalysisResult
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from repoindex.models import AnalysisResult
+
 from repoindex.normalization import analysis_result_from_parsed
 from repoindex.parser_ast import parse_file
 

@@ -6,14 +6,16 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 import repoindex.registry as registry
 from repoindex.cli import main
 from repoindex.contracts import IndexBackend, LanguageAnalyzer
 from repoindex.indexer import SQLiteIndexBackend
 from repoindex.models import AnalysisResult, ModuleArtifact
+
+if TYPE_CHECKING:
+    import pytest
 
 
 @dataclass(frozen=True)

@@ -44,7 +44,8 @@ def normalize_prefix(root: Path, prefix: str | None) -> str | None:
     try:
         normalized.relative_to(root_path)
     except ValueError as exc:
-        raise ValueError("Prefix must stay under the repository root.") from exc
+        msg = "Prefix must stay under the repository root."
+        raise ValueError(msg) from exc
 
     return str(normalized)
 

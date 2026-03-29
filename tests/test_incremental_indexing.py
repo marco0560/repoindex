@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from repoindex.analyzers import PythonAnalyzer
 from repoindex.cli import _ensure_index, _write_index_metadata, main
@@ -17,6 +15,11 @@ from repoindex.scanner import file_metadata
 from repoindex.schema import SCHEMA_VERSION
 from repoindex.semantic.embeddings import EmbeddingBackendSpec
 from repoindex.storage import get_db_path, init_db
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def _write_module(path: Path, source: str) -> None:

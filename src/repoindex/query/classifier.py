@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from repoindex.types import ChannelName
+if TYPE_CHECKING:
+    from repoindex.types import ChannelName
 
 IntentFamily = Literal[
     "behavior",

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING
 
-from repoindex.types import CacheType, ReferenceRow, SymbolRow
+if TYPE_CHECKING:
+    import ast
+    from collections.abc import Callable
+
+    from repoindex.types import CacheType, ReferenceRow, SymbolRow
 
 
 def build_prompt(
