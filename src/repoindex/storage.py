@@ -397,6 +397,7 @@ def _refresh_symbol_index_schema(conn: sqlite3.Connection) -> None:
     expected = [
         "id",
         "name",
+        "stable_id",
         "type",
         "module_name",
         "file_id",
@@ -410,6 +411,7 @@ def _refresh_symbol_index_schema(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS embeddings")
     conn.execute("DROP INDEX IF EXISTS idx_symbol_name")
     conn.execute("DROP INDEX IF EXISTS idx_symbol_file")
+    conn.execute("DROP INDEX IF EXISTS idx_symbol_stable_id")
     conn.execute("DROP TABLE IF EXISTS symbol_index")
 
 
@@ -439,6 +441,7 @@ def _refresh_embeddings_schema(conn: sqlite3.Connection) -> None:
         "object_id",
         "backend",
         "version",
+        "content_hash",
         "dim",
         "vector",
     ]

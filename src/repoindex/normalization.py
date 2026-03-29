@@ -22,6 +22,70 @@ from repoindex.models import (
 )
 
 
+def _python_module_stable_id(module_name: str) -> str:
+    """
+    Build the stable module identity for one Python module.
+
+    Parameters
+    ----------
+    module_name : str
+        Dotted Python module name.
+
+    Returns
+    -------
+    str
+        Durable Python module identity.
+    """
+    return f"python:module:{module_name}"
+
+
+def _python_class_stable_id(module_name: str, class_name: str) -> str:
+    """
+    Build the stable identity for one Python class.
+
+    Parameters
+    ----------
+    module_name : str
+        Dotted Python module name.
+    class_name : str
+        Class name within the module.
+
+    Returns
+    -------
+    str
+        Durable Python class identity.
+    """
+    return f"python:class:{module_name}:{class_name}"
+
+
+def _python_function_stable_id(
+    module_name: str,
+    function_name: str,
+    *,
+    class_name: str | None = None,
+) -> str:
+    """
+    Build the stable identity for one Python callable.
+
+    Parameters
+    ----------
+    module_name : str
+        Dotted Python module name.
+    function_name : str
+        Unqualified callable name.
+    class_name : str | None, optional
+        Owning class name for a method.
+
+    Returns
+    -------
+    str
+        Durable Python function or method identity.
+    """
+    if class_name is None:
+        return f"python:function:{module_name}:{function_name}"
+    return f"python:method:{module_name}:{class_name}.{function_name}"
+
+
 def _int_value(value: object, *, default: int = 0) -> int:
     """
     Coerce one parser value into an integer.
@@ -192,7 +256,12 @@ def _callable_reference_from_mapping(raw: Mapping[str, object]) -> CallableRefer
     )
 
 
-def _function_from_mapping(raw: Mapping[str, object]) -> FunctionArtifact:
+def _function_from_mapping(
+    raw: Mapping[str, object],
+    *,
+    module_name: str,
+    class_name: str | None = None,
+) -> FunctionArtifact:
     """
     Convert one parsed function-like mapping into a normalized model.
 
@@ -200,6 +269,10 @@ def _function_from_mapping(raw: Mapping[str, object]) -> FunctionArtifact:
     ----------
     raw : collections.abc.Mapping[str, object]
         Parsed function or method entry.
+    module_name : str
+        Dotted Python module name.
+    class_name : str | None, optional
+        Owning class name for method artifacts.
 
     Returns
     -------
@@ -212,6 +285,11 @@ def _function_from_mapping(raw: Mapping[str, object]) -> FunctionArtifact:
 
     return FunctionArtifact(
         name=str(raw["name"]),
+        stable_id=_python_function_stable_id(
+            module_name,
+            str(raw["name"]),
+            class_name=class_name,
+        ),
         lineno=_int_value(raw["lineno"]),
         end_lineno=_optional_int_value(raw.get("end_lineno")),
         signature=str(raw["signature"]),
@@ -256,22 +334,33 @@ def analysis_result_from_parsed(
     functions = cast("Sequence[Mapping[str, object]]", parsed.get("functions", ()))
     imports = cast("Sequence[Mapping[str, object]]", parsed.get("imports", ()))
 
+    module_name = str(module["name"])
+
     return AnalysisResult(
         source_path=source_path,
         module=ModuleArtifact(
-            name=str(module["name"]),
+            name=module_name,
+            stable_id=_python_module_stable_id(module_name),
             docstring=cast("str | None", module.get("docstring")),
             has_docstring=_int_value(module.get("has_docstring", 0)),
         ),
         classes=tuple(
             ClassArtifact(
                 name=str(class_row["name"]),
+                stable_id=_python_class_stable_id(
+                    module_name,
+                    str(class_row["name"]),
+                ),
                 lineno=_int_value(class_row["lineno"]),
                 end_lineno=_optional_int_value(class_row.get("end_lineno")),
                 docstring=cast("str | None", class_row.get("docstring")),
                 has_docstring=_int_value(class_row.get("has_docstring", 0)),
                 methods=tuple(
-                    _function_from_mapping(method_row)
+                    _function_from_mapping(
+                        method_row,
+                        module_name=module_name,
+                        class_name=str(class_row["name"]),
+                    )
                     for method_row in cast(
                         "Sequence[Mapping[str, object]]",
                         class_row.get("methods", ()),
@@ -280,7 +369,9 @@ def analysis_result_from_parsed(
             )
             for class_row in classes
         ),
-        functions=tuple(_function_from_mapping(row) for row in functions),
+        functions=tuple(
+            _function_from_mapping(row, module_name=module_name) for row in functions
+        ),
         declarations=(),
         imports=tuple(
             ImportArtifact(

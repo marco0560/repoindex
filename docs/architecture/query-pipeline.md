@@ -31,6 +31,11 @@ having `query/exact.py` own raw SQLite connection setup and SQL execution.
 The current retrieval stack merges these channels into a deterministic context
 report for either human-readable, JSON, or prompt-oriented output.
 
+The embedding channel now depends on persisted real vectors built during
+explicit indexing rather than a placeholder local hash projection. Explain
+output also reports the active embedding backend metadata so retrieval
+diagnostics can be tied to a concrete backend contract.
+
 Phase 17 adds an explicit retrieval planner in
 `src/repoindex/query/classifier.py`. The planner classifies each query into a
 deterministic primary intent family:
@@ -71,3 +76,10 @@ Phases 12 through 17 complete the ranking and retrieval side by adding:
 - query-usable include-graph expansion for C
 - language-specific semantic text units
 - planner-driven retrieval routing
+
+The corresponding indexing-side requirement is now explicit as well:
+
+- analyzers emit durable symbol identities
+- changed files preserve unchanged symbol embeddings when their semantic
+  payload hash still matches
+- query-time semantic work reads persisted vectors only

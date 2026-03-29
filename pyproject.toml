@@ -10,6 +10,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+semantic = [
+  "sentence-transformers>=3.0"
+]
+
 c = [
   "tree-sitter>=0.25.2",
   "tree-sitter-c>=0.24.1"
@@ -74,7 +78,7 @@ python_version = "3.13"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["tree_sitter", "tree_sitter_c"]
+module = ["tree_sitter", "tree_sitter_c", "sentence_transformers"]
 ignore_missing_imports = true
 
 [tool.ruff.lint]

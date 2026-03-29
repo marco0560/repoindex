@@ -437,5 +437,10 @@ def test_embeddings_cli_prints_backend_and_matches(
 
     assert main() == 0
     captured = capsys.readouterr()
-    assert "backend: hash-v1 version=1 dim=128" in captured.out
+    assert (
+        "backend:"
+        f" {EMBEDDING_BACKEND}"
+        f" version={EMBEDDING_VERSION}"
+        f" dim={EMBEDDING_DIM}"
+    ) in captured.out
     assert "pkg.sample.validate_schema_rules" in captured.out

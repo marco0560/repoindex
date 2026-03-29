@@ -80,6 +80,8 @@ class DeclarationArtifact:
     ----------
     name : str
         Declaration name exposed to exact and semantic queries.
+    stable_id : str
+        Durable analyzer-owned identity for cross-run reuse.
     kind : {"struct", "enum", "typedef"}
         Stable declaration classifier used as the symbol type.
     lineno : int
@@ -91,6 +93,7 @@ class DeclarationArtifact:
     """
 
     name: str
+    stable_id: str
     kind: DeclarationKind
     lineno: int
     signature: str
@@ -161,6 +164,8 @@ class FunctionArtifact:
     ----------
     name : str
         Unqualified function or method name.
+    stable_id : str
+        Durable analyzer-owned identity for cross-run reuse.
     lineno : int
         First source line of the definition.
     end_lineno : int | None
@@ -194,6 +199,7 @@ class FunctionArtifact:
     """
 
     name: str
+    stable_id: str
     lineno: int
     end_lineno: int | None
     signature: str
@@ -238,6 +244,8 @@ class ClassArtifact:
     ----------
     name : str
         Class name.
+    stable_id : str
+        Durable analyzer-owned identity for cross-run reuse.
     lineno : int
         First source line of the class definition.
     end_lineno : int | None
@@ -251,6 +259,7 @@ class ClassArtifact:
     """
 
     name: str
+    stable_id: str
     lineno: int
     end_lineno: int | None
     docstring: str | None
@@ -267,6 +276,8 @@ class ModuleArtifact:
     ----------
     name : str
         Dotted module name.
+    stable_id : str
+        Durable analyzer-owned identity for cross-run reuse.
     docstring : str | None
         Module docstring when present.
     has_docstring : int
@@ -274,6 +285,7 @@ class ModuleArtifact:
     """
 
     name: str
+    stable_id: str
     docstring: str | None
     has_docstring: int
 

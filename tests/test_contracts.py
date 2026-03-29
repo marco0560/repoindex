@@ -31,6 +31,11 @@ from repoindex.registry import (
     active_language_analyzers,
     missing_language_analyzer_hint,
 )
+from repoindex.semantic.embeddings import (
+    EMBEDDING_BACKEND,
+    EMBEDDING_DIM,
+    EMBEDDING_VERSION,
+)
 
 if TYPE_CHECKING:
     from pytest import MonkeyPatch
@@ -147,7 +152,7 @@ class _FakeBackend:
         *,
         file_metadata: FileMetadataSnapshot,
         analysis: AnalysisResult,
-    ) -> int:
+    ) -> tuple[int, int]:
         """
         Count normalized functions as a stand-in for persisted artifacts.
 
@@ -162,10 +167,11 @@ class _FakeBackend:
 
         Returns
         -------
-        int
-            Number of normalized functions and methods.
+        tuple[int, int]
+            Recomputed and reused semantic-artifact counts.
         """
-        return len(analysis.iter_functions())
+        del root, file_metadata
+        return (len(analysis.iter_functions()), 0)
 
     def count_reusable_embeddings(self, root: Path, *, paths: list[str]) -> int:
         """
@@ -585,6 +591,7 @@ def test_iter_project_files_uses_analyzer_declared_globs(tmp_path: Path) -> None
                 source_path=path,
                 module=ModuleArtifact(
                     name=path.stem,
+                    stable_id=f"demo:module:{path.stem}",
                     docstring=None,
                     has_docstring=0,
                 ),
@@ -634,6 +641,7 @@ def test_iter_project_files_uses_analyzer_globs_with_git(tmp_path: Path) -> None
                 source_path=path,
                 module=ModuleArtifact(
                     name=path.stem,
+                    stable_id=f"demo:module:{path.stem}",
                     docstring=None,
                     has_docstring=0,
                 ),
@@ -955,7 +963,9 @@ def test_c_declaration_comments_contribute_to_embedding_candidates(
     )
 
     assert results
-    assert results[0][1] == ("enum", "native.types", "Color", str(source), 2)
+    assert ("enum", "native.types", "Color", str(source), 2) in {
+        symbol for _score, symbol in results
+    }
 
 
 def test_active_index_backend_rejects_unknown_configured_backend(
@@ -1060,7 +1070,7 @@ def test_sqlite_index_backend_persists_and_deletes_normalized_analysis(
     )
 
     assert isinstance(backend, IndexBackend)
-    written = backend.persist_analysis(
+    recomputed, reused = backend.persist_analysis(
         tmp_path,
         file_metadata=snapshot,
         analysis=analysis,
@@ -1076,7 +1086,8 @@ def test_sqlite_index_backend_persists_and_deletes_normalized_analysis(
     finally:
         conn.close()
 
-    assert written == 2
+    assert recomputed == 2
+    assert reused == 0
     assert file_hashes == {str(module): "abc123"}
     assert symbol_rows == [
         ("demo", "function"),
@@ -1091,7 +1102,9 @@ def test_sqlite_index_backend_persists_and_deletes_normalized_analysis(
             1,
         )
     ]
-    assert backend.embedding_inventory(tmp_path) == [("hash-v1", "1", 128, 2)]
+    assert backend.embedding_inventory(tmp_path) == [
+        (EMBEDDING_BACKEND, EMBEDDING_VERSION, EMBEDDING_DIM, 2)
+    ]
     assert backend.embedding_candidates(
         tmp_path,
         "return supplied value",
@@ -1280,7 +1293,7 @@ def test_sqlite_backend_persists_runtime_inventory(tmp_path: Path) -> None:
     index_repo(tmp_path)
 
     backend = SQLiteIndexBackend()
-    assert backend.load_runtime_inventory(tmp_path) == ("sqlite", "10", 1)
+    assert backend.load_runtime_inventory(tmp_path) == ("sqlite", "11", 1)
     assert backend.load_analyzer_inventory(tmp_path) == [
         (
             analyzer.name,

@@ -2,15 +2,46 @@
 
 from __future__ import annotations
 
-import hashlib
-import math
-import re
+import os
 import struct
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import TYPE_CHECKING, Protocol, cast
 
-EMBEDDING_BACKEND = "hash-v1"
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    class _EmbeddingVector(Protocol):
+        def tolist(self) -> list[float]: ...
+
+    class _EmbeddingArray(Protocol):
+        def __getitem__(self, index: int) -> _EmbeddingVector: ...
+
+    class _EmbeddingModel(Protocol):
+        def get_sentence_embedding_dimension(self) -> int: ...
+
+        def encode(
+            self,
+            sentences: Sequence[str],
+            *,
+            convert_to_numpy: bool,
+            normalize_embeddings: bool,
+            show_progress_bar: bool,
+        ) -> _EmbeddingArray: ...
+
+
+EMBEDDING_BACKEND = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_VERSION = "1"
-EMBEDDING_DIM = 128
+EMBEDDING_DIM = 384
+_DEPENDENCY_INSTALL_HINT = (
+    "Install the package with the semantic extra, for example "
+    "'pip install -e .[semantic]'."
+)
+_MISSING_MODEL_HINT = (
+    "The model must already exist in the local Hugging Face cache because "
+    "repoindex runs in offline mode."
+)
+_MODEL_LOAD_HINT = "The local model artifact could not be loaded in offline mode."
 
 
 @dataclass(frozen=True)
@@ -53,26 +84,84 @@ def get_embedding_backend() -> EmbeddingBackendSpec:
     )
 
 
-def _tokenize_embedding_text(text: str) -> list[str]:
+def _dependency_error(message: str) -> RuntimeError:
     """
-    Tokenize text for deterministic local embedding generation.
+    Build a stable runtime error for embedding backend provisioning failures.
 
     Parameters
     ----------
-    text : str
-        Raw text to tokenize.
+    message : str
+        Specific failure reason to append.
 
     Returns
     -------
-    list[str]
-        Lowercased alphanumeric tokens in source order.
+    RuntimeError
+        Provisioning error with a repository-specific remediation hint.
     """
-    return re.findall(r"[a-z0-9_]+", text.lower())
+    return RuntimeError(
+        "The semantic embedding backend requires the optional 'semantic' "
+        "dependency set and a locally available model artifact for "
+        f"{EMBEDDING_BACKEND}. {message}"
+    )
+
+
+@lru_cache(maxsize=1)
+def _load_model() -> _EmbeddingModel:
+    """
+    Load the configured local sentence-transformers model.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    object
+        Loaded ``SentenceTransformer`` model instance cached for reuse.
+
+    Raises
+    ------
+    RuntimeError
+        Raised when the optional dependency or local model artifact is missing.
+    """
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise _dependency_error(_DEPENDENCY_INSTALL_HINT) from exc
+
+    try:
+        from transformers.utils import logging as transformers_logging
+    except ImportError:
+        pass
+    else:
+        transformers_logging.set_verbosity_error()  # type: ignore[no-untyped-call]
+
+    try:
+        model = SentenceTransformer(EMBEDDING_BACKEND, device="cpu")
+    except OSError as exc:
+        raise _dependency_error(_MISSING_MODEL_HINT) from exc
+    except RuntimeError as exc:
+        raise _dependency_error(_MODEL_LOAD_HINT) from exc
+
+    dimension = model.get_sentence_embedding_dimension()
+    if dimension != EMBEDDING_DIM:
+        msg = (
+            "Loaded embedding model dimension "
+            f"{dimension} does not match the repository contract {EMBEDDING_DIM}."
+        )
+        raise RuntimeError(msg)
+
+    return cast("_EmbeddingModel", model)
 
 
 def embed_text(text: str) -> list[float]:
     """
-    Embed text using the deterministic in-repo backend.
+    Embed text using the deterministic local sentence-transformers backend.
 
     Parameters
     ----------
@@ -83,25 +172,23 @@ def embed_text(text: str) -> list[float]:
     -------
     list[float]
         L2-normalized embedding vector with fixed dimensionality.
+
+    Raises
+    ------
+    RuntimeError
+        Raised when the local semantic backend cannot be loaded.
     """
-    vector = [0.0] * EMBEDDING_DIM
-    tokens = _tokenize_embedding_text(text)
-
-    if not tokens:
-        return vector
-
-    for token in tokens:
-        digest = hashlib.sha256(token.encode("utf-8")).digest()
-        index = int.from_bytes(digest[:4], byteorder="big") % EMBEDDING_DIM
-        sign = 1.0 if digest[4] % 2 == 0 else -1.0
-        weight = 1.0 + (digest[5] / 255.0)
-        vector[index] += sign * weight
-
-    norm = math.sqrt(sum(value * value for value in vector))
-    if norm == 0.0:
+    if not text.strip():
         return [0.0] * EMBEDDING_DIM
 
-    return [value / norm for value in vector]
+    model = _load_model()
+    vector = model.encode(
+        [text],
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )[0]
+    return [float(value) for value in vector.tolist()]
 
 
 def serialize_vector(vector: list[float]) -> bytes:
@@ -116,7 +203,7 @@ def serialize_vector(vector: list[float]) -> bytes:
     Returns
     -------
     bytes
-        Binary representation of the vector.
+        Binary float32 representation of the vector.
     """
     return struct.pack(f"<{len(vector)}f", *vector)
 

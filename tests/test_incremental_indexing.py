@@ -13,7 +13,11 @@ from repoindex.indexer import SQLiteIndexBackend, audit_repo_coverage, index_rep
 from repoindex.query.exact import find_symbol
 from repoindex.scanner import file_metadata
 from repoindex.schema import SCHEMA_VERSION
-from repoindex.semantic.embeddings import EmbeddingBackendSpec
+from repoindex.semantic.embeddings import (
+    EMBEDDING_BACKEND,
+    EMBEDDING_DIM,
+    EmbeddingBackendSpec,
+)
 from repoindex.storage import get_db_path, init_db
 
 if TYPE_CHECKING:
@@ -48,10 +52,10 @@ class _PythonAnalyzerV2(PythonAnalyzer):
     version = "2"
 
 
-class _SQLiteBackendV11(SQLiteIndexBackend):
+class _SQLiteBackendV12(SQLiteIndexBackend):
     """SQLite backend stub with a bumped version for runtime tests."""
 
-    version = 11
+    version = 12
 
 
 def test_index_repo_reuses_unchanged_files(tmp_path: Path) -> None:
@@ -146,6 +150,96 @@ def test_index_repo_reindexes_changed_files(tmp_path: Path) -> None:
     assert find_symbol(tmp_path, "extra")
 
 
+def test_index_repo_reuses_unchanged_symbol_embeddings_in_changed_file(
+    tmp_path: Path,
+) -> None:
+    """
+    Reuse stable symbol embeddings when unrelated edits touch the same file.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts stable-id matching preserves unchanged symbol
+        embeddings inside a changed file.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    _write_module(
+        module,
+        '"""Module doc."""\n'
+        "\n"
+        "def keep_me():\n"
+        '    """Stay semantically unchanged."""\n'
+        "    return 1\n"
+        "\n"
+        "def change_me():\n"
+        '    """Old semantic text."""\n'
+        "    return 2\n",
+    )
+
+    init_db(tmp_path)
+    first = index_repo(tmp_path)
+
+    conn = sqlite3.connect(get_db_path(tmp_path))
+    try:
+        before = conn.execute(
+            """
+            SELECT e.content_hash, e.vector
+            FROM embeddings e
+            JOIN symbol_index s
+              ON e.object_type = 'symbol'
+             AND e.object_id = s.id
+            WHERE s.stable_id = ?
+            """,
+            ("python:function:pkg.sample:keep_me",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    _write_module(
+        module,
+        '"""Module doc."""\n'
+        "\n"
+        "def keep_me():\n"
+        '    """Stay semantically unchanged."""\n'
+        "    return 1\n"
+        "\n"
+        "def change_me():\n"
+        '    """New semantic text for recomputation."""\n'
+        "    return 2\n"
+        "\n"
+        "# unrelated trailing comment\n",
+    )
+
+    report = index_repo(tmp_path)
+
+    conn = sqlite3.connect(get_db_path(tmp_path))
+    try:
+        after = conn.execute(
+            """
+            SELECT e.content_hash, e.vector
+            FROM embeddings e
+            JOIN symbol_index s
+              ON e.object_type = 'symbol'
+             AND e.object_id = s.id
+            WHERE s.stable_id = ?
+            """,
+            ("python:function:pkg.sample:keep_me",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert first.embeddings_recomputed == 3
+    assert report.indexed == 1
+    assert report.embeddings_reused == 2
+    assert report.embeddings_recomputed == 1
+    assert before == after
+
+
 def test_index_repo_removes_deleted_files(tmp_path: Path) -> None:
     """
     Ensure deleted files are removed while unchanged files are reused.
@@ -215,7 +309,11 @@ def test_index_repo_recomputes_embeddings_when_backend_changes(
 
     monkeypatch.setattr(
         "repoindex.indexer.get_embedding_backend",
-        lambda: EmbeddingBackendSpec(name="hash-v1", version="2", dim=128),
+        lambda: EmbeddingBackendSpec(
+            name=EMBEDDING_BACKEND,
+            version="2",
+            dim=EMBEDDING_DIM,
+        ),
     )
     report = index_repo(tmp_path)
 
@@ -921,11 +1019,11 @@ def test_ensure_index_rebuilds_when_backend_inventory_changes(
     monkeypatch.setattr("repoindex.cli._get_head_commit", lambda root: None)
     monkeypatch.setattr(
         "repoindex.cli.active_index_backend",
-        lambda: _SQLiteBackendV11(),
+        lambda: _SQLiteBackendV12(),
     )
     monkeypatch.setattr(
         "repoindex.indexer.active_index_backend",
-        lambda: _SQLiteBackendV11(),
+        lambda: _SQLiteBackendV12(),
     )
 
     _ensure_index(tmp_path)
@@ -933,4 +1031,4 @@ def test_ensure_index_rebuilds_when_backend_inventory_changes(
     backend = SQLiteIndexBackend()
 
     assert "Index stale (backend plugin changed)" in captured.err
-    assert backend.load_runtime_inventory(tmp_path) == ("sqlite", "11", 1)
+    assert backend.load_runtime_inventory(tmp_path) == ("sqlite", "12", 1)

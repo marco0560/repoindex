@@ -25,7 +25,17 @@
           "required": ["repoindex_version", "schema_version"],
           "properties": {
             "repoindex_version": { "type": "string" },
-            "schema_version": { "type": "string" }
+            "schema_version": { "type": "string" },
+            "embedding_backend": {
+              "type": "object",
+              "required": ["name", "version", "dim"],
+              "properties": {
+                "name": { "type": "string" },
+                "version": { "type": "string" },
+                "dim": { "type": "integer" }
+              },
+              "additionalProperties": false
+            }
           },
           "additionalProperties": false
         },

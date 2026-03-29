@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 DDL = [
     """
@@ -97,6 +97,7 @@ DDL = [
     CREATE TABLE IF NOT EXISTS symbol_index (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
+        stable_id TEXT NOT NULL,
         type TEXT NOT NULL,
         module_name TEXT NOT NULL,
         file_id INTEGER NOT NULL,
@@ -256,6 +257,7 @@ DDL = [
         object_id INTEGER NOT NULL,
         backend TEXT NOT NULL,
         version TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
         dim INTEGER NOT NULL,
         vector BLOB NOT NULL
     );
@@ -278,6 +280,9 @@ DDL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_symbol_file ON symbol_index(file_id);
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_symbol_stable_id ON symbol_index(stable_id);
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_docstring_issues_file ON docstring_issues(file_id);

@@ -14,14 +14,18 @@ The current indexing entry point is `index_repo()` in
 4. Reindexed files are routed to the first registered analyzer that supports
    each path.
 5. The selected analyzer emits one normalized `AnalysisResult` per file.
-6. The same indexing pass computes deterministic local embeddings for indexed
-   symbols.
-7. The active backend persists all artifacts into `.repoindex/index.db` and
+6. Normalized semantic artifacts now include analyzer-owned durable symbol
+   identities for every embedding-owning unit.
+7. The same indexing pass computes persisted embeddings for indexed symbols.
+8. When a file changes, the backend compares old and new stable-id sets so
+   unchanged symbols can reuse stored vectors while disappeared symbols are
+   removed deterministically.
+9. The active backend persists all artifacts into `.repoindex/index.db` and
    rebuilds derived indexes.
-8. Canonical source directories are audited for uncovered tracked files so the
+10. Canonical source directories are audited for uncovered tracked files so the
    summary can report files under `src/`, `tests/`, or `scripts/` that no
    active analyzer currently covers.
-9. After a successful run, the backend persists the runtime plugin inventory
+11. After a successful run, the backend persists the runtime plugin inventory
    and per-file analyzer ownership so later phases can compare current plugin
    availability against the indexed state.
 
@@ -94,6 +98,7 @@ new ADR:
 
 - deterministic file-order processing
 - deterministic per-file reuse decisions
+- deterministic stable-id ownership for embedding-bearing symbols
 - stable CLI-visible indexing summaries
 - deterministic symbol-embedding persistence
 - deterministic analyzer routing by registry order

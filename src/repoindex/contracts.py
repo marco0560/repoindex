@@ -123,7 +123,7 @@ class IndexBackend(Protocol):
         *,
         file_metadata: FileMetadataSnapshot,
         analysis: AnalysisResult,
-    ) -> int:
+    ) -> tuple[int, int]:
         """
         Persist normalized artifacts for one analyzed file snapshot.
 
@@ -138,8 +138,8 @@ class IndexBackend(Protocol):
 
         Returns
         -------
-        int
-            Number of embeddings or equivalent semantic artifacts written.
+        tuple[int, int]
+            ``(recomputed, reused)`` semantic-artifact counts for the file.
         """
 
     def count_reusable_embeddings(self, root: Path, *, paths: Sequence[str]) -> int:

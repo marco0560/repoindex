@@ -31,6 +31,11 @@ custom filesystem heuristics.
 
 Create a new ADR file under `docs/adr/` and append it to the ADR index.
 
+## `scripts/provision_embedding_model.py`
+
+Download or verify the local sentence-transformers model artifact required by
+the real semantic embedding backend.
+
 ## `scripts/release_audit.sh`
 
 Run conservative release-readiness checks for the current branch and repository

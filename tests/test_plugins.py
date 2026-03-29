@@ -118,7 +118,12 @@ class _DemoAnalyzer:
         del path, root
         return AnalysisResult(
             source_path=Path("demo.demo"),
-            module=ModuleArtifact(name="demo", docstring=None, has_docstring=0),
+            module=ModuleArtifact(
+                name="demo",
+                stable_id="demo:module:demo",
+                docstring=None,
+                has_docstring=0,
+            ),
             classes=(),
             functions=(),
             declarations=(),
@@ -206,7 +211,10 @@ def test_plugin_registrations_report_loaded_skipped_and_duplicate_plugins(
                         "analyze_file": lambda self, path, root: AnalysisResult(
                             source_path=path,
                             module=ModuleArtifact(
-                                name="dup", docstring=None, has_docstring=0
+                                name="dup",
+                                stable_id="dup:module:dup",
+                                docstring=None,
+                                has_docstring=0,
                             ),
                             classes=(),
                             functions=(),

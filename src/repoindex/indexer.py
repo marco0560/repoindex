@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import warnings
@@ -51,6 +52,52 @@ CallableRefRow = tuple[str, str, str | None, str | None, int]
 EmbeddingInventoryRow = tuple[str, str, int, int]
 _IGNORED_COVERAGE_SUFFIXES = frozenset({"<no-suffix>", ".md", ".txt"})
 _BINARY_SNIFF_BYTES = 8192
+
+
+@dataclass(frozen=True)
+class PendingEmbeddingRow:
+    """
+    Pending symbol embedding payload collected during persistence.
+
+    Parameters
+    ----------
+    object_type : str
+        Persisted embedding owner kind.
+    object_id : int
+        Persisted embedding owner identifier.
+    stable_id : str
+        Durable analyzer-owned symbol identity.
+    text : str
+        Exact semantic payload that will be hashed and embedded.
+    """
+
+    object_type: str
+    object_id: int
+    stable_id: str
+    text: str
+
+
+@dataclass(frozen=True)
+class StoredEmbeddingRow:
+    """
+    Persisted embedding row captured before file-owned rows are replaced.
+
+    Parameters
+    ----------
+    stable_id : str
+        Durable analyzer-owned symbol identity.
+    content_hash : str
+        Hash of the exact semantic payload embedded previously.
+    dim : int
+        Stored embedding dimensionality.
+    vector : bytes
+        Serialized float32 vector payload.
+    """
+
+    stable_id: str
+    content_hash: str
+    dim: int
+    vector: bytes
 
 
 @dataclass(frozen=True)
@@ -623,6 +670,23 @@ def _embedding_text(
     return "\n".join(parts)
 
 
+def _embedding_content_hash(text: str) -> str:
+    """
+    Return the deterministic content hash for one embedding payload.
+
+    Parameters
+    ----------
+    text : str
+        Exact semantic payload used for embedding generation.
+
+    Returns
+    -------
+    str
+        Hex-encoded SHA-256 digest of ``text``.
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def _c_embedding_context(analysis: AnalysisResult) -> tuple[str, ...]:
     """
     Build extra semantic context lines for C-family embedding payloads.
@@ -845,6 +909,60 @@ def _delete_indexed_file_data(conn: sqlite3.Connection, file_path: str) -> None:
     conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
 
 
+def _load_previous_symbol_embeddings(
+    conn: sqlite3.Connection,
+    file_path: str,
+    *,
+    backend: EmbeddingBackendSpec,
+) -> dict[str, StoredEmbeddingRow]:
+    """
+    Load reusable stored symbol embeddings for one indexed file.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    file_path : str
+        Absolute file path whose stored symbol embeddings should be loaded.
+    backend : repoindex.semantic.embeddings.EmbeddingBackendSpec
+        Active embedding backend metadata.
+
+    Returns
+    -------
+    dict[str, StoredEmbeddingRow]
+        Stored symbol embeddings keyed by durable symbol identity.
+    """
+    rows = conn.execute(
+        """
+        SELECT
+            s.stable_id,
+            e.content_hash,
+            e.dim,
+            e.vector
+        FROM embeddings e
+        JOIN symbol_index s
+          ON e.object_type = 'symbol'
+         AND e.object_id = s.id
+        JOIN files f
+          ON s.file_id = f.id
+        WHERE f.path = ?
+          AND e.backend = ?
+          AND e.version = ?
+        ORDER BY s.stable_id
+        """,
+        (file_path, backend.name, backend.version),
+    ).fetchall()
+    return {
+        str(stable_id): StoredEmbeddingRow(
+            stable_id=str(stable_id),
+            content_hash=str(content_hash),
+            dim=int(dim),
+            vector=bytes(vector),
+        )
+        for stable_id, content_hash, dim, vector in rows
+    }
+
+
 def _current_embedding_state_matches(
     conn: sqlite3.Connection,
     backend: EmbeddingBackendSpec,
@@ -909,6 +1027,36 @@ def _load_existing_file_hashes(conn: sqlite3.Connection) -> dict[str, str]:
     """
     rows = conn.execute("SELECT path, hash FROM files ORDER BY path").fetchall()
     return {str(path): str(file_hash) for path, file_hash in rows}
+
+
+def _load_previous_embeddings_by_path(
+    conn: sqlite3.Connection,
+    paths: list[str],
+    *,
+    backend: EmbeddingBackendSpec,
+) -> dict[str, dict[str, StoredEmbeddingRow]]:
+    """
+    Load reusable stored symbol embeddings for the supplied file paths.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    paths : list[str]
+        Absolute file paths that may be replaced during the current run.
+    backend : repoindex.semantic.embeddings.EmbeddingBackendSpec
+        Active embedding backend metadata.
+
+    Returns
+    -------
+    dict[str, dict[str, repoindex.indexer.StoredEmbeddingRow]]
+        Stored embeddings grouped by absolute file path and stable symbol
+        identity.
+    """
+    return {
+        path: _load_previous_symbol_embeddings(conn, path, backend=backend)
+        for path in paths
+    }
 
 
 def _load_existing_file_ownership(
@@ -1345,6 +1493,7 @@ def _insert_symbol_index_row(
     conn: sqlite3.Connection,
     *,
     name: str,
+    stable_id: str,
     symbol_type: str,
     module_name: str,
     file_id: int,
@@ -1359,6 +1508,8 @@ def _insert_symbol_index_row(
         Open database connection.
     name : str
         Symbol name stored in the index.
+    stable_id : str
+        Durable analyzer-owned symbol identity.
     symbol_type : str
         Stable symbol kind stored in the index.
     module_name : str
@@ -1375,17 +1526,19 @@ def _insert_symbol_index_row(
     """
     cur = conn.execute(
         "INSERT INTO symbol_index"
-        "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
-        (name, symbol_type, module_name, file_id, lineno),
+        "(name, stable_id, type, module_name, file_id, lineno) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (name, stable_id, symbol_type, module_name, file_id, lineno),
     )
     assert cur.lastrowid is not None
     return int(cur.lastrowid)
 
 
 def _append_embedding_row(
-    embedding_rows: list[tuple[str, int, str]],
+    embedding_rows: list[PendingEmbeddingRow],
     *,
     symbol_row_id: int,
+    stable_id: str,
     module_name: str,
     symbol_name: str,
     symbol_type: str,
@@ -1398,10 +1551,12 @@ def _append_embedding_row(
 
     Parameters
     ----------
-    embedding_rows : list[tuple[str, int, str]]
+    embedding_rows : list[repoindex.indexer.PendingEmbeddingRow]
         Pending embedding rows collected for the current file.
     symbol_row_id : int
         Inserted symbol row identifier referenced by the embedding.
+    stable_id : str
+        Durable analyzer-owned symbol identity.
     module_name : str
         Module name owning the symbol.
     symbol_name : str
@@ -1421,10 +1576,11 @@ def _append_embedding_row(
         The embedding row is appended in place.
     """
     embedding_rows.append(
-        (
-            "symbol",
-            symbol_row_id,
-            _embedding_text(
+        PendingEmbeddingRow(
+            object_type="symbol",
+            object_id=symbol_row_id,
+            stable_id=stable_id,
+            text=_embedding_text(
                 module_name=module_name,
                 symbol_name=symbol_name,
                 symbol_type=symbol_type,
@@ -1518,7 +1674,7 @@ def _persist_module_artifacts(
     *,
     file_id: int,
     analysis: AnalysisResult,
-    embedding_rows: list[tuple[str, int, str]],
+    embedding_rows: list[PendingEmbeddingRow],
 ) -> tuple[str, int, tuple[str, ...]]:
     """
     Persist module-level rows for one analyzed file.
@@ -1531,7 +1687,7 @@ def _persist_module_artifacts(
         Integer identifier of the owner file.
     analysis : repoindex.models.AnalysisResult
         Normalized analyzer output for the file.
-    embedding_rows : list[tuple[str, int, str]]
+    embedding_rows : list[repoindex.indexer.PendingEmbeddingRow]
         Pending embedding rows collected for the file.
 
     Returns
@@ -1558,6 +1714,7 @@ def _persist_module_artifacts(
     symbol_row_id = _insert_symbol_index_row(
         conn,
         name=module_name,
+        stable_id=module.stable_id,
         symbol_type="module",
         module_name=module_name,
         file_id=file_id,
@@ -1566,6 +1723,7 @@ def _persist_module_artifacts(
     _append_embedding_row(
         embedding_rows,
         symbol_row_id=symbol_row_id,
+        stable_id=module.stable_id,
         module_name=module_name,
         symbol_name=module_name,
         symbol_type="module",
@@ -1591,7 +1749,7 @@ def _persist_class_artifacts(
     module_name: str,
     analysis: AnalysisResult,
     c_embedding_context: tuple[str, ...],
-    embedding_rows: list[tuple[str, int, str]],
+    embedding_rows: list[PendingEmbeddingRow],
     call_rows: list[tuple[int, str, str, str, str, str, int, int]],
     ref_rows: list[tuple[int, str, str, str, str, str, str, int, int]],
 ) -> None:
@@ -1612,7 +1770,7 @@ def _persist_class_artifacts(
         Normalized analyzer output for the file.
     c_embedding_context : tuple[str, ...]
         C-family embedding context reused by declarations and classes.
-    embedding_rows : list[tuple[str, int, str]]
+    embedding_rows : list[repoindex.indexer.PendingEmbeddingRow]
         Pending embedding rows collected for the file.
     call_rows : list[tuple[int, str, str, str, str, str, int, int]]
         Pending call rows collected for the file.
@@ -1643,6 +1801,7 @@ def _persist_class_artifacts(
         symbol_row_id = _insert_symbol_index_row(
             conn,
             name=cls.name,
+            stable_id=cls.stable_id,
             symbol_type="class",
             module_name=module_name,
             file_id=file_id,
@@ -1651,6 +1810,7 @@ def _persist_class_artifacts(
         _append_embedding_row(
             embedding_rows,
             symbol_row_id=symbol_row_id,
+            stable_id=cls.stable_id,
             module_name=module_name,
             symbol_name=cls.name,
             symbol_type="class",
@@ -1696,6 +1856,7 @@ def _persist_class_artifacts(
             symbol_row_id = _insert_symbol_index_row(
                 conn,
                 name=method.name,
+                stable_id=method.stable_id,
                 symbol_type="method",
                 module_name=module_name,
                 file_id=file_id,
@@ -1704,6 +1865,7 @@ def _persist_class_artifacts(
             _append_embedding_row(
                 embedding_rows,
                 symbol_row_id=symbol_row_id,
+                stable_id=method.stable_id,
                 module_name=module_name,
                 symbol_name=logical_name,
                 symbol_type="method",
@@ -1742,7 +1904,7 @@ def _persist_function_artifacts(
     module_name: str,
     analysis: AnalysisResult,
     c_embedding_context: tuple[str, ...],
-    embedding_rows: list[tuple[str, int, str]],
+    embedding_rows: list[PendingEmbeddingRow],
     call_rows: list[tuple[int, str, str, str, str, str, int, int]],
     ref_rows: list[tuple[int, str, str, str, str, str, str, int, int]],
 ) -> None:
@@ -1763,7 +1925,7 @@ def _persist_function_artifacts(
         Normalized analyzer output for the file.
     c_embedding_context : tuple[str, ...]
         C-family embedding context reused by declarations and functions.
-    embedding_rows : list[tuple[str, int, str]]
+    embedding_rows : list[repoindex.indexer.PendingEmbeddingRow]
         Pending embedding rows collected for the file.
     call_rows : list[tuple[int, str, str, str, str, str, int, int]]
         Pending call rows collected for the file.
@@ -1800,6 +1962,7 @@ def _persist_function_artifacts(
         symbol_row_id = _insert_symbol_index_row(
             conn,
             name=fn.name,
+            stable_id=fn.stable_id,
             symbol_type="function",
             module_name=module_name,
             file_id=file_id,
@@ -1808,6 +1971,7 @@ def _persist_function_artifacts(
         _append_embedding_row(
             embedding_rows,
             symbol_row_id=symbol_row_id,
+            stable_id=fn.stable_id,
             module_name=module_name,
             symbol_name=fn.name,
             symbol_type="function",
@@ -1841,7 +2005,7 @@ def _persist_declaration_artifacts(
     module_name: str,
     analysis: AnalysisResult,
     c_embedding_context: tuple[str, ...],
-    embedding_rows: list[tuple[str, int, str]],
+    embedding_rows: list[PendingEmbeddingRow],
 ) -> None:
     """
     Persist declaration-style symbol artifacts for one analyzed file.
@@ -1858,7 +2022,7 @@ def _persist_declaration_artifacts(
         Normalized analyzer output for the file.
     c_embedding_context : tuple[str, ...]
         C-family embedding context reused by declaration embeddings.
-    embedding_rows : list[tuple[str, int, str]]
+    embedding_rows : list[repoindex.indexer.PendingEmbeddingRow]
         Pending embedding rows collected for the file.
 
     Returns
@@ -1870,6 +2034,7 @@ def _persist_declaration_artifacts(
         symbol_row_id = _insert_symbol_index_row(
             conn,
             name=decl.name,
+            stable_id=decl.stable_id,
             symbol_type=decl.kind,
             module_name=module_name,
             file_id=file_id,
@@ -1878,6 +2043,7 @@ def _persist_declaration_artifacts(
         _append_embedding_row(
             embedding_rows,
             symbol_row_id=symbol_row_id,
+            stable_id=decl.stable_id,
             module_name=module_name,
             symbol_name=decl.name,
             symbol_type=decl.kind,
@@ -1969,9 +2135,10 @@ def _flush_persisted_relationship_rows(
 def _flush_embedding_rows(
     conn: sqlite3.Connection,
     *,
-    embedding_rows: list[tuple[str, int, str]],
+    embedding_rows: list[PendingEmbeddingRow],
     backend: EmbeddingBackendSpec,
-) -> int:
+    previous_embeddings: dict[str, StoredEmbeddingRow] | None = None,
+) -> tuple[int, int]:
     """
     Persist pending embedding payloads for one analyzed file.
 
@@ -1979,35 +2146,59 @@ def _flush_embedding_rows(
     ----------
     conn : sqlite3.Connection
         Open database connection.
-    embedding_rows : list[tuple[str, int, str]]
+    embedding_rows : list[repoindex.indexer.PendingEmbeddingRow]
         Pending embedding payloads keyed by object type and identifier.
     backend : EmbeddingBackendSpec
         Active embedding backend metadata.
+    previous_embeddings : dict[str, repoindex.indexer.StoredEmbeddingRow] | None, optional
+        Stored symbol embeddings keyed by stable identity before the owner file
+        was replaced.
 
     Returns
     -------
-    int
-        Number of embedding rows written.
+    tuple[int, int]
+        ``(recomputed, reused)`` embedding counts for the file.
     """
-    for object_type, object_id, text in sorted(
+    recomputed = 0
+    reused = 0
+
+    for row in sorted(
         embedding_rows,
-        key=lambda item: item[:2],
+        key=lambda item: (item.object_type, item.object_id),
     ):
+        content_hash = _embedding_content_hash(row.text)
+        reusable_row = None
+        if previous_embeddings is not None:
+            reusable_row = previous_embeddings.get(row.stable_id)
+
+        vector = None
+        if (
+            reusable_row is not None
+            and reusable_row.content_hash == content_hash
+            and reusable_row.dim == backend.dim
+        ):
+            vector = reusable_row.vector
+            reused += 1
+        else:
+            vector = serialize_vector(embed_text(row.text))
+            recomputed += 1
+
         conn.execute(
             "INSERT INTO embeddings"
-            "(object_type, object_id, backend, version, dim, vector) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(object_type, object_id, backend, version, content_hash, dim, vector) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                object_type,
-                object_id,
+                row.object_type,
+                row.object_id,
                 backend.name,
                 backend.version,
+                content_hash,
                 backend.dim,
-                serialize_vector(embed_text(text)),
+                vector,
             ),
         )
 
-    return len(embedding_rows)
+    return (recomputed, reused)
 
 
 def _store_analysis(
@@ -2016,7 +2207,8 @@ def _store_analysis(
     analysis: AnalysisResult,
     *,
     backend: EmbeddingBackendSpec,
-) -> int:
+    previous_embeddings: dict[str, StoredEmbeddingRow] | None = None,
+) -> tuple[int, int]:
     """
     Persist one parsed file snapshot into the index.
 
@@ -2030,13 +2222,15 @@ def _store_analysis(
         Normalized analyzer output for the file.
     backend : EmbeddingBackendSpec
         Active embedding backend metadata.
+    previous_embeddings : dict[str, repoindex.indexer.StoredEmbeddingRow] | None, optional
+        Stored symbol embeddings captured before replacing file-owned rows.
 
     Returns
     -------
-    int
-        Number of embeddings recomputed for the file.
+    tuple[int, int]
+        ``(recomputed, reused)`` embedding counts for the file.
     """
-    embedding_rows: list[tuple[str, int, str]] = []
+    embedding_rows: list[PendingEmbeddingRow] = []
     call_rows: list[tuple[int, str, str, str, str, str, int, int]] = []
     ref_rows: list[tuple[int, str, str, str, str, str, str, int, int]] = []
 
@@ -2105,6 +2299,7 @@ def _store_analysis(
         conn,
         embedding_rows=embedding_rows,
         backend=backend,
+        previous_embeddings=previous_embeddings,
     )
 
 
@@ -3271,8 +3466,9 @@ class SQLiteIndexBackend:
         file_metadata: FileMetadataSnapshot,
         analysis: AnalysisResult,
         embedding_backend: EmbeddingBackendSpec | None = None,
+        previous_embeddings: dict[str, StoredEmbeddingRow] | None = None,
         conn: sqlite3.Connection | None = None,
-    ) -> int:
+    ) -> tuple[int, int]:
         """
         Persist normalized artifacts for one analyzed file.
 
@@ -3287,13 +3483,15 @@ class SQLiteIndexBackend:
         embedding_backend : EmbeddingBackendSpec | None, optional
             Active embedding backend metadata. When omitted, the current
             default backend is loaded.
+        previous_embeddings : dict[str, repoindex.indexer.StoredEmbeddingRow] | None, optional
+            Stored symbol embeddings captured before replacing file-owned rows.
         conn : sqlite3.Connection | None, optional
             Existing SQLite connection to reuse.
 
         Returns
         -------
-        int
-            Number of embedding rows written.
+        tuple[int, int]
+            ``(recomputed, reused)`` embedding counts for the file.
         """
         owns_connection = conn is None
         if conn is None:
@@ -3307,6 +3505,7 @@ class SQLiteIndexBackend:
                 file_metadata,
                 analysis,
                 backend=active_backend,
+                previous_embeddings=previous_embeddings,
             )
             if owns_connection:
                 conn.commit()
@@ -3470,7 +3669,8 @@ def _persist_indexed_file_analyses(
     sqlite_backend: SQLiteIndexBackend,
     parsed_files: list[ParsedFile],
     embedding_backend: EmbeddingBackendSpec,
-) -> int:
+    previous_embeddings_by_path: dict[str, dict[str, StoredEmbeddingRow]],
+) -> tuple[int, int]:
     """
     Persist analyzed file snapshots through the selected index backend.
 
@@ -3486,24 +3686,33 @@ def _persist_indexed_file_analyses(
         Analyzed file snapshots in deterministic order.
     embedding_backend : repoindex.semantic.embeddings.EmbeddingBackendSpec
         Active embedding backend metadata.
+    previous_embeddings_by_path : dict[str, dict[str, repoindex.indexer.StoredEmbeddingRow]]
+        Stored symbol embeddings captured before indexed files were replaced.
 
     Returns
     -------
-    int
-        Total number of embeddings recomputed during persistence.
+    tuple[int, int]
+        ``(recomputed, reused)`` embedding totals for indexed files.
     """
     embeddings_recomputed = 0
+    embeddings_reused = 0
 
     for _path, file_metadata_snapshot, analysis in parsed_files:
-        embeddings_recomputed += sqlite_backend.persist_analysis(
+        recomputed, reused = sqlite_backend.persist_analysis(
             root,
             file_metadata=file_metadata_snapshot,
             analysis=analysis,
             embedding_backend=embedding_backend,
+            previous_embeddings=previous_embeddings_by_path.get(
+                str(file_metadata_snapshot.path),
+                {},
+            ),
             conn=conn,
         )
+        embeddings_recomputed += recomputed
+        embeddings_reused += reused
 
-    return embeddings_recomputed
+    return (embeddings_recomputed, embeddings_reused)
 
 
 def _collect_project_scan_state(
@@ -3823,6 +4032,15 @@ def index_repo(
             current_state=current_state,
             existing_state=existing_state,
         )
+        previous_embeddings_by_path = (
+            {}
+            if full
+            else _load_previous_embeddings_by_path(
+                conn,
+                plan.indexed_paths,
+                backend=backend,
+            )
+        )
         _prepare_index_storage(
             root,
             full=full,
@@ -3831,7 +4049,7 @@ def index_repo(
             conn=conn,
         )
 
-        embeddings_reused = (
+        unchanged_embeddings_reused = (
             0
             if full
             else sqlite_backend.count_reusable_embeddings(
@@ -3847,13 +4065,17 @@ def index_repo(
             current_state.metadata_by_path,
             analyzers,
         )
-        embeddings_recomputed = _persist_indexed_file_analyses(
-            root,
-            conn=conn,
-            sqlite_backend=sqlite_backend,
-            parsed_files=parsed_files,
-            embedding_backend=backend,
+        embeddings_recomputed, changed_file_embeddings_reused = (
+            _persist_indexed_file_analyses(
+                root,
+                conn=conn,
+                sqlite_backend=sqlite_backend,
+                parsed_files=parsed_files,
+                embedding_backend=backend,
+                previous_embeddings_by_path=previous_embeddings_by_path,
+            )
         )
+        embeddings_reused = unchanged_embeddings_reused + changed_file_embeddings_reused
 
         sqlite_backend.rebuild_derived_indexes(root, conn=conn)
         _persist_runtime_inventory(

@@ -61,6 +61,69 @@ def _module_name_for_path(path: Path, root: Path) -> str:
     return ".".join(relative.parts)
 
 
+def _module_stable_id(path: Path, root: Path) -> str:
+    """
+    Build the durable identity for one C-family module.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Source path being analyzed.
+    root : pathlib.Path
+        Repository root used for relative identity derivation.
+
+    Returns
+    -------
+    str
+        Durable C-family module identity.
+    """
+    return f"c:module:{path.relative_to(root).as_posix()}"
+
+
+def _function_stable_id(module_name: str, function_name: str) -> str:
+    """
+    Build the durable identity for one C function.
+
+    Parameters
+    ----------
+    module_name : str
+        Dotted owner module name.
+    function_name : str
+        Unqualified function name.
+
+    Returns
+    -------
+    str
+        Durable C function identity.
+    """
+    return f"c:function:{module_name}:{function_name}"
+
+
+def _declaration_stable_id(
+    module_name: str,
+    kind: DeclarationKind,
+    declaration_name: str,
+) -> str:
+    """
+    Build the durable identity for one top-level C declaration.
+
+    Parameters
+    ----------
+    module_name : str
+        Dotted owner module name.
+    kind : {"struct", "enum", "typedef"}
+        Stable declaration classifier.
+    declaration_name : str
+        Exposed declaration name.
+
+    Returns
+    -------
+    str
+        Durable C declaration identity.
+    """
+    return f"c:{kind}:{module_name}:{declaration_name}"
+
+
 def _node_text(node: Node, source: bytes) -> str:
     """
     Decode the source text owned by one syntax node.
@@ -417,7 +480,12 @@ def _returns_value(body: Node | None) -> int:
     return 0
 
 
-def _extract_functions(root: Node, source: bytes) -> tuple[FunctionArtifact, ...]:
+def _extract_functions(
+    root: Node,
+    source: bytes,
+    *,
+    module_name: str,
+) -> tuple[FunctionArtifact, ...]:
     """
     Extract top-level C function definitions from one translation unit.
 
@@ -427,6 +495,8 @@ def _extract_functions(root: Node, source: bytes) -> tuple[FunctionArtifact, ...
         Translation-unit root node.
     source : bytes
         Full source buffer.
+    module_name : str
+        Dotted owner module name.
 
     Returns
     -------
@@ -465,6 +535,7 @@ def _extract_functions(root: Node, source: bytes) -> tuple[FunctionArtifact, ...
         functions.append(
             FunctionArtifact(
                 name=name,
+                stable_id=_function_stable_id(module_name, name),
                 lineno=child.start_point.row + 1,
                 end_lineno=body.end_point.row + 1 if body is not None else None,
                 signature=" ".join(signature.split()),
@@ -542,21 +613,19 @@ def _resolve_declaration_docstring(
     return attached_comments.get(node.start_byte, inherited_comment)
 
 
-def _append_declaration(
-    declarations: list[DeclarationArtifact],
+def _declaration_artifact(
     node: Node,
     source: bytes,
     *,
     docstring: str | None,
     kind: DeclarationKind,
-) -> None:
+    module_name: str,
+) -> DeclarationArtifact | None:
     """
-    Append one normalized declaration artifact when the node is named.
+    Build one normalized declaration artifact when the node is named.
 
     Parameters
     ----------
-    declarations : list[repoindex.models.DeclarationArtifact]
-        Accumulator updated in source order.
     node : tree_sitter.Node
         Declaration node being normalized.
     source : bytes
@@ -565,28 +634,35 @@ def _append_declaration(
         Docstring to attach to the declaration.
     kind : str
         Stable declaration classifier.
+    module_name : str
+        Dotted owner module name.
 
     Returns
     -------
-    None
-        The declaration is appended only when a usable name is present.
+    repoindex.models.DeclarationArtifact | None
+        Normalized declaration artifact, or ``None`` when no usable name is
+        present.
     """
     name = _declaration_name(node, source)
     if name is None:
-        return
+        return None
 
-    declarations.append(
-        DeclarationArtifact(
-            name=name,
-            kind=kind,
-            lineno=node.start_point.row + 1,
-            signature=" ".join(_node_text(node, source).split()),
-            docstring=docstring,
-        )
+    return DeclarationArtifact(
+        name=name,
+        stable_id=_declaration_stable_id(module_name, kind, name),
+        kind=kind,
+        lineno=node.start_point.row + 1,
+        signature=" ".join(_node_text(node, source).split()),
+        docstring=docstring,
     )
 
 
-def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifact, ...]:
+def _extract_declarations(
+    root: Node,
+    source: bytes,
+    *,
+    module_name: str,
+) -> tuple[DeclarationArtifact, ...]:
     """
     Extract top-level C declarations useful for exact and semantic lookup.
 
@@ -596,6 +672,8 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
         Translation-unit root node.
     source : bytes
         Full source buffer.
+    module_name : str
+        Dotted owner module name.
 
     Returns
     -------
@@ -607,23 +685,27 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
 
     for child in root.children:
         if child.type == "struct_specifier":
-            _append_declaration(
-                declarations,
+            declaration = _declaration_artifact(
                 child,
                 source,
                 docstring=_resolve_declaration_docstring(attached_comments, child),
                 kind="struct",
+                module_name=module_name,
             )
+            if declaration is not None:
+                declarations.append(declaration)
             continue
 
         if child.type == "enum_specifier":
-            _append_declaration(
-                declarations,
+            declaration = _declaration_artifact(
                 child,
                 source,
                 docstring=_resolve_declaration_docstring(attached_comments, child),
                 kind="enum",
+                module_name=module_name,
             )
+            if declaration is not None:
+                declarations.append(declaration)
             continue
 
         if child.type != "type_definition":
@@ -632,8 +714,7 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
         child_comment = attached_comments.get(child.start_byte)
         for named_child in child.named_children:
             if named_child.type == "struct_specifier":
-                _append_declaration(
-                    declarations,
+                declaration = _declaration_artifact(
                     named_child,
                     source,
                     docstring=_resolve_declaration_docstring(
@@ -642,10 +723,12 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
                         inherited_comment=child_comment,
                     ),
                     kind="struct",
+                    module_name=module_name,
                 )
+                if declaration is not None:
+                    declarations.append(declaration)
             elif named_child.type == "enum_specifier":
-                _append_declaration(
-                    declarations,
+                declaration = _declaration_artifact(
                     named_child,
                     source,
                     docstring=_resolve_declaration_docstring(
@@ -654,15 +737,20 @@ def _extract_declarations(root: Node, source: bytes) -> tuple[DeclarationArtifac
                         inherited_comment=child_comment,
                     ),
                     kind="enum",
+                    module_name=module_name,
                 )
+                if declaration is not None:
+                    declarations.append(declaration)
 
-        _append_declaration(
-            declarations,
+        declaration = _declaration_artifact(
             child,
             source,
             docstring=_resolve_declaration_docstring(attached_comments, child),
             kind="typedef",
+            module_name=module_name,
         )
+        if declaration is not None:
+            declarations.append(declaration)
 
     return tuple(declarations)
 
@@ -766,15 +854,25 @@ class CAnalyzer:
         source = path.read_bytes()
         root_node = _new_parser().parse(source).root_node
         module_comment = _leading_module_comment(root_node, source)
+        module_name = _module_name_for_path(path, root)
         return AnalysisResult(
             source_path=path,
             module=ModuleArtifact(
-                name=_module_name_for_path(path, root),
+                name=module_name,
+                stable_id=_module_stable_id(path, root),
                 docstring=module_comment,
                 has_docstring=int(module_comment is not None),
             ),
             classes=(),
-            functions=_extract_functions(root_node, source),
-            declarations=_extract_declarations(root_node, source),
+            functions=_extract_functions(
+                root_node,
+                source,
+                module_name=module_name,
+            ),
+            declarations=_extract_declarations(
+                root_node,
+                source,
+                module_name=module_name,
+            ),
             imports=_extract_imports(root_node, source),
         )

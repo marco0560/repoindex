@@ -103,8 +103,20 @@ def build_bootstrap_commands(
             repo_root,
         ),
         CommandSpec(
-            "Install editable development and documentation dependencies",
-            (str(python_bin), "-m", "pip", "install", "-e", ".[dev,docs]"),
+            "Install editable development, documentation, and semantic dependencies",
+            (
+                str(python_bin),
+                "-m",
+                "pip",
+                "install",
+                "-e",
+                ".[dev,docs,semantic]",
+            ),
+            repo_root,
+        ),
+        CommandSpec(
+            "Provision the local embedding model artifact",
+            (str(python_bin), "scripts/provision_embedding_model.py"),
             repo_root,
         ),
         CommandSpec(

@@ -58,6 +58,7 @@ class DemoAnalyzer:
             source_path=path,
             module=ModuleArtifact(
                 name=module_name,
+                stable_id=f"demo:module:{module_name}",
                 docstring=None,
                 has_docstring=0,
             ),

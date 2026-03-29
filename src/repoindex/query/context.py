@@ -31,6 +31,7 @@ from repoindex.query.exact import (
 )
 from repoindex.registry import active_index_backend, active_language_analyzers
 from repoindex.scanner import iter_project_files
+from repoindex.semantic.embeddings import get_embedding_backend
 from repoindex.semantic.search import embedding_candidates
 from repoindex.types import (
     ChannelBundle,
@@ -3071,11 +3072,17 @@ def _render_context_json(
     }
 
     if explain:
+        embedding_backend = get_embedding_backend()
         explain_block: dict[str, object] = {}
 
         explain_block["environment"] = {
             "repoindex_version": __version__,
             "schema_version": SCHEMA_VERSION,
+            "embedding_backend": {
+                "name": embedding_backend.name,
+                "version": embedding_backend.version,
+                "dim": embedding_backend.dim,
+            },
         }
 
         if intent:
@@ -3408,8 +3415,15 @@ def _append_explain_sections(
     """
     if explain:
         lines.append("=== EXPLAIN: ENVIRONMENT ===")
+        embedding_backend = get_embedding_backend()
         lines.append(f"repoindex_version: {__version__}")
         lines.append(f"schema_version: {SCHEMA_VERSION}")
+        lines.append(
+            "embedding_backend: "
+            f"{embedding_backend.name}"
+            f" version={embedding_backend.version}"
+            f" dim={embedding_backend.dim}"
+        )
         lines.append("")
         lines.append("=== EXPLAIN: QUERY INTENT ===")
         if intent:
