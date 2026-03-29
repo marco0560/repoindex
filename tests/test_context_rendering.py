@@ -7,8 +7,11 @@ from pathlib import Path
 
 from repoindex.query.classifier import build_retrieval_plan, classify_query
 from repoindex.query.context import (
+    PRIMARY_SYMBOL_SCORING_RULES,
     _append_main_context_sections,
+    _apply_scoring_rules,
     _classify_file_role,
+    _extract_candidate_score_features,
     _path_bias,
     _snippet_from_node,
 )
@@ -147,6 +150,46 @@ def test_path_bias_flips_test_preference_when_query_is_test_related() -> None:
 
     assert implementation_bias > test_bias
     assert explicit_test_bias > implementation_bias
+
+
+def test_table_driven_symbol_scoring_applies_weighted_features() -> None:
+    """
+    Preserve deterministic weighted lexical scoring under the rule-table model.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts extracted features produce the expected weighted score.
+    """
+    intent = classify_query("cache invalidation")
+    query_tokens = sorted(["cache", "invalidation"])
+    symbol = (
+        "function",
+        "pkg.core",
+        "cache_invalidation",
+        "src/pkg/core.py",
+        10,
+    )
+    features = _extract_candidate_score_features(
+        query_tokens,
+        symbol,
+        intent=intent,
+        raw_query="cache invalidation",
+        target_symbol="cache_invalidation",
+    )
+
+    assert features.exact_target_symbol_match == 1
+    assert features.path_bias == 3
+    assert features.implementation_module_bonus == 1
+    assert features.strong_token_hit == 1
+    assert (
+        _apply_scoring_rules(features, PRIMARY_SYMBOL_SCORING_RULES)
+        == 20 + 5 + 3 + 10 + 4 + 2
+    )
 
 
 def test_classify_query_assigns_primary_intent_families() -> None:

@@ -6,6 +6,7 @@ import ast
 import json
 import re
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal, cast
 
@@ -101,6 +102,135 @@ DiversityDiagnostics = dict[str, list[DiversityEntry]]
 MergeDiagnosticsEntry = dict[str, object]
 MergeDiagnostics = dict[SymbolRow, MergeDiagnosticsEntry]
 ExpansionDiagnostics = dict[str, list[dict[str, object]]]
+
+
+@dataclass(frozen=True)
+class CandidateScoringRule:
+    """
+    Declarative weight applied to one extracted candidate-scoring feature.
+
+    Parameters
+    ----------
+    feature : str
+        Name of the numeric feature field on ``CandidateScoreFeatures``.
+    weight : int
+        Signed contribution multiplier applied to the feature value.
+    """
+
+    feature: str
+    weight: int
+
+
+@dataclass(frozen=True)
+class CandidateScoreFeatures:
+    """
+    Deterministic lexical-scoring features for one symbol candidate.
+
+    Parameters
+    ----------
+    exact_name_match : int
+        Whether the normalized query exactly matches the symbol name.
+    substring_name_match : int
+        Whether the normalized query is a substring of the symbol name when no
+        exact match applies.
+    name_token_overlap_count : int
+        Number of overlapping normalized tokens between the query and symbol
+        name.
+    module_token_overlap_count : int
+        Number of overlapping normalized tokens between the query and module
+        name.
+    is_function : int
+        Whether the candidate is a top-level function.
+    is_private : int
+        Whether the symbol name starts with an underscore.
+    path_bias : int
+        Intent-aware location bias derived from the owning file path.
+    query_targets_module_as_module : int
+        Whether the query explicitly asks for a module and this candidate is a
+        module.
+    query_targets_module_as_non_module : int
+        Whether the query explicitly asks for a module and this candidate is
+        not a module.
+    module_depth_penalty_count : int
+        Depth count used to penalize deeply nested modules.
+    exact_target_symbol_match : int
+        Whether the candidate symbol matches the extracted identifier-like
+        target token.
+    exact_raw_query_match : int
+        Whether the raw query text exactly matches the symbol name.
+    lexical_frequency_count : int
+        Count of query tokens contained in the symbol name.
+    implementation_module_bonus : int
+        Whether the owning module is neither tests nor scripts.
+    lowered_module_penalty : int
+        Whether the module path contains biased infrastructure terms.
+    identifier_exact_match : int
+        Whether an identifier query exactly matches the symbol name.
+    identifier_module_suffix_match : int
+        Whether an identifier query matches the end of the module name.
+    multi_term_module_bonus : int
+        Whether a multi-term query should lightly favor module candidates.
+    strong_token_hit : int
+        Whether the candidate name contains at least one strong query token.
+    """
+
+    exact_name_match: int
+    substring_name_match: int
+    name_token_overlap_count: int
+    module_token_overlap_count: int
+    is_function: int
+    is_private: int
+    path_bias: int
+    query_targets_module_as_module: int
+    query_targets_module_as_non_module: int
+    module_depth_penalty_count: int
+    exact_target_symbol_match: int
+    exact_raw_query_match: int
+    lexical_frequency_count: int
+    implementation_module_bonus: int
+    lowered_module_penalty: int
+    identifier_exact_match: int
+    identifier_module_suffix_match: int
+    multi_term_module_bonus: int
+    strong_token_hit: int
+
+
+PRIMARY_SYMBOL_SCORING_RULES: tuple[CandidateScoringRule, ...] = (
+    CandidateScoringRule("exact_name_match", 100),
+    CandidateScoringRule("substring_name_match", 50),
+    CandidateScoringRule("name_token_overlap_count", 10),
+    CandidateScoringRule("module_token_overlap_count", 3),
+    CandidateScoringRule("is_function", 5),
+    CandidateScoringRule("is_private", -20),
+    CandidateScoringRule("path_bias", 1),
+    CandidateScoringRule("query_targets_module_as_module", 120),
+    CandidateScoringRule("query_targets_module_as_non_module", -40),
+    CandidateScoringRule("module_depth_penalty_count", -5),
+    CandidateScoringRule("exact_target_symbol_match", 10),
+    CandidateScoringRule("exact_raw_query_match", 5),
+    CandidateScoringRule("lexical_frequency_count", 2),
+    CandidateScoringRule("implementation_module_bonus", 2),
+    CandidateScoringRule("lowered_module_penalty", -2),
+    CandidateScoringRule("identifier_exact_match", 25),
+    CandidateScoringRule("identifier_module_suffix_match", 8),
+    CandidateScoringRule("multi_term_module_bonus", 1),
+)
+
+FALLBACK_SYMBOL_SCORING_RULES: tuple[CandidateScoringRule, ...] = (
+    CandidateScoringRule("exact_name_match", 100),
+    CandidateScoringRule("substring_name_match", 50),
+    CandidateScoringRule("name_token_overlap_count", 10),
+    CandidateScoringRule("module_token_overlap_count", 3),
+    CandidateScoringRule("is_function", 5),
+    CandidateScoringRule("is_private", -20),
+    CandidateScoringRule("path_bias", 1),
+    CandidateScoringRule("query_targets_module_as_module", 120),
+    CandidateScoringRule("query_targets_module_as_non_module", -40),
+    CandidateScoringRule("module_depth_penalty_count", -5),
+    CandidateScoringRule("identifier_exact_match", 25),
+    CandidateScoringRule("identifier_module_suffix_match", 8),
+    CandidateScoringRule("multi_term_module_bonus", 1),
+)
 
 
 def _symbol_sort_key(symbol: SymbolRow) -> tuple[str, str, str, int, str]:
@@ -764,53 +894,166 @@ def _score_match(
     int
         Deterministic relevance score for the candidate.
     """
+    features = _extract_candidate_score_features(
+        query_tokens,
+        symbol,
+        intent=intent,
+    )
+    return _apply_scoring_rules(features, PRIMARY_SYMBOL_SCORING_RULES)
+
+
+def _extract_target_symbol(query_tokens: list[str]) -> str | None:
+    """
+    Extract the strongest identifier-like token from a query.
+
+    Parameters
+    ----------
+    query_tokens : list[str]
+        Normalized query tokens.
+
+    Returns
+    -------
+    str | None
+        Longest identifier-like token when present.
+    """
+    for token in sorted(query_tokens, key=len, reverse=True):
+        if "_" in token or token.isidentifier():
+            return token
+    return None
+
+
+def _normalized_strong_query_tokens(query_tokens: list[str]) -> list[str]:
+    """
+    Expand strong query tokens into a normalized gating token list.
+
+    Parameters
+    ----------
+    query_tokens : list[str]
+        Normalized query tokens.
+
+    Returns
+    -------
+    list[str]
+        Strong tokens plus underscore-separated fragments in stable order.
+    """
+    strong_tokens = [token for token in query_tokens if len(token) >= 4]
+    normalized_tokens: list[str] = []
+    for token in strong_tokens:
+        normalized_tokens.append(token)
+        if "_" in token:
+            normalized_tokens.extend(token.split("_"))
+    return normalized_tokens
+
+
+def _extract_candidate_score_features(
+    query_tokens: list[str],
+    symbol: SymbolRow,
+    *,
+    intent: QueryIntent | None = None,
+    raw_query: str | None = None,
+    target_symbol: str | None = None,
+) -> CandidateScoreFeatures:
+    """
+    Extract deterministic lexical-scoring features for one symbol candidate.
+
+    Parameters
+    ----------
+    query_tokens : list[str]
+        Normalized query tokens.
+    symbol : repoindex.types.SymbolRow
+        Candidate symbol row to score.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Structured query classification.
+    raw_query : str | None, optional
+        Unsanitized query text used for exact-name bonuses.
+    target_symbol : str | None, optional
+        Identifier-like query token singled out for exact-name boosts.
+
+    Returns
+    -------
+    CandidateScoreFeatures
+        Extracted numeric features consumed by the scoring rule tables.
+    """
     symbol_type, module_name, name, file_path, _lineno = symbol
+    normalized_query = " ".join(query_tokens)
+    symbol_name = name
+    module_tokens = set(_tokenize(module_name))
+    name_tokens = set(_tokenize(symbol_name))
+    normalized_strong_tokens = _normalized_strong_query_tokens(query_tokens)
 
-    score = 0
+    return CandidateScoreFeatures(
+        exact_name_match=int(normalized_query == symbol_name),
+        substring_name_match=int(
+            normalized_query != symbol_name and bool(normalized_query in symbol_name)
+        ),
+        name_token_overlap_count=len(set(query_tokens) & name_tokens),
+        module_token_overlap_count=len(set(query_tokens) & module_tokens),
+        is_function=int(symbol_type == "function"),
+        is_private=int(symbol_name.startswith("_")),
+        path_bias=_path_bias(file_path, module_name, intent=intent),
+        query_targets_module_as_module=int(
+            "module" in query_tokens and symbol_type == "module"
+        ),
+        query_targets_module_as_non_module=int(
+            "module" in query_tokens and symbol_type != "module"
+        ),
+        module_depth_penalty_count=(
+            module_name.count(".") if symbol_type == "module" else 0
+        ),
+        exact_target_symbol_match=int(
+            target_symbol is not None and symbol_name == target_symbol
+        ),
+        exact_raw_query_match=int(raw_query is not None and symbol_name == raw_query),
+        lexical_frequency_count=sum(
+            1 for token in query_tokens if token in symbol_name.lower()
+        ),
+        implementation_module_bonus=int(
+            not module_name.startswith("tests.")
+            and not module_name.startswith("scripts.")
+        ),
+        lowered_module_penalty=int(
+            any(x in module_name.lower() for x in ("cli", "scanner", "storage"))
+        ),
+        identifier_exact_match=int(
+            bool(intent and intent.is_identifier_query and symbol_name == intent.raw)
+        ),
+        identifier_module_suffix_match=int(
+            bool(
+                intent
+                and intent.is_identifier_query
+                and module_name.endswith(intent.raw)
+                and symbol_name != intent.raw
+            )
+        ),
+        multi_term_module_bonus=int(
+            bool(intent and intent.is_multi_term and symbol_type == "module")
+        ),
+        strong_token_hit=int(
+            any(token in _tokenize(symbol_name) for token in normalized_strong_tokens)
+        ),
+    )
 
-    query = " ".join(query_tokens)
 
-    # --- Exact match (very strong) ---
-    if query == name:
-        score += 100
+def _apply_scoring_rules(
+    features: CandidateScoreFeatures,
+    rules: tuple[CandidateScoringRule, ...],
+) -> int:
+    """
+    Apply a declarative rule table to extracted candidate-scoring features.
 
-    # --- Substring match ---
-    elif query in name:
-        score += 50
+    Parameters
+    ----------
+    features : CandidateScoreFeatures
+        Extracted feature values for one candidate symbol.
+    rules : tuple[CandidateScoringRule, ...]
+        Ordered score rules to apply.
 
-    # --- Token overlap ---
-    name_tokens = _tokenize(name)
-    overlap = set(query_tokens) & set(name_tokens)
-    score += 10 * len(overlap)
-
-    # --- Module signal (light) ---
-    module_tokens = _tokenize(module_name)
-    module_overlap = set(query_tokens) & set(module_tokens)
-    score += 3 * len(module_overlap)
-
-    # --- Type bias (very small) ---
-    if symbol_type == "function":
-        score += 5
-
-    # --- Penalize private symbols ---
-    if name.startswith("_"):
-        score -= 20
-
-    score += _path_bias(file_path, module_name, intent=intent)
-
-    # --- Query intent: module (strong override) ---
-    if "module" in query_tokens:
-        if symbol_type == "module":
-            score += 120
-        else:
-            score -= 40
-
-    # --- Prefer central modules (shorter paths) ---
-    if symbol_type == "module":
-        depth = module_name.count(".")
-        score -= depth * 5
-
-    return score
+    Returns
+    -------
+    int
+        Total deterministic score contribution from the supplied rules.
+    """
+    return sum(getattr(features, rule.feature) * rule.weight for rule in rules)
 
 
 def _format_symbol(symbol: SymbolRow, *, include_path: bool) -> str:
@@ -1002,70 +1245,20 @@ def _retrieve_symbol_candidates(
             (str(t), str(m), str(n), str(f), int(lin)) for t, m, n, f, lin in rows
         ]
 
-    target_symbol = None
-    for token in sorted(query_tokens, key=len, reverse=True):
-        if "_" in token or token.isidentifier():
-            target_symbol = token
-            break
-
-    token_cache: dict[str, list[str]] = {}
+    target_symbol = _extract_target_symbol(query_tokens)
     scored: list[tuple[float, SymbolRow]] = []
 
     for candidate in all_candidates:
-        base_score = _score_match(query_tokens, candidate, intent=intent)
-        score = base_score
-
-        if target_symbol and candidate[2] == target_symbol:
-            score += 10
-
-        if candidate[2] == query:
-            score += 5
-
-        symbol_name = candidate[2]
-        module_name = candidate[1]
-        symbol_type = candidate[0]
-
-        if symbol_name.startswith("_"):
-            score -= 2
-
-        freq = sum(1 for t in query_tokens if t in symbol_name.lower())
-        score += freq * 2
-
-        if module_name.startswith("tests."):
-            pass
-        elif module_name.startswith("scripts."):
-            pass
-        else:
-            score += 2
-
-        lowered_module = module_name.lower()
-        if any(x in lowered_module for x in ("cli", "scanner", "storage")):
-            score -= 2
-
-        if intent.is_identifier_query:
-            if symbol_name == intent.raw:
-                score += 25
-            elif module_name.endswith(intent.raw):
-                score += 8
-
-        if intent.is_multi_term and symbol_type == "module":
-            score += 1
-
-        if symbol_name not in token_cache:
-            token_cache[symbol_name] = list(_tokenize(symbol_name))
-        candidate_tokens = token_cache[symbol_name]
-
-        strong_tokens = [t for t in query_tokens if len(t) >= 4]
-
-        normalized_strong_tokens: list[str] = []
-        for t in strong_tokens:
-            normalized_strong_tokens.append(t)
-            if "_" in t:
-                normalized_strong_tokens.extend(t.split("_"))
-
-        if not any(t in candidate_tokens for t in normalized_strong_tokens):
+        features = _extract_candidate_score_features(
+            query_tokens,
+            candidate,
+            intent=intent,
+            raw_query=query,
+            target_symbol=target_symbol,
+        )
+        if not features.strong_token_hit:
             continue
-
+        score = _apply_scoring_rules(features, PRIMARY_SYMBOL_SCORING_RULES)
         if score >= _MIN_SCORE:
             scored.append((float(score), candidate))
 
@@ -1075,21 +1268,12 @@ def _retrieve_symbol_candidates(
         fallback_scored: list[tuple[float, SymbolRow]] = []
 
         for candidate in all_candidates:
-            score = _score_match(query_tokens, candidate, intent=intent)
-
-            symbol_name = candidate[2]
-            module_name = candidate[1]
-            symbol_type = candidate[0]
-
-            if intent.is_identifier_query:
-                if symbol_name == intent.raw:
-                    score += 25
-                elif module_name.endswith(intent.raw):
-                    score += 8
-
-            if intent.is_multi_term and symbol_type == "module":
-                score += 1
-
+            features = _extract_candidate_score_features(
+                query_tokens,
+                candidate,
+                intent=intent,
+            )
+            score = _apply_scoring_rules(features, FALLBACK_SYMBOL_SCORING_RULES)
             fallback_scored.append((float(score), candidate))
 
         fallback_scored.sort(key=_scored_symbol_sort_key)
