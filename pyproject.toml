@@ -67,6 +67,10 @@ line-ending = "lf"
 python_version = "3.13"
 strict = true
 
+[[tool.mypy.overrides]]
+module = ["tree_sitter", "tree_sitter_c"]
+ignore_missing_imports = true
+
 [tool.ruff.lint]
 # Baseline: real bugs + imports
 # Phase 1 — Exception semantics
