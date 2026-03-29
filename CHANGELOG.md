@@ -1,3 +1,15 @@
+# [0.34.0](https://github.com/marco0560/repoindex/compare/v0.33.1...v0.34.0) (2026-03-29)
+
+
+### Features
+
+* **adr-004:** complete multi-language plugin architecture ([57526cc](https://github.com/marco0560/repoindex/commit/57526ccfee03fa8416472fc7dde4c917a878416a)), closes [#2](https://github.com/marco0560/repoindex/issues/2)
+
+
+### BREAKING CHANGES
+
+* **adr-004:** repoindex now assumes the ADR-004 plugin architecture. Third-party analyzers must register through the repoindex.analyzers entry-point group, provide deterministic discovery_globs metadata, and participate in plugin-aware coverage and rebuild semantics. Optional C-family support is no longer part of the core install and must be installed via the dedicated analyzer dependency path.
+
 ## [0.33.1](https://github.com/marco0560/repoindex/compare/v0.33.0...v0.33.1) (2026-03-28)
 
 
