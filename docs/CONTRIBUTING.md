@@ -64,5 +64,13 @@ ADR-driven architecture changes should be linked to the corresponding
 documentation under `docs/adr/`.
 
 The accepted migration direction for pluggable backends and analyzers is
-documented in `ADR-004`, but that work is expected to land on its own
-dedicated branch.
+documented in `ADR-004` and is now the implemented branch architecture.
+
+When architecture changes land, update all three surfaces together:
+
+- `docs/architecture/` for the stable current-state description
+- `docs/adr/` for durable decision and migration records
+- `README.md` when user-facing capability or workflow descriptions change
+
+For analyzer or scanner changes, validate behavior against a real Git-backed
+repository when practical, not only against synthetic fixtures.

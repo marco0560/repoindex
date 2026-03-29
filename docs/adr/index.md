@@ -6,3 +6,6 @@ The repository currently tracks these architecture decision records:
 - [ADR-002 — Prefix filtering](ADR-002-prefix-filtering.md)
 - [ADR-003 — Query JSON output](ADR-003-query-json-output.md)
 - [ADR-004 — Pluggable backend and analyzer migration plan](ADR-004-pluggable-backends-migration-plan.md)
+
+`ADR-004` is the active migration record for the current architecture branch
+and should be read together with the documents under `docs/architecture/`.

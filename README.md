@@ -1,11 +1,22 @@
 # repoindex
 
+[![Docs](https://github.com/marco0560/repoindex/actions/workflows/docs.yml/badge.svg?branch=main)](https://marco0560.github.io/repoindex/)
+
 `repoindex` is a repository-local indexing and context retrieval tool for
 agent-assisted development.
 
 It builds a SQLite index inside the target repository, supports exact symbol
 lookup, docstring auditing, deterministic local semantic embeddings, and
 deterministic context generation for natural-language queries.
+
+The current branch now indexes mixed-language repositories through registered
+language analyzers:
+
+- Python via `PythonAnalyzer`
+- C-family `*.c` and `*.h` files via `CAnalyzer` backed by `tree-sitter-c`
+
+Storage and query persistence remain SQLite-backed through the active backend
+registry.
 
 ## Repository Documentation
 
@@ -16,6 +27,8 @@ Start with:
 
 - `docs/getting_started.md`
 - `docs/CONTRIBUTING.md`
+- `docs/architecture/index.md`
+- `docs/plugins/index.md`
 - `docs/release/checklist.md`
 - `docs/release/process.md`
 - `docs/process/branching.md`
@@ -38,6 +51,32 @@ The editable install keeps the `repoindex` CLI available in the target
 repository's virtual environment while still using the live source tree from
 this repository.
 
+Install optional analyzer dependencies only when needed. For C-family support:
+
+```bash
+source .venv/bin/activate
+pip install -e ../repoindex[c]
+```
+
+## Architecture Status
+
+The current architecture after completed `ADR-004` migration work is:
+
+- one active backend per repository instance, selected through
+  `repoindex.registry`
+- SQLite as the only current concrete backend
+- multiple language analyzers in one indexing run
+- deterministic mixed-language indexing for tracked `*.py`, `*.c`, and `*.h`
+  files
+- query-time retrieval planning with deterministic intent families for
+  behavior, test, configuration, API-surface, and architecture/navigation
+  queries
+
+The detailed architecture and migration record live under:
+
+- `docs/architecture/index.md`
+- `docs/adr/ADR-004-pluggable-backends-migration-plan.md`
+
 ## Commands
 
 Build or refresh the repository-local index:
@@ -59,6 +98,19 @@ Show incremental reuse decisions:
 
 ```bash
 repoindex index --explain
+```
+
+Inspect canonical-directory analyzer coverage without building the index:
+
+```bash
+repoindex coverage
+repoindex coverage --json
+```
+
+Require full canonical coverage before indexing:
+
+```bash
+repoindex index --require-full-coverage
 ```
 
 Audit indexed docstrings:

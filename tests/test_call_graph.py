@@ -12,7 +12,11 @@ import pytest
 from repoindex.cli import build_parser, main
 from repoindex.indexer import index_repo
 from repoindex.query.context import context_for
-from repoindex.query.exact import find_call_edges, find_callable_refs
+from repoindex.query.exact import (
+    find_call_edges,
+    find_callable_refs,
+    find_include_edges,
+)
 from repoindex.storage import get_db_path, init_db
 
 
@@ -309,6 +313,47 @@ def test_refs_cli_prints_incoming_references(
     assert captured.out.strip() == "pkg.a.registry => pkg.a.helper"
 
 
+def test_c_call_edges_are_indexed_for_same_module_functions(tmp_path: Path) -> None:
+    """
+    Ensure lightweight C call extraction reaches the stored call-edge graph.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts same-module C call-edge resolution.
+    """
+    module = tmp_path / "native" / "sample.c"
+    module.parent.mkdir()
+    module.write_text(
+        "static int helper(int value) {\n"
+        "    return normalize(value);\n"
+        "}\n"
+        "\n"
+        "int public_api(int input) {\n"
+        "    return helper(input);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    assert find_call_edges(tmp_path, "public_api", module="native.sample") == [
+        ("native.sample", "public_api", "native.sample", "helper", 1),
+    ]
+    assert find_call_edges(
+        tmp_path,
+        "helper",
+        module="native.sample",
+        incoming=True,
+    ) == [("native.sample", "public_api", "native.sample", "helper", 1)]
+
+
 def test_top_level_help_includes_examples_and_calls_command() -> None:
     """
     Verify the top-level help advertises key commands and examples.
@@ -379,6 +424,178 @@ def test_context_for_expands_related_cross_module_graph_symbols(
     assert ("pkg.a", "imported_caller") in imported_related
     assert ("pkg.a", "registry") in imported_related
     assert ("pkg.b", "imported_helper") in registry_expansion
+
+
+def test_c_include_edges_are_queryable_and_expand_context(tmp_path: Path) -> None:
+    """
+    Expose direct local include edges through exact queries and context.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts include-edge lookup and include-graph context
+        expansion for mixed C header/source fixtures.
+    """
+    native = tmp_path / "native"
+    native.mkdir()
+    (native / "sample.h").write_text(
+        "struct Node { int value; };\n",
+        encoding="utf-8",
+    )
+    (native / "sample.c").write_text(
+        '#include "native/sample.h"\n'
+        "\n"
+        "int public_api(void) {\n"
+        "    return 1;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (native / "consumer.c").write_text(
+        '#include "native/sample.h"\n'
+        "\n"
+        "int consume_node(void) {\n"
+        "    return 1;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    assert find_include_edges(tmp_path, "native.sample") == [
+        ("native.sample", "native/sample.h", "include_local", 1),
+    ]
+    assert find_include_edges(
+        tmp_path,
+        "native/sample.h",
+        incoming=True,
+    ) == [
+        ("native.consumer", "native/sample.h", "include_local", 1),
+        ("native.sample", "native/sample.h", "include_local", 1),
+    ]
+
+    header_data = json.loads(
+        context_for(
+            tmp_path,
+            "Node",
+            as_json=True,
+        )
+    )
+    related = {
+        (row["module"], row["name"])
+        for row in header_data["top_matches"] + header_data["module_expansion"]
+    }
+
+    assert ("native.sample", "public_api") in related
+    assert ("native.consumer", "consume_node") in related
+
+
+def test_c_include_graph_expands_transitively(tmp_path: Path) -> None:
+    """
+    Follow deterministic transitive local include chains during expansion.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts include-graph expansion reaches symbols behind a
+        second local header hop.
+    """
+    native = tmp_path / "native"
+    native.mkdir()
+    (native / "base.h").write_text(
+        "struct BaseNode { int value; };\n",
+        encoding="utf-8",
+    )
+    (native / "mid.h").write_text(
+        '#include "native/base.h"\n' "\n" "struct MidNode { int value; };\n",
+        encoding="utf-8",
+    )
+    (native / "sample.c").write_text(
+        '#include "native/mid.h"\n'
+        "\n"
+        "int public_api(void) {\n"
+        "    return 1;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    payload = json.loads(context_for(tmp_path, "public_api", as_json=True))
+    related = {
+        (row["module"], row["name"])
+        for row in payload["top_matches"] + payload["module_expansion"]
+    }
+
+    assert ("native.mid", "MidNode") in related
+    assert ("native.base", "BaseNode") in related
+
+
+def test_c_include_graph_explain_reports_expansion_entries(tmp_path: Path) -> None:
+    """
+    Expose include-graph expansion provenance in explain-mode JSON output.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts include-graph expansion entries are reported with
+        deterministic edge metadata.
+    """
+    native = tmp_path / "native"
+    native.mkdir()
+    (native / "sample.h").write_text(
+        "struct Node { int value; };\n",
+        encoding="utf-8",
+    )
+    (native / "sample.c").write_text(
+        '#include "native/sample.h"\n'
+        "\n"
+        "int public_api(void) {\n"
+        "    return 1;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    payload = json.loads(
+        context_for(
+            tmp_path,
+            "public_api",
+            as_json=True,
+            explain=True,
+        )
+    )
+    explain = payload["explain"]
+    expansion = explain["expansion"]
+    include_graph = expansion["include_graph"]
+
+    assert {
+        "seed_module": "native.sample",
+        "via_module": "native.sample",
+        "target_name": "native/sample.h",
+        "kind": "include_local",
+        "direction": "outgoing",
+        "expanded_module": "native.sample",
+        "expanded_name": "Node",
+    } in include_graph
 
 
 def test_context_for_help_shows_incompatibility_and_examples(

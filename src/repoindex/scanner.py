@@ -5,8 +5,11 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Iterator
+
+from repoindex.contracts import LanguageAnalyzer
 
 EXCLUDED_DIRS = {
     ".repoindex",
@@ -18,6 +21,45 @@ EXCLUDED_DIRS = {
     "build",
     "dist",
 }
+CANONICAL_SOURCE_DIRS: tuple[str, ...] = ("src", "tests", "scripts")
+
+
+def discovery_file_globs(analyzers: Sequence[LanguageAnalyzer]) -> tuple[str, ...]:
+    """
+    Return deterministic file-discovery globs for the active analyzers.
+
+    Parameters
+    ----------
+    analyzers : collections.abc.Sequence[repoindex.contracts.LanguageAnalyzer]
+        Analyzer instances participating in the current indexing or query
+        operation.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Deduplicated discovery globs in analyzer-registration order.
+
+    Raises
+    ------
+    ValueError
+        If no discovery globs are declared.
+    """
+    globs: list[str] = []
+    seen: set[str] = set()
+
+    for analyzer in analyzers:
+        for pattern in analyzer.discovery_globs:
+            normalized_pattern = str(pattern).strip()
+            if not normalized_pattern or normalized_pattern in seen:
+                continue
+            seen.add(normalized_pattern)
+            globs.append(normalized_pattern)
+
+    if globs:
+        return tuple(globs)
+
+    msg = "No analyzer discovery globs are registered for repoindex"
+    raise ValueError(msg)
 
 
 def _load_gitignore(root: Path) -> list[str]:
@@ -105,9 +147,13 @@ def _is_excluded(path: Path, root: Path, patterns: list[str]) -> bool:
     return False
 
 
-def _iter_python_files(root: Path) -> Iterator[Path]:
+def _iter_source_files(
+    root: Path,
+    *,
+    discovery_globs: Sequence[str],
+) -> Iterator[Path]:
     """
-    Yield Python files from a filesystem scan.
+    Yield supported source files from a filesystem scan.
 
     Parameters
     ----------
@@ -117,19 +163,28 @@ def _iter_python_files(root: Path) -> Iterator[Path]:
     Yields
     ------
     pathlib.Path
-        Python source files that survive exclusion filtering.
+        Supported source files that survive exclusion filtering.
     """
     patterns = _load_gitignore(root)
 
-    for path in root.rglob("*.py"):
-        if _is_excluded(path, root, patterns):
-            continue
-        yield path
+    seen: set[Path] = set()
+    for pattern in discovery_globs:
+        for path in root.rglob(pattern):
+            if path in seen:
+                continue
+            seen.add(path)
+            if _is_excluded(path, root, patterns):
+                continue
+            yield path
 
 
-def iter_project_files(root: Path) -> Iterator[Path]:
+def iter_project_files(
+    root: Path,
+    *,
+    analyzers: Sequence[LanguageAnalyzer],
+) -> Iterator[Path]:
     """
-    Yield Python files for indexing.
+    Yield supported source files for indexing.
 
     Parameters
     ----------
@@ -139,7 +194,7 @@ def iter_project_files(root: Path) -> Iterator[Path]:
     Returns
     -------
     collections.abc.Iterator[pathlib.Path]
-        Python files selected for indexing.
+        Supported source files selected for indexing.
 
     Raises
     ------
@@ -149,13 +204,14 @@ def iter_project_files(root: Path) -> Iterator[Path]:
 
     Notes
     -----
-    If the root is inside a Git repository, only tracked Python files are used
-    so Git remains the source of truth. Outside Git repositories, the function
-    falls back to a filesystem scan filtered by ``.gitignore`` rules.
+    If the root is inside a Git repository, only tracked supported source
+    files are used so Git remains the source of truth. Outside Git
+    repositories, the function falls back to a filesystem scan filtered by
+    ``.gitignore`` rules.
     """
     try:
         result = subprocess.run(
-            ["git", "ls-files", "--cached", "*.py"],
+            ["git", "ls-files", "--cached", *discovery_file_globs(analyzers)],
             cwd=root,
             capture_output=True,
             text=True,
@@ -175,7 +231,14 @@ def iter_project_files(root: Path) -> Iterator[Path]:
             if "not a git repository" not in stderr:
                 raise
 
-        return iter(sorted(_iter_python_files(root)))
+        return iter(
+            sorted(
+                _iter_source_files(
+                    root,
+                    discovery_globs=discovery_file_globs(analyzers),
+                )
+            )
+        )
 
 
 def file_metadata(path: Path) -> dict[str, object]:
@@ -199,3 +262,69 @@ def file_metadata(path: Path) -> dict[str, object]:
         "mtime": path.stat().st_mtime,
         "size": path.stat().st_size,
     }
+
+
+def _iter_canonical_files_from_filesystem(root: Path) -> Iterator[Path]:
+    """
+    Yield files under canonical source directories outside Git repositories.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root to inspect.
+
+    Yields
+    ------
+    pathlib.Path
+        Files under canonical directories that survive exclusion filtering.
+    """
+    patterns = _load_gitignore(root)
+    seen: set[Path] = set()
+
+    for dirname in CANONICAL_SOURCE_DIRS:
+        base_dir = root / dirname
+        if not base_dir.exists():
+            continue
+        for path in base_dir.rglob("*"):
+            if path in seen or not path.is_file():
+                continue
+            seen.add(path)
+            if _is_excluded(path, root, patterns):
+                continue
+            yield path
+
+
+def iter_canonical_project_files(root: Path) -> Iterator[Path]:
+    """
+    Yield tracked files under canonical source directories.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root to inspect.
+
+    Returns
+    -------
+    collections.abc.Iterator[pathlib.Path]
+        Deterministically ordered files under ``src/``, ``tests/``, and
+        ``scripts/``.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--", *CANONICAL_SOURCE_DIRS],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        files = [
+            root / line.strip() for line in result.stdout.splitlines() if line.strip()
+        ]
+        return iter(sorted(path for path in files if path.is_file()))
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        if isinstance(exc, subprocess.CalledProcessError):
+            stderr = (exc.stderr or "").lower()
+            if "not a git repository" not in stderr:
+                raise
+
+        return iter(sorted(_iter_canonical_files_from_filesystem(root)))

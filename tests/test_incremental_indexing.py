@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 from pathlib import Path
 
 import pytest
 
-from repoindex.cli import main
-from repoindex.indexer import index_repo
+from repoindex.analyzers import PythonAnalyzer
+from repoindex.cli import _ensure_index, _write_index_metadata, main
+from repoindex.indexer import SQLiteIndexBackend, index_repo
 from repoindex.query.exact import find_symbol
 from repoindex.scanner import file_metadata
+from repoindex.schema import SCHEMA_VERSION
 from repoindex.semantic.embeddings import EmbeddingBackendSpec
 from repoindex.storage import get_db_path, init_db
 
@@ -34,6 +37,18 @@ def _write_module(path: Path, source: str) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(source, encoding="utf-8")
+
+
+class _PythonAnalyzerV2(PythonAnalyzer):
+    """Python analyzer stub with a bumped version for staleness tests."""
+
+    version = "2"
+
+
+class _SQLiteBackendV11(SQLiteIndexBackend):
+    """SQLite backend stub with a bumped version for runtime tests."""
+
+    version = 11
 
 
 def test_index_repo_reuses_unchanged_files(tmp_path: Path) -> None:
@@ -215,6 +230,60 @@ def test_index_repo_recomputes_embeddings_when_backend_changes(
     assert versions == [("2",)]
 
 
+def test_index_repo_reindexes_unchanged_files_when_analyzer_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Ensure analyzer-version changes invalidate unchanged files explicitly.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to replace the active analyzer set.
+
+    Returns
+    -------
+    None
+        The test asserts unchanged files are reparsed when their owning
+        analyzer version changes.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    _write_module(
+        module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.setattr(
+        "repoindex.indexer.active_language_analyzers",
+        lambda: [_PythonAnalyzerV2()],
+    )
+    report = index_repo(tmp_path)
+
+    conn = sqlite3.connect(get_db_path(tmp_path))
+    try:
+        owners = conn.execute(
+            "SELECT analyzer_name, analyzer_version FROM files"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert report.indexed == 1
+    assert report.reused == 0
+    assert any(
+        decision.path == str(module)
+        and decision.action == "indexed"
+        and decision.reason == "analyzer plugin or version changed"
+        for decision in report.decisions
+    )
+    assert owners == [("python", "2")]
+
+
 def test_index_cli_reports_summary_and_decisions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -253,3 +322,365 @@ def test_index_cli_reports_summary_and_decisions(
     assert "Deleted: 0" in captured.out
     assert "Embeddings recomputed:" in captured.out
     assert "indexed: pkg/sample.py" in captured.out
+
+
+def test_index_repo_indexes_mixed_python_and_c_sources(tmp_path: Path) -> None:
+    """
+    Ensure the Phase 9 analyzer registry indexes mixed-language repositories.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts deterministic indexing for Python and C sources.
+    """
+    python_module = tmp_path / "pkg" / "sample.py"
+    c_module = tmp_path / "native" / "sample.c"
+    _write_module(
+        python_module,
+        "def py_helper():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+    _write_module(
+        c_module,
+        '#include "native/sample.h"\n'
+        "\n"
+        "int c_helper(int value) {\n"
+        "    return value;\n"
+        "}\n",
+    )
+
+    init_db(tmp_path)
+    report = index_repo(tmp_path)
+
+    assert report.indexed == 2
+    assert report.reused == 0
+    assert report.deleted == 0
+    assert find_symbol(tmp_path, "py_helper") == [
+        ("function", "pkg.sample", "py_helper", str(python_module), 1)
+    ]
+    assert find_symbol(tmp_path, "c_helper") == [
+        ("function", "native.sample", "c_helper", str(c_module), 3)
+    ]
+    assert report.coverage_issues == []
+
+
+def test_index_repo_reports_uncovered_canonical_files(tmp_path: Path) -> None:
+    """
+    Audit canonical directories for files not covered by active analyzers.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts uncovered canonical files are surfaced in the index
+        report without blocking covered-file indexing.
+    """
+    python_module = tmp_path / "src" / "sample.py"
+    rust_module = tmp_path / "src" / "lib.rs"
+    _write_module(
+        python_module,
+        "def py_helper():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+    rust_module.parent.mkdir(parents=True, exist_ok=True)
+    rust_module.write_text("pub fn helper() {}\n", encoding="utf-8")
+
+    init_db(tmp_path)
+    report = index_repo(tmp_path)
+
+    assert report.indexed == 1
+    assert report.coverage_issues == [
+        type(report.coverage_issues[0])(
+            path=str(rust_module),
+            directory="src",
+            suffix=".rs",
+            reason="no registered analyzer covers this canonical file",
+        )
+    ]
+
+
+def test_index_cli_prints_coverage_issues(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Render canonical-directory coverage gaps in CLI index output.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch argv and cwd.
+
+    Returns
+    -------
+    None
+        The test asserts uncovered canonical files are printed in the summary.
+    """
+    python_module = tmp_path / "src" / "sample.py"
+    shell_script = tmp_path / "scripts" / "build.sh"
+    _write_module(
+        python_module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+    shell_script.parent.mkdir(parents=True, exist_ok=True)
+    shell_script.write_text("echo demo\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "Coverage issues: 1" in captured.out
+    assert (
+        "coverage: scripts/build.sh (scripts, .sh, "
+        "no registered analyzer covers this canonical file)"
+    ) in captured.out
+
+
+def test_coverage_cli_reports_uncovered_canonical_files(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Render canonical coverage gaps without building the index.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch argv and cwd.
+
+    Returns
+    -------
+    None
+        The test asserts the dedicated coverage command reports uncovered
+        canonical files and exits non-zero for incomplete coverage.
+    """
+    python_module = tmp_path / "src" / "sample.py"
+    shell_script = tmp_path / "scripts" / "build.sh"
+    _write_module(
+        python_module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+    shell_script.parent.mkdir(parents=True, exist_ok=True)
+    shell_script.write_text("echo demo\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["repoindex", "coverage"])
+
+    assert main() == 1
+    captured = capsys.readouterr()
+    assert "Coverage complete: no" in captured.out
+    assert "Active analyzers:" in captured.out
+    assert (
+        "coverage: scripts/build.sh (scripts, .sh, "
+        "no registered analyzer covers this canonical file)"
+    ) in captured.out
+    assert not get_db_path(tmp_path).exists()
+
+
+def test_coverage_cli_emits_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Emit structured JSON for canonical coverage diagnostics.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch argv and cwd.
+
+    Returns
+    -------
+    None
+        The test asserts the JSON coverage envelope includes analyzer and
+        issue metadata.
+    """
+    rust_module = tmp_path / "src" / "lib.rs"
+    rust_module.parent.mkdir(parents=True, exist_ok=True)
+    rust_module.write_text("pub fn helper() {}\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["repoindex", "coverage", "--json"])
+
+    assert main() == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "coverage"
+    assert payload["status"] == "incomplete"
+    assert payload["query"]["canonical_directories"] == ["src", "tests", "scripts"]
+    assert payload["results"] == [
+        {
+            "path": str(rust_module),
+            "directory": "src",
+            "suffix": ".rs",
+            "reason": "no registered analyzer covers this canonical file",
+        }
+    ]
+    assert payload["analyzers"]
+
+
+def test_index_cli_can_require_full_coverage(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Fail before indexing when strict canonical coverage is required.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch argv and cwd.
+
+    Returns
+    -------
+    None
+        The test asserts strict coverage mode exits before creating the index.
+    """
+    python_module = tmp_path / "src" / "sample.py"
+    rust_module = tmp_path / "src" / "lib.rs"
+    _write_module(
+        python_module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+    rust_module.parent.mkdir(parents=True, exist_ok=True)
+    rust_module.write_text("pub fn helper() {}\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["repoindex", "index", "--require-full-coverage"],
+    )
+
+    assert main() == 2
+    captured = capsys.readouterr()
+    assert "Coverage incomplete" in captured.err
+    assert "Coverage issues: 1" in captured.out
+    assert not get_db_path(tmp_path).exists()
+
+
+def test_ensure_index_rebuilds_when_analyzer_inventory_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Rebuild automatically when the persisted analyzer inventory is stale.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch active analyzers and Git state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture rebuild diagnostics.
+
+    Returns
+    -------
+    None
+        The test asserts plugin-aware analyzer staleness triggers a rebuild.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    _write_module(
+        module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+    _write_index_metadata(tmp_path, {"schema_version": str(SCHEMA_VERSION)})
+
+    monkeypatch.setattr("repoindex.cli._get_head_commit", lambda root: None)
+    monkeypatch.setattr(
+        "repoindex.cli.active_language_analyzers",
+        lambda: [_PythonAnalyzerV2()],
+    )
+    monkeypatch.setattr(
+        "repoindex.indexer.active_language_analyzers",
+        lambda: [_PythonAnalyzerV2()],
+    )
+
+    _ensure_index(tmp_path)
+    captured = capsys.readouterr()
+    backend = SQLiteIndexBackend()
+
+    assert "Index stale (analyzer plugin inventory changed)" in captured.err
+    assert backend.load_analyzer_inventory(tmp_path) == [("python", "2", '["*.py"]')]
+
+
+def test_ensure_index_rebuilds_when_backend_inventory_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Rebuild automatically when the persisted backend inventory is stale.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch the active backend and Git state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture rebuild diagnostics.
+
+    Returns
+    -------
+    None
+        The test asserts plugin-aware backend staleness triggers a rebuild.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    _write_module(
+        module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+    _write_index_metadata(tmp_path, {"schema_version": str(SCHEMA_VERSION)})
+
+    monkeypatch.setattr("repoindex.cli._get_head_commit", lambda root: None)
+    monkeypatch.setattr(
+        "repoindex.cli.active_index_backend",
+        lambda: _SQLiteBackendV11(),
+    )
+    monkeypatch.setattr(
+        "repoindex.indexer.active_index_backend",
+        lambda: _SQLiteBackendV11(),
+    )
+
+    _ensure_index(tmp_path)
+    captured = capsys.readouterr()
+    backend = SQLiteIndexBackend()
+
+    assert "Index stale (backend plugin changed)" in captured.err
+    assert backend.load_runtime_inventory(tmp_path) == ("sqlite", "11", 1)

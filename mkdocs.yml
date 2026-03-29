@@ -29,6 +29,22 @@ plugins:
 nav:
   - Home: index.md
   - Getting started: getting_started.md
+  - Architecture:
+      - Index: architecture/index.md
+      - System overview: architecture/system-overview.md
+      - Indexing pipeline: architecture/indexing-pipeline.md
+      - Query pipeline: architecture/query-pipeline.md
+      - Plugin model: architecture/plugin-model.md
+      - Core contracts: architecture/core-contracts.md
+      - Storage backends: architecture/storage-backends.md
+      - Language analyzers: architecture/language-analyzers.md
+  - Plugin development:
+      - Index: plugins/index.md
+      - Quick start: plugins/getting-started.md
+      - Analyzer plugins: plugins/analyzers.md
+      - Backend plugins: plugins/backends.md
+      - Packaging and install: plugins/packaging.md
+      - Tutorial: plugins/tutorial.md
   - Contributing: CONTRIBUTING.md
   - Scripts: scripts.md
   - Release checklist: release/checklist.md

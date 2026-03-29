@@ -11,5 +11,6 @@ ChannelResults = list[ScoredSymbol]
 ChannelName = str
 ChannelBundle = tuple[ChannelName, ChannelResults]
 ReferenceRow = tuple[str, int]
+IncludeEdgeRow = tuple[str, str, str, int]
 CodeContext = tuple[str | None, str | None, list[str]]
 CacheType = dict[Path, tuple[str, list[str], ast.Module]]

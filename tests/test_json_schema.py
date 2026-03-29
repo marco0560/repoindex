@@ -68,6 +68,23 @@ def test_context_output_matches_schema(tmp_path: Path) -> None:
     data = json.loads(output)
 
     validate(instance=data, schema=schema)
+    explain = cast(dict[str, object], data["explain"])
+    planner = cast(dict[str, object], explain["planner"])
+    assert "primary_intent" in planner
+    assert "channels" in planner
+    assert "include_doc_issues" in planner
+    merge = cast(list[dict[str, object]], explain["merge"])
+    assert "channels" in merge[0]
+    assert "families" in merge[0]
+    assert "rrf_score" in merge[0]
+    assert "evidence_bonus" in merge[0]
+    assert "role_bonus" in merge[0]
+    assert "merge_score" in merge[0]
+    diversity = cast(dict[str, object], explain["diversity"])
+    assert "selected" in diversity
+    assert "deferred" in diversity
+    expansion = cast(dict[str, object], explain["expansion"])
+    assert "include_graph" in expansion
 
 
 def test_context_no_matches_schema(tmp_path: Path) -> None:
@@ -100,3 +117,21 @@ def test_context_no_matches_schema(tmp_path: Path) -> None:
     data = json.loads(output)
 
     validate(instance=data, schema=schema)
+    explain = cast(dict[str, object], data["explain"])
+    planner = cast(dict[str, object], explain["planner"])
+    assert "primary_intent" in planner
+    assert "channels" in planner
+    if "merge" in explain:
+        merge = cast(list[dict[str, object]], explain["merge"])
+        if merge:
+            assert "channels" in merge[0]
+            assert "families" in merge[0]
+            assert "rrf_score" in merge[0]
+            assert "evidence_bonus" in merge[0]
+            assert "role_bonus" in merge[0]
+            assert "merge_score" in merge[0]
+    diversity = cast(dict[str, object], explain["diversity"])
+    assert "selected" in diversity
+    assert "deferred" in diversity
+    expansion = cast(dict[str, object], explain["expansion"])
+    assert "include_graph" in expansion

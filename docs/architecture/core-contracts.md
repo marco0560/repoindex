@@ -1,0 +1,71 @@
+# Core Contracts
+
+`ADR-004` Phase 3 introduces explicit backend-neutral contracts in code:
+
+- `src/repoindex/contracts.py`
+- `src/repoindex/models.py`
+- `src/repoindex/normalization.py`
+
+These modules are the first durable abstraction layer between language
+analysis, normalized artifacts, and persistence.
+
+## `LanguageAnalyzer`
+
+Responsibilities:
+
+- decide whether an analyzer accepts a file path
+- analyze one source file relative to a repository root
+- emit one normalized `AnalysisResult`
+
+Invariants:
+
+- analyzers own language-specific parsing only
+- analyzers do not own backend initialization or persistence
+- emitted artifact ordering must be deterministic
+
+## `AnalysisResult` and Normalized Artifacts
+
+The normalized artifact model currently includes:
+
+- `ModuleArtifact`
+- `ClassArtifact`
+- `FunctionArtifact`
+- `ImportArtifact`
+- `CallSite`
+- `CallableReference`
+- `FileMetadataSnapshot`
+
+Invariants:
+
+- one `AnalysisResult` represents one source file
+- module, class, function, import, call, and reference ordering is stable
+- integer flags stay compatible with the existing SQLite schema while the
+  migration is in progress
+- logical callable identity remains `function` or `Class.method`
+
+## `IndexBackend`
+
+Responsibilities:
+
+- initialize repository-local backend state
+- load indexed file hashes for incremental decisions
+- delete persisted artifacts for removed or reindexed paths
+- persist one normalized file analysis
+- count reusable semantic artifacts for unchanged files
+- rebuild derived backend indexes after raw persistence
+
+Invariants:
+
+- exactly one backend is active for one repository index
+- backends own storage policy, not language parsing
+- backend operations are repository-root-scoped and deterministic
+
+## Current Boundary
+
+The Phase 3 contract layer is now active in the live indexing path:
+
+- analyzers emit `AnalysisResult` objects into the orchestrator
+- the registry activates analyzers and the concrete backend
+- the SQLite backend persists and serves current query needs
+
+The remaining extension work is additive rather than foundational.

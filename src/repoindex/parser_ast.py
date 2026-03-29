@@ -144,6 +144,52 @@ def _raises_exception(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return any(isinstance(child, ast.Raise) for child in ast.walk(node))
 
 
+def _has_asserts(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """
+    Check whether a function contains explicit assert statements.
+
+    Parameters
+    ----------
+    node : ast.FunctionDef | ast.AsyncFunctionDef
+        Function-like AST node to inspect.
+
+    Returns
+    -------
+    bool
+        ``True`` when the function contains at least one ``assert`` statement.
+    """
+    return any(isinstance(child, ast.Assert) for child in ast.walk(node))
+
+
+def _decorator_names(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[str]:
+    """
+    Collect statically representable decorator names from a callable node.
+
+    Parameters
+    ----------
+    node : ast.FunctionDef | ast.AsyncFunctionDef
+        Function-like AST node whose decorators should be inspected.
+
+    Returns
+    -------
+    list[str]
+        Deterministic dotted decorator names, preserving declaration order.
+    """
+    decorators: list[str] = []
+
+    for decorator in node.decorator_list:
+        if isinstance(decorator, ast.Call):
+            name = _attribute_path(decorator.func)
+        else:
+            name = _attribute_path(decorator)
+        if name is not None:
+            decorators.append(name)
+
+    return decorators
+
+
 def _module_name_from_path(path: Path, root: Path) -> str:
     """
     Derive the dotted module name for a source file.
@@ -535,6 +581,8 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                             "returns_value": int(_returns_value(child)),
                             "yields_value": int(_yields_value(child)),
                             "raises": int(_raises_exception(child)),
+                            "has_asserts": int(_has_asserts(child)),
+                            "decorators": _decorator_names(child),
                             "calls": _extract_call_records(child),
                             "callable_refs": _extract_callable_refs(child),
                         }
@@ -558,6 +606,8 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
                     "returns_value": int(_returns_value(node)),
                     "yields_value": int(_yields_value(node)),
                     "raises": int(_raises_exception(node)),
+                    "has_asserts": int(_has_asserts(node)),
+                    "decorators": _decorator_names(node),
                     "calls": _extract_call_records(node),
                     "callable_refs": _extract_callable_refs(node),
                 }

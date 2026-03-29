@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from repoindex._version import version as __version__
-from repoindex.indexer import index_repo
+from repoindex.indexer import CoverageIssue, audit_repo_coverage, index_repo
 from repoindex.prefix import normalize_prefix
 from repoindex.query.context import context_for
 from repoindex.query.exact import (
@@ -20,6 +20,11 @@ from repoindex.query.exact import (
     find_callable_refs,
     find_symbol,
 )
+from repoindex.registry import (
+    active_index_backend,
+    active_language_analyzers,
+    plugin_registrations,
+)
 from repoindex.scanner import iter_project_files
 from repoindex.schema import SCHEMA_VERSION
 from repoindex.semantic.embeddings import get_embedding_backend
@@ -27,6 +32,33 @@ from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import get_db_path, get_repoindex_dir, init_db
 
 QUERY_JSON_SCHEMA_VERSION = "1.0"
+
+
+def _current_analyzer_inventory() -> list[tuple[str, str, str]]:
+    """
+    Return the active analyzer inventory in persisted comparison form.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    list[tuple[str, str, str]]
+        Active analyzer rows as ``(name, version, discovery_globs_json)``
+        ordered by analyzer name.
+    """
+    return [
+        (
+            str(analyzer.name),
+            str(analyzer.version),
+            json.dumps(tuple(analyzer.discovery_globs)),
+        )
+        for analyzer in sorted(
+            active_language_analyzers(),
+            key=lambda item: str(item.name),
+        )
+    ]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -72,7 +104,8 @@ def build_parser() -> argparse.ArgumentParser:
         dest="command",
         title="subcommands",
         metavar=(
-            "{help,index,symbol,embeddings,calls,refs,audit-docstrings," "context-for}"
+            "{help,index,coverage,symbol,embeddings,calls,refs,"
+            "audit-docstrings,context-for,plugins}"
         ),
     )
 
@@ -89,7 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  repoindex index\n"
             "  repoindex index --explain\n"
-            "  repoindex index --full"
+            "  repoindex index --full\n"
+            "  repoindex index --require-full-coverage"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -104,6 +138,30 @@ def build_parser() -> argparse.ArgumentParser:
         dest="explain",
         action="store_true",
         help="Show per-file indexing decisions after the summary",
+    )
+    index_parser.add_argument(
+        "--require-full-coverage",
+        action="store_true",
+        help=(
+            "Fail before indexing when canonical directories contain "
+            "uncovered tracked files"
+        ),
+    )
+
+    coverage_parser = sub.add_parser(
+        "coverage",
+        help="Inspect canonical-directory analyzer coverage",
+        description=(
+            "Inspect tracked files under canonical source directories and "
+            "report which files are not covered by the active analyzer set."
+        ),
+        epilog=("Examples:\n" "  repoindex coverage\n" "  repoindex coverage --json"),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    coverage_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON for machine consumption",
     )
 
     symbol_parser = sub.add_parser(
@@ -313,6 +371,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Restrict retrieval to files under this repo-root-relative path prefix",
     )
 
+    plugins_parser = sub.add_parser(
+        "plugins",
+        help="List built-in and third-party plugins",
+        description=(
+            "List analyzer and backend plugins discovered from built-ins and "
+            "installed Python entry points."
+        ),
+        epilog=("Examples:\n" "  repoindex plugins\n" "  repoindex plugins --json"),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    plugins_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON for machine consumption",
+    )
+
     return parser
 
 
@@ -390,24 +464,43 @@ def _run_help(parser: argparse.ArgumentParser) -> int:
     return 0
 
 
-def _run_index(root: Path, *, full: bool, explain: bool) -> int:
+def _run_index(
+    root: Path,
+    *,
+    full: bool,
+    explain: bool,
+    require_full_coverage: bool,
+) -> int:
     """
     Build or refresh the repository index.
 
     Parameters
     ----------
     root : pathlib.Path
-        Repository root whose Python files should be indexed.
+        Repository root whose supported source files should be indexed.
     full : bool
         Whether to force a full rebuild instead of incremental reuse.
     explain : bool
         Whether to print per-file indexing decisions after the summary.
+    require_full_coverage : bool
+        Whether to fail before indexing when canonical directories are not
+        fully covered by the active analyzer set.
 
     Returns
     -------
     int
         Process exit status for a successful indexing run.
     """
+    coverage_issues = audit_repo_coverage(root)
+    if require_full_coverage and coverage_issues:
+        print(
+            "[repoindex] Coverage incomplete — install the missing analyzer "
+            "plugins or rerun without --require-full-coverage",
+            file=sys.stderr,
+        )
+        _render_coverage_issues(root, coverage_issues)
+        return 2
+
     init_db(root)
     report = index_repo(root, full=full)
 
@@ -423,6 +516,7 @@ def _run_index(root: Path, *, full: bool, explain: bool) -> int:
     print(f"Deleted: {report.deleted}")
     print(f"Embeddings recomputed: {report.embeddings_recomputed}")
     print(f"Embeddings reused: {report.embeddings_reused}")
+    _render_coverage_issues(root, report.coverage_issues)
     if explain:
         for decision in report.decisions:
             rel_path = Path(decision.path)
@@ -432,6 +526,92 @@ def _run_index(root: Path, *, full: bool, explain: bool) -> int:
                 rel_label = decision.path
             print(f"{decision.action}: {rel_label} ({decision.reason})")
     return 0
+
+
+def _render_coverage_issues(root: Path, issues: list[CoverageIssue]) -> None:
+    """
+    Render canonical-directory coverage issues in deterministic text form.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for relative path labels.
+    issues : list[repoindex.indexer.CoverageIssue]
+        Coverage-issue rows to print.
+
+    Returns
+    -------
+    None
+        Coverage diagnostics are printed to standard output.
+    """
+    print(f"Coverage issues: {len(issues)}")
+    for issue in issues:
+        rel_path = Path(str(issue.path))
+        try:
+            rel_text = rel_path.relative_to(root).as_posix()
+        except ValueError:
+            rel_text = str(issue.path)
+        print(
+            "coverage: "
+            f"{rel_text} ({issue.directory}, {issue.suffix}, {issue.reason})"
+        )
+
+
+def _run_coverage(root: Path, *, as_json: bool = False) -> int:
+    """
+    Inspect canonical-directory coverage for the active analyzer set.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose canonical tracked files should be inspected.
+    as_json : bool, optional
+        Whether to render structured JSON output.
+
+    Returns
+    -------
+    int
+        Zero when coverage is complete, otherwise one.
+    """
+    analyzers = sorted(active_language_analyzers(), key=lambda item: str(item.name))
+    issues = audit_repo_coverage(root)
+
+    if as_json:
+        _emit_json(
+            _query_payload(
+                "coverage",
+                "ok" if not issues else "incomplete",
+                {
+                    "canonical_directories": ["src", "tests", "scripts"],
+                },
+                [
+                    {
+                        "path": issue.path,
+                        "directory": issue.directory,
+                        "suffix": issue.suffix,
+                        "reason": issue.reason,
+                    }
+                    for issue in issues
+                ],
+                analyzers=[
+                    {
+                        "name": str(analyzer.name),
+                        "version": str(analyzer.version),
+                        "discovery_globs": list(analyzer.discovery_globs),
+                    }
+                    for analyzer in analyzers
+                ],
+            )
+        )
+        return 0 if not issues else 1
+
+    print(f"Coverage complete: {'yes' if not issues else 'no'}")
+    print(f"Active analyzers: {len(analyzers)}")
+    for analyzer in analyzers:
+        globs = ", ".join(analyzer.discovery_globs)
+        print(f"analyzer: {analyzer.name} version={analyzer.version} globs={globs}")
+    _render_coverage_issues(root, issues)
+    return 0 if not issues else 1
 
 
 def _run_symbol(
@@ -1080,11 +1260,69 @@ def _ensure_index(root: Path) -> None:
                 print("[repoindex] Index ready", file=sys.stderr)
                 return
 
+            backend = active_index_backend()
+            runtime_inventory = backend.load_runtime_inventory(root, conn=conn)
+            current_runtime = (str(backend.name), str(backend.version))
+            if runtime_inventory is None:
+                print(
+                    "[repoindex] Index stale (plugin inventory missing) "
+                    "— rebuilding...",
+                    file=sys.stderr,
+                )
+                conn.close()
+                init_db(root)
+                index_repo(root)
+                commit = _get_head_commit(root)
+                metadata = {"schema_version": str(SCHEMA_VERSION)}
+                if commit:
+                    metadata["commit"] = commit
+                _write_index_metadata(root, metadata)
+                print("[repoindex] Index ready", file=sys.stderr)
+                return
+
+            if runtime_inventory[:2] != current_runtime:
+                print(
+                    "[repoindex] Index stale (backend plugin changed) "
+                    "— rebuilding...",
+                    file=sys.stderr,
+                )
+                conn.close()
+                init_db(root)
+                index_repo(root)
+                commit = _get_head_commit(root)
+                metadata = {"schema_version": str(SCHEMA_VERSION)}
+                if commit:
+                    metadata["commit"] = commit
+                _write_index_metadata(root, metadata)
+                print("[repoindex] Index ready", file=sys.stderr)
+                return
+
+            persisted_analyzers = backend.load_analyzer_inventory(root, conn=conn)
+            current_analyzers = _current_analyzer_inventory()
+            if persisted_analyzers != current_analyzers:
+                print(
+                    "[repoindex] Index stale (analyzer plugin inventory changed) "
+                    "— rebuilding...",
+                    file=sys.stderr,
+                )
+                conn.close()
+                init_db(root)
+                index_repo(root)
+                commit = _get_head_commit(root)
+                metadata = {"schema_version": str(SCHEMA_VERSION)}
+                if commit:
+                    metadata["commit"] = commit
+                _write_index_metadata(root, metadata)
+                print("[repoindex] Index ready", file=sys.stderr)
+                return
+
             # --- STALENESS CHECK: file count mismatch ---
             cursor = conn.execute("SELECT COUNT(DISTINCT file_id) FROM symbol_index")
             indexed_files = cursor.fetchone()[0]
 
-            current_files = len(list(iter_project_files(root)))
+            current_files = len(
+                list(iter_project_files(root, analyzers=active_language_analyzers()))
+            )
 
             if indexed_files != current_files:
                 print("[repoindex] Index stale — rebuilding...", file=sys.stderr)
@@ -1109,6 +1347,62 @@ def _ensure_index(root: Path) -> None:
         raise SystemExit(1)
 
 
+def _run_plugins(*, as_json: bool = False) -> int:
+    """
+    Print built-in and entry-point plugin registrations.
+
+    Parameters
+    ----------
+    as_json : bool, optional
+        Whether to render structured JSON output.
+
+    Returns
+    -------
+    int
+        Zero after printing deterministic plugin diagnostics.
+    """
+    registrations = plugin_registrations()
+
+    if as_json:
+        _emit_json(
+            {
+                "schema_version": QUERY_JSON_SCHEMA_VERSION,
+                "command": "plugins",
+                "status": "ok",
+                "results": [
+                    {
+                        "family": registration.family,
+                        "name": registration.name,
+                        "provider": registration.provider,
+                        "source": registration.source,
+                        "status": registration.status,
+                        "version": registration.version,
+                        "entry_point": registration.entry_point,
+                        "detail": registration.detail,
+                    }
+                    for registration in registrations
+                ],
+            }
+        )
+        return 0
+
+    for registration in registrations:
+        line = (
+            f"{registration.family}: {registration.name} "
+            f"[{registration.status}] "
+            f"provider={registration.provider} "
+            f"source={registration.source} "
+            f"version={registration.version}"
+        )
+        if registration.entry_point is not None:
+            line += f" entry_point={registration.entry_point}"
+        if registration.detail is not None:
+            line += f" detail={registration.detail}"
+        print(line)
+
+    return 0
+
+
 def main() -> int:
     """
     Dispatch the repoindex command-line interface.
@@ -1131,7 +1425,14 @@ def main() -> int:
     if args.command in (None, "help"):
         return _run_help(parser)
     if args.command == "index":
-        return _run_index(root, full=args.full, explain=args.explain)
+        return _run_index(
+            root,
+            full=args.full,
+            explain=args.explain,
+            require_full_coverage=args.require_full_coverage,
+        )
+    if args.command == "coverage":
+        return _run_coverage(root, as_json=args.json)
     if args.command == "symbol":
         _ensure_index(root)
         return _run_symbol(
@@ -1181,6 +1482,8 @@ def main() -> int:
             as_json=args.json,
             query_prefix=raw_prefix,
         )
+    if args.command == "plugins":
+        return _run_plugins(as_json=args.json)
     elif args.command == "context-for":
         _ensure_index(root)
 

@@ -41,3 +41,7 @@ Rules:
 The accepted pluggable-backend migration described in `ADR-004` is explicitly
 expected to run on its own dedicated branch, not on the repository
 standardization branch.
+
+That branch is also expected to carry its own architecture documentation and
+ADR updates as the migration progresses, not as a final cleanup after code
+lands.

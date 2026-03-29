@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 10
 
 DDL = [
     """
@@ -11,7 +11,24 @@ DDL = [
         path TEXT UNIQUE NOT NULL,
         hash TEXT NOT NULL,
         mtime REAL NOT NULL,
-        size INTEGER NOT NULL
+        size INTEGER NOT NULL,
+        analyzer_name TEXT NOT NULL,
+        analyzer_version TEXT NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS index_runtime (
+        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+        backend_name TEXT NOT NULL,
+        backend_version TEXT NOT NULL,
+        coverage_complete INTEGER NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS index_analyzers (
+        name TEXT PRIMARY KEY,
+        version TEXT NOT NULL,
+        discovery_globs TEXT NOT NULL
     );
     """,
     """
@@ -59,6 +76,7 @@ DDL = [
         module_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         alias TEXT,
+        kind TEXT NOT NULL,
         lineno INTEGER NOT NULL,
         FOREIGN KEY(module_id) REFERENCES modules(id)
     );

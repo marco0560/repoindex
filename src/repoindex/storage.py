@@ -203,6 +203,174 @@ def _refresh_docstring_issues_schema(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS docstring_issues")
 
 
+def _refresh_imports_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``imports`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(imports)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "id",
+        "module_id",
+        "name",
+        "alias",
+        "kind",
+        "lineno",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP TABLE IF EXISTS imports")
+
+
+def _refresh_files_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``files`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(files)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "id",
+        "path",
+        "hash",
+        "mtime",
+        "size",
+        "analyzer_name",
+        "analyzer_version",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_files_path")
+    conn.execute("DROP INDEX IF EXISTS idx_embeddings_object_backend_version")
+    conn.execute("DROP INDEX IF EXISTS idx_symbol_name")
+    conn.execute("DROP INDEX IF EXISTS idx_symbol_file")
+    conn.execute("DROP INDEX IF EXISTS idx_docstring_issues_file")
+    conn.execute("DROP INDEX IF EXISTS idx_call_edges_identity")
+    conn.execute("DROP INDEX IF EXISTS idx_call_edges_caller")
+    conn.execute("DROP INDEX IF EXISTS idx_call_edges_callee")
+    conn.execute("DROP INDEX IF EXISTS idx_call_edges_resolved")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_refs_identity")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_refs_owner")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_refs_target")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_refs_resolved")
+    conn.execute("DROP INDEX IF EXISTS idx_call_records_file")
+    conn.execute("DROP INDEX IF EXISTS idx_call_records_owner")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_ref_records_file")
+    conn.execute("DROP INDEX IF EXISTS idx_callable_ref_records_owner")
+    conn.execute("DROP INDEX IF EXISTS idx_functions_name")
+    conn.execute("DROP INDEX IF EXISTS idx_classes_name")
+    conn.execute("DROP TABLE IF EXISTS embeddings")
+    conn.execute("DROP TABLE IF EXISTS symbol_index")
+    conn.execute("DROP TABLE IF EXISTS docstring_issues")
+    conn.execute("DROP TABLE IF EXISTS callable_ref_records")
+    conn.execute("DROP TABLE IF EXISTS call_records")
+    conn.execute("DROP TABLE IF EXISTS callable_refs")
+    conn.execute("DROP TABLE IF EXISTS call_edges")
+    conn.execute("DROP TABLE IF EXISTS imports")
+    conn.execute("DROP TABLE IF EXISTS functions")
+    conn.execute("DROP TABLE IF EXISTS classes")
+    conn.execute("DROP TABLE IF EXISTS modules")
+    conn.execute("DROP TABLE IF EXISTS index_runtime")
+    conn.execute("DROP TABLE IF EXISTS index_analyzers")
+    conn.execute("DROP TABLE IF EXISTS files")
+
+
+def _refresh_index_runtime_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``index_runtime`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(index_runtime)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "singleton",
+        "backend_name",
+        "backend_version",
+        "coverage_complete",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP TABLE IF EXISTS index_runtime")
+
+
+def _refresh_index_analyzers_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recreate the ``index_analyzers`` table when an older schema is present.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to migrate in place.
+
+    Returns
+    -------
+    None
+        The table is replaced only when its columns do not match the current
+        schema definition.
+    """
+    columns = conn.execute("PRAGMA table_info(index_analyzers)").fetchall()
+    if not columns:
+        return
+
+    current = [str(row[1]) for row in columns]
+    expected = [
+        "name",
+        "version",
+        "discovery_globs",
+    ]
+
+    if current == expected:
+        return
+
+    conn.execute("DROP TABLE IF EXISTS index_analyzers")
+
+
 def _refresh_symbol_index_schema(conn: sqlite3.Connection) -> None:
     """
     Recreate the ``symbol_index`` table when an older schema is present.
@@ -353,13 +521,17 @@ def init_db(root: Path) -> None:
 
     conn = sqlite3.connect(db_path)
     try:
+        _refresh_files_schema(conn)
         _refresh_call_edges_schema(conn)
         _refresh_callable_refs_schema(conn)
         _refresh_call_records_schema(conn)
         _refresh_callable_ref_records_schema(conn)
         _refresh_docstring_issues_schema(conn)
+        _refresh_imports_schema(conn)
         _refresh_symbol_index_schema(conn)
         _refresh_embeddings_schema(conn)
+        _refresh_index_runtime_schema(conn)
+        _refresh_index_analyzers_schema(conn)
         for stmt in DDL:
             conn.execute(stmt)
         conn.commit()

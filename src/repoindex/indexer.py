@@ -2,25 +2,50 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from repoindex.contracts import LanguageAnalyzer
 from repoindex.docstring import validate_docstring
-from repoindex.parser_ast import parse_file
-from repoindex.scanner import file_metadata, iter_project_files
+from repoindex.models import (
+    AnalysisResult,
+    CallableReference,
+    CallSite,
+    FileMetadataSnapshot,
+    FunctionArtifact,
+)
+from repoindex.prefix import normalize_prefix, prefix_clause
+from repoindex.registry import (
+    active_index_backend,
+    active_language_analyzers,
+    missing_language_analyzer_hint,
+)
+from repoindex.scanner import (
+    CANONICAL_SOURCE_DIRS,
+    file_metadata,
+    iter_canonical_project_files,
+    iter_project_files,
+)
+from repoindex.schema import SCHEMA_VERSION
 from repoindex.semantic.embeddings import (
     EmbeddingBackendSpec,
+    deserialize_vector,
     embed_text,
     get_embedding_backend,
     serialize_vector,
 )
-from repoindex.storage import get_db_path
+from repoindex.storage import get_db_path, init_db
+from repoindex.types import ChannelResults, IncludeEdgeRow, SymbolRow
 
 CallRecord = dict[str, str | int]
 ReferenceRecord = dict[str, str | int]
-ParsedFile = tuple[Path, dict[str, object], dict[str, object]]
+ParsedFile = tuple[Path, FileMetadataSnapshot, AnalysisResult]
+CallEdgeRow = tuple[str, str, str | None, str | None, int]
+CallableRefRow = tuple[str, str, str | None, str | None, int]
+EmbeddingInventoryRow = tuple[str, str, int, int]
 
 
 @dataclass(frozen=True)
@@ -44,6 +69,29 @@ class IndexDecision:
 
 
 @dataclass(frozen=True)
+class CoverageIssue:
+    """
+    Deterministic canonical-directory coverage gap.
+
+    Parameters
+    ----------
+    path : str
+        Absolute path to the uncovered file.
+    directory : str
+        Canonical top-level directory containing the file.
+    suffix : str
+        File suffix reported for grouping and diagnostics.
+    reason : str
+        Stable explanation for why the file is uncovered.
+    """
+
+    path: str
+    directory: str
+    suffix: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class IndexReport:
     """
     Summary of one indexing run.
@@ -62,6 +110,8 @@ class IndexReport:
         Number of existing embeddings preserved for unchanged files.
     decisions : list[IndexDecision]
         Deterministic per-file decisions for explain mode.
+    coverage_issues : list[CoverageIssue]
+        Uncovered canonical-directory files detected during the run.
     """
 
     indexed: int
@@ -70,6 +120,76 @@ class IndexReport:
     embeddings_recomputed: int
     embeddings_reused: int
     decisions: list[IndexDecision]
+    coverage_issues: list[CoverageIssue]
+
+
+def _audit_canonical_directory_coverage(
+    root: Path,
+    *,
+    analyzers: list[LanguageAnalyzer],
+) -> list[CoverageIssue]:
+    """
+    Audit canonical source directories for uncovered tracked files.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root being indexed.
+    analyzers : list[repoindex.contracts.LanguageAnalyzer]
+        Active analyzers available for file routing.
+
+    Returns
+    -------
+    list[CoverageIssue]
+        Deterministic uncovered-file diagnostics for canonical directories.
+    """
+    issues: list[CoverageIssue] = []
+
+    for path in iter_canonical_project_files(root):
+        if any(analyzer.supports_path(path) for analyzer in analyzers):
+            continue
+        rel_path = path.relative_to(root)
+        top_dir = rel_path.parts[0] if rel_path.parts else ""
+        if top_dir not in CANONICAL_SOURCE_DIRS:
+            continue
+        suffix = path.suffix.lower() or "<no-suffix>"
+        issues.append(
+            CoverageIssue(
+                path=str(path),
+                directory=top_dir,
+                suffix=suffix,
+                reason="no registered analyzer covers this canonical file",
+            )
+        )
+
+    issues.sort(
+        key=lambda issue: (
+            issue.directory,
+            issue.suffix,
+            issue.path,
+        )
+    )
+    return issues
+
+
+def audit_repo_coverage(root: Path) -> list[CoverageIssue]:
+    """
+    Audit canonical-directory coverage for the active analyzer environment.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose tracked canonical files should be checked.
+
+    Returns
+    -------
+    list[CoverageIssue]
+        Deterministic uncovered-file diagnostics for the current analyzer set.
+    """
+    return _audit_canonical_directory_coverage(
+        root,
+        analyzers=_active_language_analyzers(),
+    )
 
 
 def _clear_index_tables(conn: sqlite3.Connection) -> None:
@@ -298,6 +418,7 @@ def _embedding_text(
     symbol_type: str,
     signature: str | None = None,
     docstring: str | None = None,
+    extra_context: tuple[str, ...] = (),
 ) -> str:
     """
     Build the deterministic text payload embedded for one symbol.
@@ -314,6 +435,8 @@ def _embedding_text(
         Callable signature when present.
     docstring : str | None, optional
         Symbol docstring when present.
+    extra_context : tuple[str, ...], optional
+        Additional deterministic semantic context lines.
 
     Returns
     -------
@@ -325,7 +448,127 @@ def _embedding_text(
         parts.append(signature)
     if docstring:
         parts.append(docstring)
+    parts.extend(line for line in extra_context if line)
     return "\n".join(parts)
+
+
+def _c_embedding_context(analysis: AnalysisResult) -> tuple[str, ...]:
+    """
+    Build extra semantic context lines for C-family embedding payloads.
+
+    Parameters
+    ----------
+    analysis : repoindex.models.AnalysisResult
+        Normalized analyzer output for one indexed source file.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Deterministic C-specific semantic context lines.
+    """
+    if analysis.source_path.suffix.lower() not in {".c", ".h"}:
+        return ()
+
+    context: list[str] = []
+
+    if analysis.module.docstring:
+        context.append(f"module summary: {analysis.module.docstring}")
+
+    local_includes = tuple(
+        imp.name for imp in analysis.imports if imp.kind == "include_local"
+    )
+    system_includes = tuple(
+        imp.name for imp in analysis.imports if imp.kind == "include_system"
+    )
+
+    if local_includes:
+        context.append("local includes: " + ", ".join(local_includes))
+    if system_includes:
+        context.append("system includes: " + ", ".join(system_includes))
+
+    source_path = analysis.source_path
+    suffix = source_path.suffix.lower()
+    paired_path: Path | None = None
+
+    if suffix == ".c":
+        candidate = source_path.with_suffix(".h")
+        if candidate.exists():
+            paired_path = candidate
+    elif suffix == ".h":
+        candidate = source_path.with_suffix(".c")
+        if candidate.exists():
+            paired_path = candidate
+
+    if paired_path is not None:
+        pair_label = "paired header" if suffix == ".c" else "paired source"
+        try:
+            pair_rel_path = paired_path.relative_to(source_path.parents[1])
+        except ValueError:
+            pair_rel_path = paired_path
+        context.append(f"{pair_label}: {pair_rel_path.as_posix()}")
+
+    return tuple(context)
+
+
+def _python_embedding_context(
+    analysis: AnalysisResult,
+    function: FunctionArtifact,
+    *,
+    class_name: str | None = None,
+) -> tuple[str, ...]:
+    """
+    Build extra semantic context lines for Python callable embedding payloads.
+
+    Parameters
+    ----------
+    analysis : repoindex.models.AnalysisResult
+        Normalized analyzer output for one indexed source file.
+    function : repoindex.models.FunctionArtifact
+        Function or method artifact receiving the embedding payload.
+    class_name : str | None, optional
+        Owning class name for method artifacts.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Deterministic Python-specific semantic context lines.
+    """
+    if analysis.source_path.suffix.lower() != ".py":
+        return ()
+
+    context: list[str] = []
+
+    if analysis.module.docstring:
+        context.append(f"module summary: {analysis.module.docstring}")
+
+    if class_name is not None:
+        context.append(f"owner class: {class_name}")
+
+    if function.has_asserts:
+        context.append("assertions: present")
+
+    decorators = function.decorators
+    if decorators:
+        context.append("decorators: " + ", ".join(decorators))
+
+    if any(name in {"fixture", "pytest.fixture"} for name in decorators):
+        context.append("fixture context: pytest fixture")
+
+    if function.name in {
+        "setup",
+        "setUp",
+        "setup_class",
+        "setup_method",
+        "setup_function",
+        "tearDown",
+        "teardown",
+        "teardown_class",
+        "teardown_method",
+        "teardown_function",
+    }:
+        context.append(f"setup context: {function.name}")
+
+    return tuple(context)
 
 
 def _placeholders(values: list[int]) -> str:
@@ -497,6 +740,33 @@ def _load_existing_file_hashes(conn: sqlite3.Connection) -> dict[str, str]:
     return {str(path): str(file_hash) for path, file_hash in rows}
 
 
+def _load_existing_file_ownership(
+    conn: sqlite3.Connection,
+) -> dict[str, tuple[str, str]]:
+    """
+    Load persisted analyzer ownership keyed by path.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+
+    Returns
+    -------
+    dict[str, tuple[str, str]]
+        Indexed analyzer ownership keyed by absolute path.
+    """
+    rows = conn.execute("""
+        SELECT path, analyzer_name, analyzer_version
+        FROM files
+        ORDER BY path
+        """).fetchall()
+    return {
+        str(path): (str(analyzer_name), str(analyzer_version))
+        for path, analyzer_name, analyzer_version in rows
+    }
+
+
 def _count_reused_embeddings(
     conn: sqlite3.Connection,
     reused_paths: list[str],
@@ -614,6 +884,7 @@ def _load_import_aliases(conn: sqlite3.Connection) -> dict[str, dict[str, str]]:
         FROM imports i
         JOIN modules m
           ON i.module_id = m.id
+        WHERE i.kind = 'import'
         ORDER BY m.name, i.lineno, i.name, COALESCE(i.alias, '')
         """).fetchall()
     imports_by_module: dict[str, list[dict[str, object]]] = {}
@@ -828,7 +1099,7 @@ def _record_tuple(
     file_id: int,
     owner_module: str,
     owner_name: str,
-    record: dict[str, str | int],
+    record: CallSite,
 ) -> tuple[int, str, str, str, str, str, int, int]:
     """
     Normalize one raw call-style record for SQLite persistence.
@@ -841,8 +1112,8 @@ def _record_tuple(
         Owning module name.
     owner_name : str
         Logical owner name.
-    record : dict[str, str | int]
-        Parsed call or callable-reference record.
+    record : repoindex.models.CallSite
+        Normalized call-site record.
 
     Returns
     -------
@@ -853,18 +1124,56 @@ def _record_tuple(
         file_id,
         owner_module,
         owner_name,
-        str(record.get("kind", "unresolved")),
-        str(record.get("base", "")),
-        str(record.get("target", "")),
-        int(record.get("lineno", 0)),
-        int(record.get("col_offset", 0)),
+        record.kind,
+        record.base,
+        record.target,
+        record.lineno,
+        record.col_offset,
     )
 
 
-def _store_parsed_file(
+def _reference_tuple(
+    file_id: int,
+    owner_module: str,
+    owner_name: str,
+    record: CallableReference,
+) -> tuple[int, str, str, str, str, str, str, int, int]:
+    """
+    Normalize one callable-reference record for SQLite persistence.
+
+    Parameters
+    ----------
+    file_id : int
+        Integer identifier of the owner file.
+    owner_module : str
+        Owning module name.
+    owner_name : str
+        Logical owner name.
+    record : repoindex.models.CallableReference
+        Normalized callable-reference record.
+
+    Returns
+    -------
+    tuple[int, str, str, str, str, str, str, int, int]
+        Normalized SQLite row values.
+    """
+    return (
+        file_id,
+        owner_module,
+        owner_name,
+        record.kind,
+        record.ref_kind,
+        record.base,
+        record.target,
+        record.lineno,
+        record.col_offset,
+    )
+
+
+def _store_analysis(
     conn: sqlite3.Connection,
-    meta: dict[str, object],
-    parsed: dict[str, object],
+    file_metadata: FileMetadataSnapshot,
+    analysis: AnalysisResult,
     *,
     backend: EmbeddingBackendSpec,
 ) -> int:
@@ -875,10 +1184,10 @@ def _store_parsed_file(
     ----------
     conn : sqlite3.Connection
         Open database connection.
-    meta : dict[str, object]
-        Stable file metadata for the parsed file.
-    parsed : dict[str, object]
-        Parsed AST output for the file.
+    file_metadata : repoindex.models.FileMetadataSnapshot
+        Stable file metadata for the analyzed file.
+    analysis : repoindex.models.AnalysisResult
+        Normalized analyzer output for the file.
     backend : EmbeddingBackendSpec
         Active embedding backend metadata.
 
@@ -891,18 +1200,24 @@ def _store_parsed_file(
     call_rows: list[tuple[int, str, str, str, str, str, int, int]] = []
     ref_rows: list[tuple[int, str, str, str, str, str, str, int, int]] = []
 
-    module = cast(dict[str, object], parsed["module"])
-    classes = cast(list[dict[str, object]], parsed["classes"])
-    functions = cast(list[dict[str, object]], parsed["functions"])
-    imports = cast(list[dict[str, object]], parsed["imports"])
-
     cur = conn.execute(
-        "INSERT INTO files(path, hash, mtime, size) VALUES (?, ?, ?, ?)",
-        (meta["path"], meta["hash"], meta["mtime"], meta["size"]),
+        "INSERT INTO files"
+        "(path, hash, mtime, size, analyzer_name, analyzer_version) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            str(file_metadata.path),
+            file_metadata.sha256,
+            file_metadata.mtime,
+            file_metadata.size,
+            file_metadata.analyzer_name,
+            file_metadata.analyzer_version,
+        ),
     )
     assert cur.lastrowid is not None
     file_id = int(cur.lastrowid)
-    module_name = str(module["name"])
+    module = analysis.module
+    module_name = module.name
+    c_embedding_context = _c_embedding_context(analysis)
 
     cur = conn.execute(
         "INSERT INTO modules"
@@ -910,8 +1225,8 @@ def _store_parsed_file(
         (
             file_id,
             module_name,
-            module["docstring"],
-            module["has_docstring"],
+            module.docstring,
+            module.has_docstring,
         ),
     )
     module_id = cur.lastrowid
@@ -931,13 +1246,14 @@ def _store_parsed_file(
                 module_name=module_name,
                 symbol_name=module_name,
                 symbol_type="module",
-                docstring=cast(str | None, module["docstring"]),
+                docstring=module.docstring,
+                extra_context=c_embedding_context,
             ),
         )
     )
 
     for issue_type, message in validate_docstring(
-        cast(str | None, module["docstring"]),
+        module.docstring,
         is_public=1,
     ):
         conn.execute(
@@ -954,19 +1270,18 @@ def _store_parsed_file(
             ),
         )
 
-    for cls in classes:
-        methods = cast(list[dict[str, object]], cls["methods"])
+    for cls in analysis.classes:
         cur = conn.execute(
             "INSERT INTO classes"
             "(module_id, name, lineno, end_lineno, docstring, has_docstring) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 module_id,
-                cls["name"],
-                cls["lineno"],
-                cls["end_lineno"],
-                cls["docstring"],
-                cls["has_docstring"],
+                cls.name,
+                cls.lineno,
+                cls.end_lineno,
+                cls.docstring,
+                cls.has_docstring,
             ),
         )
         class_id = cur.lastrowid
@@ -975,11 +1290,11 @@ def _store_parsed_file(
             "INSERT INTO symbol_index"
             "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
             (
-                cls["name"],
+                cls.name,
                 "class",
                 module_name,
                 file_id,
-                cls["lineno"],
+                cls.lineno,
             ),
         )
         assert cur.lastrowid is not None
@@ -990,15 +1305,16 @@ def _store_parsed_file(
                 symbol_row_id,
                 _embedding_text(
                     module_name=module_name,
-                    symbol_name=str(cls["name"]),
+                    symbol_name=cls.name,
                     symbol_type="class",
-                    docstring=cast(str | None, cls["docstring"]),
+                    docstring=cls.docstring,
+                    extra_context=c_embedding_context,
                 ),
             )
         )
 
         for issue_type, message in validate_docstring(
-            cast(str | None, cls["docstring"]),
+            cls.docstring,
             is_public=1,
         ):
             conn.execute(
@@ -1011,14 +1327,19 @@ def _store_parsed_file(
                     class_id,
                     None,
                     issue_type,
-                    f"Class {cls['name']}: {message}",
+                    f"Class {cls.name}: {message}",
                 ),
             )
 
-        for method in methods:
+        for method in cls.methods:
             logical_name = _qualified_callable_name(
-                str(method["name"]),
-                str(cls["name"]),
+                method.name,
+                cls.name,
+            )
+            python_embedding_context = _python_embedding_context(
+                analysis,
+                method,
+                class_name=cls.name,
             )
             cur = conn.execute(
                 "INSERT INTO functions"
@@ -1028,14 +1349,14 @@ def _store_parsed_file(
                 (
                     module_id,
                     class_id,
-                    method["name"],
-                    method["lineno"],
-                    method["end_lineno"],
-                    method["signature"],
-                    method["docstring"],
-                    method["has_docstring"],
-                    method["is_method"],
-                    method["is_public"],
+                    method.name,
+                    method.lineno,
+                    method.end_lineno,
+                    method.signature,
+                    method.docstring,
+                    method.has_docstring,
+                    method.is_method,
+                    method.is_public,
                 ),
             )
             function_id = cur.lastrowid
@@ -1044,11 +1365,11 @@ def _store_parsed_file(
                 "INSERT INTO symbol_index"
                 "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
                 (
-                    method["name"],
+                    method.name,
                     "method",
                     module_name,
                     file_id,
-                    method["lineno"],
+                    method.lineno,
                 ),
             )
             assert cur.lastrowid is not None
@@ -1061,20 +1382,21 @@ def _store_parsed_file(
                         module_name=module_name,
                         symbol_name=logical_name,
                         symbol_type="method",
-                        signature=cast(str | None, method["signature"]),
-                        docstring=cast(str | None, method["docstring"]),
+                        signature=method.signature,
+                        docstring=method.docstring,
+                        extra_context=python_embedding_context or c_embedding_context,
                     ),
                 )
             )
 
             for issue_type, message in validate_docstring(
-                cast(str | None, method["docstring"]),
-                cast(int, method["is_public"]),
-                parameters=cast(list[str], method["parameters"]),
+                method.docstring,
+                method.is_public,
+                parameters=list(method.parameters),
                 require_callable_sections=True,
-                yields_value=bool(method["yields_value"]),
-                returns_value=bool(method["returns_value"]),
-                raises_exception=bool(method["raises"]),
+                yields_value=bool(method.yields_value),
+                returns_value=bool(method.returns_value),
+                raises_exception=bool(method.raises),
             ):
                 conn.execute(
                     "INSERT INTO docstring_issues"
@@ -1086,30 +1408,21 @@ def _store_parsed_file(
                         None,
                         None,
                         issue_type,
-                        f"Method {cls['name']}.{method['name']}: {message}",
+                        f"Method {cls.name}.{method.name}: {message}",
                     ),
                 )
 
-            for call in cast(list[CallRecord], method["calls"]):
+            for call in method.calls:
                 call_rows.append(
                     _record_tuple(file_id, module_name, logical_name, call)
                 )
-            for ref in cast(list[ReferenceRecord], method["callable_refs"]):
+            for ref in method.callable_refs:
                 ref_rows.append(
-                    (
-                        file_id,
-                        module_name,
-                        logical_name,
-                        str(ref.get("kind", "unresolved")),
-                        str(ref.get("ref_kind", "")),
-                        str(ref.get("base", "")),
-                        str(ref.get("target", "")),
-                        int(ref.get("lineno", 0)),
-                        int(ref.get("col_offset", 0)),
-                    )
+                    _reference_tuple(file_id, module_name, logical_name, ref)
                 )
 
-    for fn in functions:
+    for fn in analysis.functions:
+        python_embedding_context = _python_embedding_context(analysis, fn)
         cur = conn.execute(
             "INSERT INTO functions"
             "(module_id, class_id, name, lineno, end_lineno, signature, "
@@ -1118,14 +1431,14 @@ def _store_parsed_file(
             (
                 module_id,
                 None,
-                fn["name"],
-                fn["lineno"],
-                fn["end_lineno"],
-                fn["signature"],
-                fn["docstring"],
-                fn["has_docstring"],
-                fn["is_method"],
-                fn["is_public"],
+                fn.name,
+                fn.lineno,
+                fn.end_lineno,
+                fn.signature,
+                fn.docstring,
+                fn.has_docstring,
+                fn.is_method,
+                fn.is_public,
             ),
         )
         function_id = cur.lastrowid
@@ -1134,11 +1447,11 @@ def _store_parsed_file(
             "INSERT INTO symbol_index"
             "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
             (
-                fn["name"],
+                fn.name,
                 "function",
                 module_name,
                 file_id,
-                fn["lineno"],
+                fn.lineno,
             ),
         )
         assert cur.lastrowid is not None
@@ -1149,22 +1462,23 @@ def _store_parsed_file(
                 symbol_row_id,
                 _embedding_text(
                     module_name=module_name,
-                    symbol_name=str(fn["name"]),
+                    symbol_name=fn.name,
                     symbol_type="function",
-                    signature=cast(str | None, fn["signature"]),
-                    docstring=cast(str | None, fn["docstring"]),
+                    signature=fn.signature,
+                    docstring=fn.docstring,
+                    extra_context=python_embedding_context or c_embedding_context,
                 ),
             )
         )
 
         for issue_type, message in validate_docstring(
-            cast(str | None, fn["docstring"]),
-            cast(int, fn["is_public"]),
-            parameters=cast(list[str], fn["parameters"]),
+            fn.docstring,
+            fn.is_public,
+            parameters=list(fn.parameters),
             require_callable_sections=True,
-            yields_value=bool(fn["yields_value"]),
-            returns_value=bool(fn["returns_value"]),
-            raises_exception=bool(fn["raises"]),
+            yields_value=bool(fn.yields_value),
+            returns_value=bool(fn.returns_value),
+            raises_exception=bool(fn.raises),
         ):
             conn.execute(
                 "INSERT INTO docstring_issues"
@@ -1176,35 +1490,54 @@ def _store_parsed_file(
                     None,
                     None,
                     issue_type,
-                    f"Function {fn['name']}: {message}",
+                    f"Function {fn.name}: {message}",
                 ),
             )
 
-        for call in cast(list[CallRecord], fn["calls"]):
-            call_rows.append(_record_tuple(file_id, module_name, str(fn["name"]), call))
-        for ref in cast(list[ReferenceRecord], fn["callable_refs"]):
-            ref_rows.append(
-                (
-                    file_id,
-                    module_name,
-                    str(fn["name"]),
-                    str(ref.get("kind", "unresolved")),
-                    str(ref.get("ref_kind", "")),
-                    str(ref.get("base", "")),
-                    str(ref.get("target", "")),
-                    int(ref.get("lineno", 0)),
-                    int(ref.get("col_offset", 0)),
-                )
-            )
+        for call in fn.calls:
+            call_rows.append(_record_tuple(file_id, module_name, fn.name, call))
+        for ref in fn.callable_refs:
+            ref_rows.append(_reference_tuple(file_id, module_name, fn.name, ref))
 
-    for imp in imports:
+    for decl in analysis.declarations:
+        cur = conn.execute(
+            "INSERT INTO symbol_index"
+            "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
+            (
+                decl.name,
+                decl.kind,
+                module_name,
+                file_id,
+                decl.lineno,
+            ),
+        )
+        assert cur.lastrowid is not None
+        symbol_row_id = int(cur.lastrowid)
+        embedding_rows.append(
+            (
+                "symbol",
+                symbol_row_id,
+                _embedding_text(
+                    module_name=module_name,
+                    symbol_name=decl.name,
+                    symbol_type=decl.kind,
+                    signature=decl.signature,
+                    docstring=decl.docstring,
+                    extra_context=c_embedding_context,
+                ),
+            )
+        )
+
+    for imp in analysis.imports:
         conn.execute(
-            "INSERT INTO imports(module_id, name, alias, lineno) VALUES (?, ?, ?, ?)",
+            "INSERT INTO imports(module_id, name, alias, kind, lineno) "
+            "VALUES (?, ?, ?, ?, ?)",
             (
                 module_id,
-                imp["name"],
-                imp["alias"],
-                imp["lineno"],
+                imp.name,
+                imp.alias,
+                imp.kind,
+                imp.lineno,
             ),
         )
 
@@ -1247,6 +1580,1383 @@ def _store_parsed_file(
     return len(embedding_rows)
 
 
+def _snapshot_from_metadata(meta: dict[str, object]) -> FileMetadataSnapshot:
+    """
+    Convert scanner metadata into the normalized file snapshot model.
+
+    Parameters
+    ----------
+    meta : dict[str, object]
+        Scanner metadata mapping.
+
+    Returns
+    -------
+    repoindex.models.FileMetadataSnapshot
+        Normalized file metadata snapshot.
+    """
+    mtime = cast(float | int, meta["mtime"])
+    size = cast(int | str, meta["size"])
+    return FileMetadataSnapshot(
+        path=Path(str(meta["path"])),
+        sha256=str(meta["hash"]),
+        mtime=float(mtime),
+        size=int(size),
+    )
+
+
+def _snapshot_with_analyzer(
+    snapshot: FileMetadataSnapshot,
+    analyzer: LanguageAnalyzer,
+) -> FileMetadataSnapshot:
+    """
+    Attach analyzer ownership metadata to a file snapshot.
+
+    Parameters
+    ----------
+    snapshot : repoindex.models.FileMetadataSnapshot
+        Base file metadata snapshot.
+    analyzer : repoindex.contracts.LanguageAnalyzer
+        Analyzer responsible for the file.
+
+    Returns
+    -------
+    repoindex.models.FileMetadataSnapshot
+        Snapshot carrying analyzer ownership information.
+    """
+    return FileMetadataSnapshot(
+        path=snapshot.path,
+        sha256=snapshot.sha256,
+        mtime=snapshot.mtime,
+        size=snapshot.size,
+        analyzer_name=str(analyzer.name),
+        analyzer_version=str(analyzer.version),
+    )
+
+
+def _persist_runtime_inventory(
+    conn: sqlite3.Connection,
+    *,
+    backend_name: str,
+    backend_version: str,
+    coverage_complete: bool,
+    analyzers: list[LanguageAnalyzer],
+) -> None:
+    """
+    Persist backend and analyzer inventory for one successful index run.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    backend_name : str
+        Active backend name.
+    backend_version : str
+        Active backend version.
+    coverage_complete : bool
+        Whether canonical-directory coverage had no gaps.
+    analyzers : list[repoindex.contracts.LanguageAnalyzer]
+        Active analyzers for the run.
+
+    Returns
+    -------
+    None
+        Inventory rows are replaced in place on ``conn``.
+    """
+    conn.execute("DELETE FROM index_runtime")
+    conn.execute("DELETE FROM index_analyzers")
+    conn.execute(
+        """
+        INSERT INTO index_runtime(
+            singleton,
+            backend_name,
+            backend_version,
+            coverage_complete
+        ) VALUES (?, ?, ?, ?)
+        """,
+        (1, backend_name, backend_version, int(coverage_complete)),
+    )
+
+    for analyzer in sorted(analyzers, key=lambda item: str(item.name)):
+        conn.execute(
+            """
+            INSERT INTO index_analyzers(name, version, discovery_globs)
+            VALUES (?, ?, ?)
+            """,
+            (
+                str(analyzer.name),
+                str(analyzer.version),
+                json.dumps(tuple(analyzer.discovery_globs)),
+            ),
+        )
+
+
+def _dot_similarity(left: list[float], right: list[float]) -> float:
+    """
+    Compute a dot-product similarity between normalized vectors.
+
+    Parameters
+    ----------
+    left : list[float]
+        Left embedding vector.
+    right : list[float]
+        Right embedding vector.
+
+    Returns
+    -------
+    float
+        Dot-product similarity score.
+    """
+    return sum(a * b for a, b in zip(left, right, strict=True))
+
+
+class SQLiteIndexBackend:
+    """
+    Concrete SQLite backend used by the current repository index.
+
+    This backend keeps the existing SQLite schema and query semantics stable
+    while concentrating indexing-side persistence behind one object.
+    """
+
+    name = "sqlite"
+    version = SCHEMA_VERSION
+
+    def load_runtime_inventory(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> tuple[str, str, int] | None:
+        """
+        Return persisted backend and coverage metadata for the last index run.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        tuple[str, str, int] | None
+            Stored ``(backend_name, backend_version, coverage_complete)``
+            tuple, or ``None`` when no runtime inventory has been recorded.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            row = conn.execute("""
+                SELECT backend_name, backend_version, coverage_complete
+                FROM index_runtime
+                WHERE singleton = 1
+                """).fetchone()
+            if row is None:
+                return None
+            return (str(row[0]), str(row[1]), int(row[2]))
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def load_analyzer_inventory(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str]]:
+        """
+        Return persisted analyzer inventory for the last index run.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        list[tuple[str, str, str]]
+            Stored analyzer rows as ``(name, version, discovery_globs_json)``
+            ordered by analyzer name.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            rows = conn.execute("""
+                SELECT name, version, discovery_globs
+                FROM index_analyzers
+                ORDER BY name
+                """).fetchall()
+            return [
+                (str(name), str(version), str(globs)) for name, version, globs in rows
+            ]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def initialize(self, root: Path) -> None:
+        """
+        Prepare the repository-local SQLite database.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose backend state should exist.
+
+        Returns
+        -------
+        None
+            The SQLite schema is created or refreshed in place.
+        """
+        init_db(root)
+
+    def open_connection(self, root: Path) -> sqlite3.Connection:
+        """
+        Open a SQLite connection for one repository index.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index database should be opened.
+
+        Returns
+        -------
+        sqlite3.Connection
+            Open SQLite connection.
+        """
+        self.initialize(root)
+        return sqlite3.connect(get_db_path(root))
+
+    def list_symbols_in_module(
+        self,
+        root: Path,
+        module: str,
+        *,
+        prefix: str | None = None,
+        limit: int = 20,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[SymbolRow]:
+        """
+        Return indexed symbols belonging to one module.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        module : str
+            Dotted module name to expand.
+        prefix : str | None, optional
+            Repo-root-relative path prefix used to restrict symbol files.
+        limit : int, optional
+            Maximum number of symbol rows to return.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        list[repoindex.types.SymbolRow]
+            Indexed symbols belonging to the requested module.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            normalized_prefix = normalize_prefix(root, prefix)
+            prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
+            rows = conn.execute(
+                f"""
+                SELECT s.type, s.module_name, s.name, f.path, s.lineno
+                FROM symbol_index s
+                JOIN files f
+                  ON s.file_id = f.id
+                WHERE s.module_name = ?
+                {prefix_sql}
+                LIMIT ?
+                """,
+                (module, *prefix_params, limit),
+            ).fetchall()
+            return [
+                (str(t), str(m), str(n), str(f), int(lineno))
+                for t, m, n, f, lineno in rows
+            ]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def find_symbol(
+        self,
+        root: Path,
+        name: str,
+        *,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[SymbolRow]:
+        """
+        Find exact symbol-name matches in the index.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        name : str
+            Exact symbol name to search for.
+        prefix : str | None, optional
+            Repo-root-relative path prefix used to restrict symbol files.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        list[repoindex.types.SymbolRow]
+            Matching symbol rows ordered deterministically.
+        """
+        owns_connection = conn is None
+        normalized_prefix = normalize_prefix(root, prefix)
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
+            rows = conn.execute(
+                f"""
+                SELECT s.type, s.module_name, s.name, f.path, s.lineno
+                FROM symbol_index s
+                JOIN files f
+                  ON s.file_id = f.id
+                WHERE s.name = ?
+                {prefix_sql}
+                ORDER BY s.type, s.module_name, f.path, s.lineno
+                """,
+                (name, *prefix_params),
+            ).fetchall()
+            return [
+                (str(t), str(m), str(n), str(f), int(lineno))
+                for t, m, n, f, lineno in rows
+            ]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def docstring_issues(
+        self,
+        root: Path,
+        *,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str]]:
+        """
+        Return indexed docstring validation issues.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        prefix : str | None, optional
+            Repo-root-relative path prefix used to restrict issue ownership.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        list[tuple[str, str]]
+            Issue rows as ``(issue_type, message)`` tuples.
+        """
+        owns_connection = conn is None
+        normalized_prefix = normalize_prefix(root, prefix)
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
+            rows = conn.execute(
+                f"""
+                SELECT di.issue_type, di.message
+                FROM docstring_issues di
+                JOIN files f
+                  ON di.file_id = f.id
+                WHERE 1 = 1
+                {prefix_sql}
+                ORDER BY di.issue_type, di.message
+                """,
+                tuple(prefix_params),
+            ).fetchall()
+            return [(str(t), str(m)) for t, m in rows]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def find_call_edges(
+        self,
+        root: Path,
+        name: str,
+        *,
+        module: str | None = None,
+        incoming: bool = False,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[CallEdgeRow]:
+        """
+        Find exact call edges for a caller or callee logical name.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        name : str
+            Exact logical caller or callee name to search for.
+        module : str | None, optional
+            Optional module qualifier used to restrict the result set.
+        incoming : bool, optional
+            Whether to return incoming edges for the callee.
+        prefix : str | None, optional
+            Repo-root-relative path prefix used to restrict caller files.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        list[tuple[str, str, str | None, str | None, int]]
+            Matching call-edge rows ordered deterministically.
+        """
+        owns_connection = conn is None
+        normalized_prefix = normalize_prefix(root, prefix)
+        if conn is None:
+            conn = self.open_connection(root)
+
+        direction_column = "callee_name" if incoming else "caller_name"
+        module_column = "callee_module" if incoming else "caller_module"
+        prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
+
+        query = f"""
+            SELECT
+                ce.caller_module,
+                ce.caller_name,
+                ce.callee_module,
+                ce.callee_name,
+                ce.resolved
+            FROM call_edges ce
+            JOIN files f
+              ON ce.caller_file_id = f.id
+            WHERE {direction_column} = ?
+            {prefix_sql}
+        """
+        params: list[str] = [name, *prefix_params]
+
+        if module is not None:
+            query += f" AND {module_column} = ?"
+            params.append(module)
+
+        query += """
+            ORDER BY
+                caller_module,
+                caller_name,
+                COALESCE(callee_module, ''),
+                COALESCE(callee_name, ''),
+                resolved
+        """
+
+        try:
+            rows = conn.execute(query, tuple(params)).fetchall()
+            return [
+                (
+                    str(caller_module),
+                    str(caller_name),
+                    None if callee_module is None else str(callee_module),
+                    None if callee_name is None else str(callee_name),
+                    int(resolved),
+                )
+                for (
+                    caller_module,
+                    caller_name,
+                    callee_module,
+                    callee_name,
+                    resolved,
+                ) in rows
+            ]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def find_callable_refs(
+        self,
+        root: Path,
+        name: str,
+        *,
+        module: str | None = None,
+        incoming: bool = False,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[CallableRefRow]:
+        """
+        Find exact callable-object references for an owner or target.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        name : str
+            Exact logical owner or referenced target name to search for.
+        module : str | None, optional
+            Optional module qualifier used to restrict the result set.
+        incoming : bool, optional
+            Whether to return incoming references for the target.
+        prefix : str | None, optional
+            Repo-root-relative path prefix used to restrict owner files.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        list[tuple[str, str, str | None, str | None, int]]
+            Matching callable-reference rows ordered deterministically.
+        """
+        owns_connection = conn is None
+        normalized_prefix = normalize_prefix(root, prefix)
+        if conn is None:
+            conn = self.open_connection(root)
+
+        direction_column = "target_name" if incoming else "owner_name"
+        module_column = "target_module" if incoming else "owner_module"
+        prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
+
+        query = f"""
+            SELECT
+                cr.owner_module,
+                cr.owner_name,
+                cr.target_module,
+                cr.target_name,
+                cr.resolved
+            FROM callable_refs cr
+            JOIN files f
+              ON cr.owner_file_id = f.id
+            WHERE {direction_column} = ?
+            {prefix_sql}
+        """
+        params: list[str] = [name, *prefix_params]
+
+        if module is not None:
+            query += f" AND {module_column} = ?"
+            params.append(module)
+
+        query += """
+            ORDER BY
+                owner_module,
+                owner_name,
+                COALESCE(target_module, ''),
+                COALESCE(target_name, ''),
+                resolved
+        """
+
+        try:
+            rows = conn.execute(query, tuple(params)).fetchall()
+            return [
+                (
+                    str(owner_module),
+                    str(owner_name),
+                    None if target_module is None else str(target_module),
+                    None if target_name is None else str(target_name),
+                    int(resolved),
+                )
+                for (
+                    owner_module,
+                    owner_name,
+                    target_module,
+                    target_name,
+                    resolved,
+                ) in rows
+            ]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def find_include_edges(
+        self,
+        root: Path,
+        name: str,
+        *,
+        module: str | None = None,
+        incoming: bool = False,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[IncludeEdgeRow]:
+        """
+        Find exact include-like edges for an owner module or included target.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        name : str
+            Exact owner module name or include target path to search for.
+        module : str | None, optional
+            Optional owner-module qualifier used to restrict incoming results.
+        incoming : bool, optional
+            Whether to return incoming edges for the included target.
+        prefix : str | None, optional
+            Repo-root-relative path prefix used to restrict owner files.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        list[repoindex.types.IncludeEdgeRow]
+            Matching include-edge rows ordered deterministically as
+            ``(owner_module, target_name, kind, lineno)`` tuples.
+        """
+        owns_connection = conn is None
+        normalized_prefix = normalize_prefix(root, prefix)
+        if conn is None:
+            conn = self.open_connection(root)
+
+        prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
+        query = f"""
+            SELECT
+                m.name,
+                i.name,
+                i.kind,
+                i.lineno
+            FROM imports i
+            JOIN modules m
+              ON i.module_id = m.id
+            JOIN files f
+              ON m.file_id = f.id
+            WHERE i.kind IN ('include_local', 'include_system')
+            {prefix_sql}
+        """
+        params: list[str] = [*prefix_params]
+
+        if incoming:
+            query += " AND i.name = ?"
+            params.append(name)
+            if module is not None:
+                query += " AND m.name = ?"
+                params.append(module)
+        else:
+            query += " AND m.name = ?"
+            params.append(name)
+
+        query += """
+            ORDER BY
+                m.name,
+                i.lineno,
+                i.name,
+                i.kind
+        """
+
+        try:
+            rows = conn.execute(query, tuple(params)).fetchall()
+            return [
+                (str(owner_module), str(target_name), str(kind), int(lineno))
+                for owner_module, target_name, kind, lineno in rows
+            ]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def find_logical_symbols(
+        self,
+        root: Path,
+        module_name: str,
+        logical_name: str,
+        *,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[SymbolRow]:
+        """
+        Resolve a logical callable name back to indexed symbol rows.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        module_name : str
+            Dotted module that owns the logical symbol.
+        logical_name : str
+            Logical symbol identity such as ``helper`` or ``Class.method``.
+        prefix : str | None, optional
+            Repo-root-relative path prefix used to restrict symbol files.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        list[repoindex.types.SymbolRow]
+            Matching indexed symbol rows ordered deterministically.
+        """
+        owns_connection = conn is None
+        normalized_prefix = normalize_prefix(root, prefix)
+        if conn is None:
+            conn = self.open_connection(root)
+
+        try:
+            if "." in logical_name:
+                class_name, method_name = logical_name.rsplit(".", 1)
+                prefix_sql, prefix_params = prefix_clause(normalized_prefix, "fp.path")
+                rows = conn.execute(
+                    f"""
+                    SELECT
+                        s.type,
+                        s.module_name,
+                        s.name,
+                        fp.path,
+                        s.lineno
+                    FROM functions fn
+                    JOIN classes c
+                      ON fn.class_id = c.id
+                    JOIN modules m
+                      ON fn.module_id = m.id
+                    JOIN symbol_index s
+                      ON s.type = 'method'
+                     AND s.module_name = m.name
+                     AND s.name = fn.name
+                     AND s.lineno = fn.lineno
+                    JOIN files fp
+                      ON s.file_id = fp.id
+                    WHERE m.name = ? AND c.name = ? AND fn.name = ?
+                    {prefix_sql}
+                    ORDER BY fp.path, s.lineno, s.name
+                    """,
+                    (module_name, class_name, method_name, *prefix_params),
+                ).fetchall()
+            else:
+                prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
+                rows = conn.execute(
+                    f"""
+                    SELECT s.type, s.module_name, s.name, f.path, s.lineno
+                    FROM symbol_index s
+                    JOIN files f
+                      ON s.file_id = f.id
+                    WHERE s.module_name = ?
+                      AND (s.name = ? OR (s.type = 'module' AND s.module_name = ?))
+                    {prefix_sql}
+                    ORDER BY s.type, s.module_name, f.path, s.lineno
+                    """,
+                    (module_name, logical_name, logical_name, *prefix_params),
+                ).fetchall()
+
+            return [
+                (str(t), str(m), str(n), str(f), int(lineno))
+                for t, m, n, f, lineno in rows
+            ]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def logical_symbol_name(
+        self,
+        root: Path,
+        symbol: SymbolRow,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> str:
+        """
+        Return the logical graph identity for one indexed symbol row.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        symbol : repoindex.types.SymbolRow
+            Indexed symbol row whose logical identity should be resolved.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        str
+            Logical symbol identity used by call edges and callable references.
+        """
+        symbol_type, module_name, name, _file_path, lineno = symbol
+        if symbol_type != "method":
+            return module_name if symbol_type == "module" else name
+
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+
+        try:
+            row = conn.execute(
+                """
+                SELECT c.name
+                FROM functions f
+                JOIN classes c
+                  ON f.class_id = c.id
+                JOIN modules m
+                  ON f.module_id = m.id
+                WHERE m.name = ? AND f.name = ? AND f.lineno = ?
+                ORDER BY c.name
+                LIMIT 1
+                """,
+                (module_name, name, lineno),
+            ).fetchone()
+            if row is None:
+                return name
+            return f"{str(row[0])}.{name}"
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def embedding_inventory(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[EmbeddingInventoryRow]:
+        """
+        Return stored embedding inventory grouped by backend metadata.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        list[tuple[str, str, int, int]]
+            Rows as ``(backend, version, dim, count)`` ordered deterministically.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            rows = conn.execute("""
+                SELECT backend, version, dim, COUNT(*)
+                FROM embeddings
+                GROUP BY backend, version, dim
+                ORDER BY backend, version, dim
+                """).fetchall()
+            return [
+                (str(backend), str(version), int(dim), int(count))
+                for backend, version, dim, count in rows
+            ]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def embedding_candidates(
+        self,
+        root: Path,
+        query: str,
+        *,
+        limit: int,
+        min_score: float,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> ChannelResults:
+        """
+        Return ranked symbol candidates using stored embedding similarity.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        query : str
+            User query string.
+        limit : int
+            Maximum number of ranked results to return.
+        min_score : float
+            Minimum similarity threshold for emitted results.
+        prefix : str | None, optional
+            Repo-root-relative path prefix used to restrict matched symbol files.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        repoindex.types.ChannelResults
+            Ranked symbol candidates ordered by descending similarity and stable
+            symbol identity.
+        """
+        owns_connection = conn is None
+        normalized_prefix = normalize_prefix(root, prefix)
+        if conn is None:
+            conn = self.open_connection(root)
+
+        backend = get_embedding_backend()
+        query_vector = embed_text(query)
+        if not any(query_vector):
+            return []
+
+        try:
+            prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
+            rows = conn.execute(
+                f"""
+                SELECT
+                    s.type,
+                    s.module_name,
+                    s.name,
+                    f.path,
+                    s.lineno,
+                    e.version,
+                    e.dim,
+                    e.vector
+                FROM embeddings e
+                JOIN symbol_index s
+                  ON e.object_type = 'symbol'
+                 AND e.object_id = s.id
+                JOIN files f
+                  ON s.file_id = f.id
+                WHERE e.backend = ? AND e.version = ?
+                {prefix_sql}
+                ORDER BY s.module_name, s.name, f.path, s.lineno, s.type
+                """,
+                (backend.name, backend.version, *prefix_params),
+            ).fetchall()
+
+            results: ChannelResults = []
+
+            for row in rows:
+                symbol: SymbolRow = (
+                    str(row[0]),
+                    str(row[1]),
+                    str(row[2]),
+                    str(row[3]),
+                    int(row[4]),
+                )
+                version = str(row[5])
+                dim = int(row[6])
+                blob = bytes(row[7])
+                if version != backend.version or dim != backend.dim:
+                    continue
+
+                score = _dot_similarity(query_vector, deserialize_vector(blob, dim=dim))
+                if score < min_score:
+                    continue
+
+                results.append((score, symbol))
+
+            results.sort(
+                key=lambda item: (
+                    -item[0],
+                    item[1][1],
+                    item[1][2],
+                    item[1][3],
+                    item[1][4],
+                    item[1][0],
+                )
+            )
+            return results[:limit]
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def prune_orphaned_embeddings(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        """
+        Remove embedding rows whose owning symbol no longer exists.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be cleaned.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        None
+            Orphaned embedding rows are removed in place.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            _prune_orphaned_embeddings(conn)
+            if owns_connection:
+                conn.commit()
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def load_existing_file_hashes(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, str]:
+        """
+        Load indexed file hashes used for incremental reuse decisions.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        dict[str, str]
+            Indexed file hashes keyed by absolute file path.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            return _load_existing_file_hashes(conn)
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def load_existing_file_ownership(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, tuple[str, str]]:
+        """
+        Load analyzer ownership for indexed files.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        dict[str, tuple[str, str]]
+            Persisted analyzer ownership keyed by absolute file path.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            return _load_existing_file_ownership(conn)
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def current_embedding_state_matches(
+        self,
+        root: Path,
+        *,
+        embedding_backend: EmbeddingBackendSpec,
+        conn: sqlite3.Connection | None = None,
+    ) -> bool:
+        """
+        Check whether persisted embeddings match the active embedding backend.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        embedding_backend : EmbeddingBackendSpec
+            Active embedding backend metadata.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        bool
+            ``True`` when the persisted embedding metadata matches.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            return _current_embedding_state_matches(conn, embedding_backend)
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def delete_paths(
+        self,
+        root: Path,
+        *,
+        paths: list[str],
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        """
+        Remove persisted rows owned by the supplied file paths.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be updated.
+        paths : list[str]
+            Absolute file paths to remove.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        None
+            Matching persisted rows are removed in place.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            for path in sorted(paths):
+                _delete_indexed_file_data(conn, path)
+            if owns_connection:
+                conn.commit()
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def count_reusable_embeddings(
+        self,
+        root: Path,
+        *,
+        paths: list[str],
+        conn: sqlite3.Connection | None = None,
+    ) -> int:
+        """
+        Count semantic artifacts reused for unchanged paths.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be queried.
+        paths : list[str]
+            Absolute file paths considered reusable.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        int
+            Number of reusable embedding rows.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            return _count_reused_embeddings(conn, paths)
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def persist_analysis(
+        self,
+        root: Path,
+        *,
+        file_metadata: FileMetadataSnapshot,
+        analysis: AnalysisResult,
+        embedding_backend: EmbeddingBackendSpec | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> int:
+        """
+        Persist normalized artifacts for one analyzed file.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be updated.
+        file_metadata : repoindex.models.FileMetadataSnapshot
+            Stable file metadata snapshot.
+        analysis : repoindex.models.AnalysisResult
+            Normalized analyzer output.
+        embedding_backend : EmbeddingBackendSpec | None, optional
+            Active embedding backend metadata. When omitted, the current
+            default backend is loaded.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        int
+            Number of embedding rows written.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        active_backend = (
+            get_embedding_backend() if embedding_backend is None else embedding_backend
+        )
+        try:
+            written = _store_analysis(
+                conn,
+                file_metadata,
+                analysis,
+                backend=active_backend,
+            )
+            if owns_connection:
+                conn.commit()
+            return written
+        finally:
+            if owns_connection:
+                conn.close()
+
+    def rebuild_derived_indexes(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        """
+        Rebuild derived graph tables after raw persistence.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root whose index should be finalized.
+        conn : sqlite3.Connection | None, optional
+            Existing SQLite connection to reuse.
+
+        Returns
+        -------
+        None
+            Derived SQLite tables are refreshed in place.
+        """
+        owns_connection = conn is None
+        if conn is None:
+            conn = self.open_connection(root)
+        try:
+            _rebuild_graph_indexes(conn)
+            if owns_connection:
+                conn.commit()
+        finally:
+            if owns_connection:
+                conn.close()
+
+
+def _active_language_analyzers() -> list[LanguageAnalyzer]:
+    """
+    Return the language analyzers participating in the current indexing run.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    list[repoindex.contracts.LanguageAnalyzer]
+        Analyzer instances consulted in deterministic order.
+    """
+    return active_language_analyzers()
+
+
+def _select_language_analyzer(
+    path: Path,
+    analyzers: list[LanguageAnalyzer],
+) -> LanguageAnalyzer:
+    """
+    Select the analyzer responsible for one source path.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Repository file that must be analyzed.
+    analyzers : list[repoindex.contracts.LanguageAnalyzer]
+        Analyzer instances consulted in deterministic order.
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Analyzer responsible for the file.
+
+    Raises
+    ------
+    ValueError
+        If no registered analyzer accepts the path.
+    """
+    for analyzer in analyzers:
+        if analyzer.supports_path(path):
+            return analyzer
+
+    msg = f"No language analyzer registered for path: {path}"
+    hint = missing_language_analyzer_hint(path)
+    if hint is not None:
+        msg = f"{msg}. {hint}"
+    raise ValueError(msg)
+
+
+def _collect_indexed_file_analyses(
+    root: Path,
+    indexed_paths: list[str],
+    current_metadata: dict[str, dict[str, object]],
+    analyzers: list[LanguageAnalyzer],
+) -> list[ParsedFile]:
+    """
+    Analyze reindexed files and collect normalized artifacts.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root being indexed.
+    indexed_paths : list[str]
+        Absolute file paths selected for reindexing.
+    current_metadata : dict[str, dict[str, object]]
+        Scanner metadata keyed by absolute file path.
+    analyzers : list[repoindex.contracts.LanguageAnalyzer]
+        Analyzer instances available for path routing.
+
+    Returns
+    -------
+    list[ParsedFile]
+        Deterministic analyzed file snapshots ready for backend persistence.
+    """
+    parsed_files: list[ParsedFile] = []
+
+    for path in indexed_paths:
+        path_obj = Path(path)
+        metadata_snapshot = _snapshot_from_metadata(current_metadata[path])
+        analyzer = _select_language_analyzer(path_obj, analyzers)
+        metadata_snapshot = _snapshot_with_analyzer(metadata_snapshot, analyzer)
+        parsed_files.append(
+            (
+                path_obj,
+                metadata_snapshot,
+                analyzer.analyze_file(path_obj, root),
+            )
+        )
+
+    return parsed_files
+
+
+def _persist_indexed_file_analyses(
+    root: Path,
+    *,
+    conn: sqlite3.Connection,
+    sqlite_backend: SQLiteIndexBackend,
+    parsed_files: list[ParsedFile],
+    embedding_backend: EmbeddingBackendSpec,
+) -> int:
+    """
+    Persist analyzed file snapshots through the selected index backend.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root being indexed.
+    conn : sqlite3.Connection
+        Open backend connection reused across writes.
+    sqlite_backend : repoindex.indexer.SQLiteIndexBackend
+        Concrete backend receiving normalized artifacts.
+    parsed_files : list[ParsedFile]
+        Analyzed file snapshots in deterministic order.
+    embedding_backend : repoindex.semantic.embeddings.EmbeddingBackendSpec
+        Active embedding backend metadata.
+
+    Returns
+    -------
+    int
+        Total number of embeddings recomputed during persistence.
+    """
+    embeddings_recomputed = 0
+
+    for _path, file_metadata_snapshot, analysis in parsed_files:
+        embeddings_recomputed += sqlite_backend.persist_analysis(
+            root,
+            file_metadata=file_metadata_snapshot,
+            analysis=analysis,
+            embedding_backend=embedding_backend,
+            conn=conn,
+        )
+
+    return embeddings_recomputed
+
+
 def index_repo(
     root: Path,
     *,
@@ -1258,7 +2968,8 @@ def index_repo(
     Parameters
     ----------
     root : pathlib.Path
-        Repository root whose tracked Python files should be indexed.
+        Repository root whose tracked analyzer-supported files should be
+        indexed.
     full : bool, optional
         When ``True``, force a full rebuild instead of reusing unchanged files.
 
@@ -1267,19 +2978,33 @@ def index_repo(
     IndexReport
         Deterministic summary of the indexing run.
     """
-    db_path = get_db_path(root)
-    conn = sqlite3.connect(db_path)
+    sqlite_backend = active_index_backend()
+    analyzers = _active_language_analyzers()
+    conn = sqlite_backend.open_connection(root)
     backend = get_embedding_backend()
+    coverage_issues = _audit_canonical_directory_coverage(root, analyzers=analyzers)
 
     try:
-        _prune_orphaned_embeddings(conn)
+        sqlite_backend.prune_orphaned_embeddings(root, conn=conn)
+        current_analyzers = {
+            str(path): _select_language_analyzer(path, analyzers)
+            for path in sorted(iter_project_files(root, analyzers=analyzers))
+        }
         current_metadata = {
-            str(path): file_metadata(path) for path in sorted(iter_project_files(root))
+            path: file_metadata(Path(path)) for path in sorted(current_analyzers)
         }
         current_paths = sorted(current_metadata)
-        existing_hashes = _load_existing_file_hashes(conn)
+        existing_hashes = sqlite_backend.load_existing_file_hashes(root, conn=conn)
+        existing_ownership = sqlite_backend.load_existing_file_ownership(
+            root,
+            conn=conn,
+        )
         existing_paths = sorted(existing_hashes)
-        backend_matches = _current_embedding_state_matches(conn, backend)
+        backend_matches = sqlite_backend.current_embedding_state_matches(
+            root,
+            embedding_backend=backend,
+            conn=conn,
+        )
 
         deleted_paths = [
             path for path in existing_paths if path not in current_metadata
@@ -1297,6 +3022,11 @@ def index_repo(
         else:
             for path in current_paths:
                 existing_hash = existing_hashes.get(path)
+                current_analyzer = current_analyzers[path]
+                current_owner = (
+                    str(current_analyzer.name),
+                    str(current_analyzer.version),
+                )
                 current_hash = str(current_metadata[path]["hash"])
                 if existing_hash is None:
                     indexed_paths.append(path)
@@ -1305,6 +3035,15 @@ def index_repo(
                     indexed_paths.append(path)
                     decisions.append(
                         IndexDecision(path, "indexed", "file content changed")
+                    )
+                elif existing_ownership.get(path) != current_owner:
+                    indexed_paths.append(path)
+                    decisions.append(
+                        IndexDecision(
+                            path,
+                            "indexed",
+                            "analyzer plugin or version changed",
+                        )
                     )
                 elif not backend_matches:
                     indexed_paths.append(path)
@@ -1327,28 +3066,44 @@ def index_repo(
         if full:
             _clear_index_tables(conn)
         else:
-            for path in sorted(set(indexed_paths) | set(deleted_paths)):
-                _delete_indexed_file_data(conn, path)
-
-        embeddings_reused = 0 if full else _count_reused_embeddings(conn, reused_paths)
-
-        parsed_files: list[ParsedFile] = []
-        for path in indexed_paths:
-            path_obj = Path(path)
-            parsed_files.append(
-                (path_obj, current_metadata[path], parse_file(path_obj, root))
+            sqlite_backend.delete_paths(
+                root,
+                paths=sorted(set(indexed_paths) | set(deleted_paths)),
+                conn=conn,
             )
 
-        embeddings_recomputed = 0
-        for _path, meta, parsed in parsed_files:
-            embeddings_recomputed += _store_parsed_file(
-                conn,
-                meta,
-                parsed,
-                backend=backend,
+        embeddings_reused = (
+            0
+            if full
+            else sqlite_backend.count_reusable_embeddings(
+                root,
+                paths=reused_paths,
+                conn=conn,
             )
+        )
 
-        _rebuild_graph_indexes(conn)
+        parsed_files = _collect_indexed_file_analyses(
+            root,
+            indexed_paths,
+            current_metadata,
+            analyzers,
+        )
+        embeddings_recomputed = _persist_indexed_file_analyses(
+            root,
+            conn=conn,
+            sqlite_backend=sqlite_backend,
+            parsed_files=parsed_files,
+            embedding_backend=backend,
+        )
+
+        sqlite_backend.rebuild_derived_indexes(root, conn=conn)
+        _persist_runtime_inventory(
+            conn,
+            backend_name=str(sqlite_backend.name),
+            backend_version=str(sqlite_backend.version),
+            coverage_complete=not coverage_issues,
+            analyzers=analyzers,
+        )
         conn.commit()
 
         decisions.sort(
@@ -1366,6 +3121,7 @@ def index_repo(
             embeddings_recomputed=embeddings_recomputed,
             embeddings_reused=embeddings_reused,
             decisions=decisions,
+            coverage_issues=coverage_issues,
         )
     finally:
         conn.close()

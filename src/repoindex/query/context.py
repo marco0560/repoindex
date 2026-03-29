@@ -7,28 +7,35 @@ import json
 import re
 import sqlite3
 from pathlib import Path
-from typing import Callable, cast
+from typing import Callable, Literal, cast
 
 from repoindex._version import version as __version__
 from repoindex.prefix import normalize_prefix, path_has_prefix, prefix_clause
 from repoindex.prompts.default import build_prompt
-from repoindex.query.classifier import QueryIntent, classify_query
+from repoindex.query.classifier import (
+    QueryIntent,
+    RetrievalPlan,
+    build_retrieval_plan,
+    classify_query,
+)
 from repoindex.query.exact import (
     docstring_issues,
     find_call_edges,
     find_callable_refs,
+    find_include_edges,
     find_logical_symbols,
     find_symbol,
     logical_symbol_name,
 )
+from repoindex.registry import active_index_backend, active_language_analyzers
 from repoindex.scanner import iter_project_files
 from repoindex.semantic.search import embedding_candidates
-from repoindex.storage import get_db_path
 from repoindex.types import (
     ChannelBundle,
     ChannelName,
     ChannelResults,
     CodeContext,
+    IncludeEdgeRow,
     ReferenceRow,
     SymbolRow,
 )
@@ -49,6 +56,19 @@ SEMANTIC_RESULT_LIMIT = 50
 EMBEDDING_RESULT_LIMIT = 50
 # Maximum number of merged symbols returned.
 MERGE_RESULT_LIMIT = 10
+MERGE_MAX_PER_FILE = 1
+MERGE_ROLE_CAPS: dict[FileRole, int] = {
+    "implementation": 6,
+    "interface": 3,
+    "test": 2,
+    "tooling": 1,
+    "other": 2,
+}
+MERGE_LANGUAGE_CAPS: dict[str, int] = {
+    "python": 4,
+    "c": 4,
+    "other": 2,
+}
 # --- token-capped context construction ---
 MAX_TOKENS = 1200
 # Number of source lines to include in extracted snippets.
@@ -72,6 +92,15 @@ CHANNEL_WEIGHTS: dict[ChannelName, float] = {
     "test": 1.0,
     "script": 1.0,
 }
+MERGE_CROSS_FAMILY_BONUS = 0.15
+FileRole = Literal["implementation", "interface", "test", "tooling", "other"]
+SelectionStage = Literal["primary", "deferred"]
+DeferralReason = Literal["file_cap", "role_cap", "language_cap"]
+DiversityEntry = dict[str, object]
+DiversityDiagnostics = dict[str, list[DiversityEntry]]
+MergeDiagnosticsEntry = dict[str, object]
+MergeDiagnostics = dict[SymbolRow, MergeDiagnosticsEntry]
+ExpansionDiagnostics = dict[str, list[dict[str, object]]]
 
 
 def _symbol_sort_key(symbol: SymbolRow) -> tuple[str, str, str, int, str]:
@@ -500,28 +529,13 @@ def _symbols_in_module(
     list[repoindex.types.SymbolRow]
         Up to twenty indexed symbols from the requested module.
     """
-    conn = sqlite3.connect(get_db_path(root))
-    try:
-        normalized_prefix = normalize_prefix(root, prefix)
-        prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
-        rows = conn.execute(
-            f"""
-            SELECT s.type, s.module_name, s.name, f.path, s.lineno
-            FROM symbol_index s
-            JOIN files f
-              ON s.file_id = f.id
-            WHERE s.module_name = ?
-            {prefix_sql}
-            LIMIT 20
-            """,
-            (module, *prefix_params),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    return [
-        (str(t), str(m), str(n), str(f), int(lineno)) for t, m, n, f, lineno in rows
-    ]
+    backend = active_index_backend()
+    return backend.list_symbols_in_module(
+        root,
+        module,
+        prefix=prefix,
+        limit=20,
+    )
 
 
 def _find_references(
@@ -620,7 +634,87 @@ def _tokenize(text: str) -> set[str]:
     return tokens
 
 
-def _path_bias(file_path: str) -> int:
+def _classify_file_role(file_path: str, module_name: str) -> FileRole:
+    """
+    Classify one indexed file into a deterministic retrieval role.
+
+    Parameters
+    ----------
+    file_path : str
+        Indexed file path for the candidate symbol.
+    module_name : str
+        Indexed module name owning the candidate symbol.
+
+    Returns
+    -------
+    {"implementation", "interface", "test", "tooling", "other"}
+        Deterministic file role used by retrieval scoring.
+    """
+    path_obj = Path(file_path)
+    lowered_parts = {part.lower() for part in path_obj.parts}
+    lowered_name = path_obj.name.lower()
+    lowered_module = module_name.lower()
+
+    if (
+        "tests" in lowered_parts
+        or lowered_name.startswith("test_")
+        or lowered_module.startswith("tests.")
+    ):
+        return "test"
+
+    if lowered_module.startswith("scripts.") or any(
+        part in lowered_parts for part in {"scripts", "tools", "bin"}
+    ):
+        return "tooling"
+
+    if path_obj.suffix == ".h":
+        return "interface"
+
+    if path_obj.suffix in {".c", ".py"}:
+        return "implementation"
+
+    return "other"
+
+
+def _file_role_bias(role: FileRole, intent: QueryIntent | None = None) -> int:
+    """
+    Return the retrieval bias associated with one file role.
+
+    Parameters
+    ----------
+    role : {"implementation", "interface", "test", "tooling", "other"}
+        Deterministic file role for the candidate symbol.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Query intent used to flip test or tooling preferences when explicit.
+
+    Returns
+    -------
+    int
+        Small deterministic additive ranking bias.
+    """
+    if role == "implementation":
+        return (
+            1 if intent and (intent.is_test_related or intent.is_script_related) else 3
+        )
+
+    if role == "interface":
+        return 2
+
+    if role == "test":
+        return 4 if intent and intent.is_test_related else -4
+
+    if role == "tooling":
+        return 4 if intent and intent.is_script_related else -5
+
+    return 0
+
+
+def _path_bias(
+    file_path: str,
+    module_name: str,
+    *,
+    intent: QueryIntent | None = None,
+) -> int:
     """
     Lightweight ranking bias based on file location.
 
@@ -628,6 +722,10 @@ def _path_bias(file_path: str) -> int:
     ----------
     file_path : str
         Indexed file path for the candidate symbol.
+    module_name : str
+        Indexed module name owning the candidate symbol.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Query intent used to flip test and tooling preferences when explicit.
 
     Returns
     -------
@@ -639,18 +737,16 @@ def _path_bias(file_path: str) -> int:
     The bias prefers source files over scripts and tests without suppressing
     those results entirely.
     """
-    parts = Path(file_path).parts
-
-    if "src" in parts:
-        return 2
-    if "scripts" in parts:
-        return -2
-    if "tests" in parts:
-        return -1
-    return 0
+    role = _classify_file_role(file_path, module_name)
+    return _file_role_bias(role, intent)
 
 
-def _score_match(query_tokens: list[str], symbol: SymbolRow) -> int:
+def _score_match(
+    query_tokens: list[str],
+    symbol: SymbolRow,
+    *,
+    intent: QueryIntent | None = None,
+) -> int:
     """
     Score a symbol candidate against tokenized query text.
 
@@ -666,7 +762,7 @@ def _score_match(query_tokens: list[str], symbol: SymbolRow) -> int:
     int
         Deterministic relevance score for the candidate.
     """
-    symbol_type, module_name, name, _file_path, _lineno = symbol
+    symbol_type, module_name, name, file_path, _lineno = symbol
 
     score = 0
 
@@ -698,9 +794,7 @@ def _score_match(query_tokens: list[str], symbol: SymbolRow) -> int:
     if name.startswith("_"):
         score -= 20
 
-    # --- Penalize tests ---
-    if "tests" in module_name:
-        score -= 15
+    score += _path_bias(file_path, module_name, intent=intent)
 
     # --- Query intent: module (strong override) ---
     if "module" in query_tokens:
@@ -916,8 +1010,8 @@ def _retrieve_symbol_candidates(
     scored: list[tuple[float, SymbolRow]] = []
 
     for candidate in all_candidates:
-        base_score = _score_match(query_tokens, candidate)
-        score = base_score + _path_bias(candidate[3])
+        base_score = _score_match(query_tokens, candidate, intent=intent)
+        score = base_score
 
         if target_symbol and candidate[2] == target_symbol:
             score += 10
@@ -979,7 +1073,7 @@ def _retrieve_symbol_candidates(
         fallback_scored: list[tuple[float, SymbolRow]] = []
 
         for candidate in all_candidates:
-            score = _score_match(query_tokens, candidate) + _path_bias(candidate[3])
+            score = _score_match(query_tokens, candidate, intent=intent)
 
             symbol_name = candidate[2]
             module_name = candidate[1]
@@ -1068,6 +1162,8 @@ def _retrieve_script_candidates(
 
 def _merge_ranked_channels(
     channels: list[ChannelBundle],
+    *,
+    intent: QueryIntent | None = None,
 ) -> list[SymbolRow]:
     """
     Merge ranked channels into a single ordered symbol list.
@@ -1082,12 +1178,14 @@ def _merge_ranked_channels(
     list[repoindex.types.SymbolRow]
         Top merged symbol rows.
     """
-    return _merge_ranked_channel_bundles(channels)
+    return _merge_ranked_channel_bundles(channels, intent=intent)
 
 
 def _merge_ranked_channel_bundles_explain(
     bundles: list[ChannelBundle],
-) -> tuple[list[SymbolRow], dict[SymbolRow, dict[str, float]]]:
+    *,
+    intent: QueryIntent | None = None,
+) -> tuple[list[SymbolRow], MergeDiagnostics]:
     """
     Merge channel bundles while preserving per-channel score provenance.
 
@@ -1100,47 +1198,20 @@ def _merge_ranked_channel_bundles_explain(
     -------
     tuple[
         list[repoindex.types.SymbolRow],
-        dict[repoindex.types.SymbolRow, dict[str, float]],
+        repoindex.query.context.MergeDiagnostics,
     ]
         Top merged symbols and a provenance map keyed by symbol.
     """
-    weights = _channel_weights()
-
-    merged: dict[SymbolRow, float] = {}
-    provenance: dict[SymbolRow, dict[str, float]] = {}
-
-    for channel_name, channel in sorted(bundles, key=lambda item: item[0]):
-        weight = weights.get(channel_name, 1.0)
-        deduped_channel = _dedupe_channel_results(channel)
-
-        for rank, (score, symbol) in enumerate(deduped_channel):
-            weighted_score = score * weight
-
-            # --- keep provenance EXACTLY as before ---
-            if symbol not in provenance:
-                provenance[symbol] = {}
-            provenance[symbol][channel_name] = weighted_score
-
-            # --- RRF merge ---
-            rrf = weight * (1.0 / (rank + 1))
-
-            if symbol not in merged:
-                merged[symbol] = 0.0
-
-            merged[symbol] += rrf
-
-    ranked = sorted(
-        merged.items(),
-        key=lambda item: (-item[1], *_symbol_sort_key(item[0])),
-    )
-
-    top_symbols = [symbol for symbol, _ in ranked[:MERGE_RESULT_LIMIT]]
+    ranked, provenance = _rank_merged_symbols_with_provenance(bundles, intent=intent)
+    top_symbols = _diversify_merged_symbols([symbol for symbol, _ in ranked])
 
     return top_symbols, provenance
 
 
 def _merge_ranked_channel_bundles(
     bundles: list[ChannelBundle],
+    *,
+    intent: QueryIntent | None = None,
 ) -> list[SymbolRow]:
     """
     Merge ranked channel bundles without returning provenance details.
@@ -1155,8 +1226,232 @@ def _merge_ranked_channel_bundles(
     list[repoindex.types.SymbolRow]
         Top merged symbol rows.
     """
-    top_symbols, _ = _merge_ranked_channel_bundles_explain(bundles)
+    top_symbols, _ = _merge_ranked_channel_bundles_explain(bundles, intent=intent)
     return top_symbols
+
+
+def _rank_merged_symbols_with_provenance(
+    bundles: list[ChannelBundle],
+    *,
+    intent: QueryIntent | None = None,
+) -> tuple[list[tuple[SymbolRow, float]], MergeDiagnostics]:
+    """
+    Rank merged symbols and retain per-channel score provenance.
+
+    Parameters
+    ----------
+    bundles : list[repoindex.types.ChannelBundle]
+        Ranked channel bundles to combine.
+
+    Returns
+    -------
+    tuple[
+        list[tuple[repoindex.types.SymbolRow, float]],
+        repoindex.query.context.MergeDiagnostics,
+    ]
+        Ranked merged symbols with their aggregate score and channel provenance.
+    """
+    weights = _channel_weights()
+    merged_rrf: dict[SymbolRow, float] = {}
+    channel_scores: dict[SymbolRow, dict[str, float]] = {}
+
+    for channel_name, channel in sorted(bundles, key=lambda item: item[0]):
+        weight = weights.get(channel_name, 1.0)
+        deduped_channel = _dedupe_channel_results(channel)
+
+        for rank, (score, symbol) in enumerate(deduped_channel):
+            weighted_score = score * weight
+            if symbol not in channel_scores:
+                channel_scores[symbol] = {}
+            channel_scores[symbol][channel_name] = weighted_score
+
+            rrf = weight * (1.0 / (rank + 1))
+            merged_rrf[symbol] = merged_rrf.get(symbol, 0.0) + rrf
+    diagnostics: MergeDiagnostics = {}
+    ranked_with_scores: list[tuple[SymbolRow, float]] = []
+
+    for symbol, rrf_score in merged_rrf.items():
+        symbol_channel_scores = channel_scores.get(symbol, {})
+        family_scores: dict[str, float] = {}
+        role = _classify_file_role(symbol[3], symbol[1])
+        role_bias = _file_role_bias(role, intent)
+
+        for channel_name, score in symbol_channel_scores.items():
+            family = _channel_evidence_family(channel_name)
+            family_scores[family] = family_scores.get(family, 0.0) + score
+
+        evidence_bonus = _merge_evidence_bonus(family_scores)
+        role_bonus = float(role_bias) / 4.0
+        merge_score = rrf_score + evidence_bonus + role_bonus
+
+        winner = max(
+            sorted(symbol_channel_scores.items()),
+            key=lambda item: item[1],
+        )[0]
+        diagnostics[symbol] = {
+            "channels": dict(
+                sorted(
+                    symbol_channel_scores.items(),
+                    key=lambda item: (-item[1], item[0]),
+                )
+            ),
+            "families": dict(
+                sorted(
+                    family_scores.items(),
+                    key=lambda item: (-item[1], item[0]),
+                )
+            ),
+            "rrf_score": rrf_score,
+            "evidence_bonus": evidence_bonus,
+            "role_bonus": role_bonus,
+            "merge_score": merge_score,
+            "winner": winner,
+        }
+        ranked_with_scores.append((symbol, merge_score))
+
+    ranked = sorted(
+        ranked_with_scores,
+        key=lambda item: (-item[1], *_symbol_sort_key(item[0])),
+    )
+    return ranked, diagnostics
+
+
+def _diversify_merged_symbols(ranked_symbols: list[SymbolRow]) -> list[SymbolRow]:
+    """
+    Apply deterministic file and role caps to merged ranked symbols.
+
+    Parameters
+    ----------
+    ranked_symbols : list[repoindex.types.SymbolRow]
+        Symbols already ordered by merged ranking score.
+
+    Returns
+    -------
+    list[repoindex.types.SymbolRow]
+        Diversified top symbols capped by file and role before truncation.
+    """
+    selected, _diagnostics = _diversify_merged_symbols_explain(ranked_symbols)
+    return selected
+
+
+def _diversify_merged_symbols_explain(
+    ranked_symbols: list[SymbolRow],
+) -> tuple[list[SymbolRow], DiversityDiagnostics]:
+    """
+    Diversify merged symbols while collecting deterministic diagnostics.
+
+    Parameters
+    ----------
+    ranked_symbols : list[repoindex.types.SymbolRow]
+        Symbols already ordered by merged ranking score.
+
+    Returns
+    -------
+    tuple[list[repoindex.types.SymbolRow], repoindex.query.context.DiversityDiagnostics]
+        Diversified symbols plus selected and deferred diagnostic entries.
+    """
+    selected: list[SymbolRow] = []
+    seen_files: dict[str, int] = {}
+    role_counts: dict[FileRole, int] = {}
+    language_counts: dict[str, int] = {}
+    available_languages = {
+        _classify_file_language(symbol[3]) for symbol in ranked_symbols
+    }
+    deferred: list[tuple[SymbolRow, DeferralReason]] = []
+    selected_entries: list[DiversityEntry] = []
+    deferred_entries: list[DiversityEntry] = []
+
+    def _diagnostic_entry(
+        symbol: SymbolRow,
+        *,
+        role: FileRole,
+        language: str,
+        selection_stage: SelectionStage | None = None,
+        reason: DeferralReason | None = None,
+    ) -> DiversityEntry:
+        symbol_type, module_name, name, file_path, lineno = symbol
+        entry: DiversityEntry = {
+            "type": symbol_type,
+            "module": module_name,
+            "name": name,
+            "file": file_path,
+            "lineno": lineno,
+            "role": role,
+            "language": language,
+        }
+        if selection_stage is not None:
+            entry["selection_stage"] = selection_stage
+        if reason is not None:
+            entry["reason"] = reason
+        return entry
+
+    def _try_append(symbol: SymbolRow, *, selection_stage: SelectionStage) -> bool:
+        file_path = symbol[3]
+        module_name = symbol[1]
+        role = _classify_file_role(file_path, module_name)
+        language = _classify_file_language(file_path)
+
+        if seen_files.get(file_path, 0) >= MERGE_MAX_PER_FILE:
+            if selection_stage == "primary":
+                deferred.append((symbol, "file_cap"))
+            return False
+
+        if (
+            selection_stage == "primary"
+            and role_counts.get(role, 0) >= MERGE_ROLE_CAPS[role]
+        ):
+            deferred.append((symbol, "role_cap"))
+            return False
+
+        if (
+            selection_stage == "primary"
+            and len(available_languages) > 1
+            and language_counts.get(language, 0) >= MERGE_LANGUAGE_CAPS.get(language, 1)
+        ):
+            deferred.append((symbol, "language_cap"))
+            return False
+
+        selected.append(symbol)
+        seen_files[file_path] = seen_files.get(file_path, 0) + 1
+        role_counts[role] = role_counts.get(role, 0) + 1
+        language_counts[language] = language_counts.get(language, 0) + 1
+        selected_entries.append(
+            _diagnostic_entry(
+                symbol,
+                role=role,
+                language=language,
+                selection_stage=selection_stage,
+            )
+        )
+        return True
+
+    for symbol in ranked_symbols:
+        if len(selected) >= MERGE_RESULT_LIMIT:
+            break
+        _try_append(symbol, selection_stage="primary")
+
+    for symbol, reason in deferred:
+        role = _classify_file_role(symbol[3], symbol[1])
+        language = _classify_file_language(symbol[3])
+        deferred_entries.append(
+            _diagnostic_entry(
+                symbol,
+                role=role,
+                language=language,
+                reason=reason,
+            )
+        )
+
+    for symbol, _reason in deferred:
+        if len(selected) >= MERGE_RESULT_LIMIT:
+            break
+        _try_append(symbol, selection_stage="deferred")
+
+    diagnostics: DiversityDiagnostics = {
+        "selected": selected_entries,
+        "deferred": deferred_entries,
+    }
+    return selected, diagnostics
 
 
 def _channel_weights() -> dict[ChannelName, float]:
@@ -1173,6 +1468,97 @@ def _channel_weights() -> dict[ChannelName, float]:
         Weight per retrieval channel.
     """
     return dict(CHANNEL_WEIGHTS)
+
+
+def _channel_evidence_family(channel_name: ChannelName) -> str:
+    """
+    Map one retrieval channel to a stable evidence family label.
+
+    Parameters
+    ----------
+    channel_name : repoindex.types.ChannelName
+        Retrieval channel contributing to the merged ranking.
+
+    Returns
+    -------
+    str
+        Stable evidence-family label used in explain diagnostics.
+    """
+    if channel_name == "symbol":
+        return "lexical"
+    if channel_name in {"embedding", "semantic"}:
+        return "semantic"
+    return "task"
+
+
+def _classify_file_language(file_path: str) -> str:
+    """
+    Classify one indexed file into a deterministic language family.
+
+    Parameters
+    ----------
+    file_path : str
+        Indexed file path for the candidate symbol.
+
+    Returns
+    -------
+    str
+        Stable language-family label used by diversity selection.
+    """
+    suffix = Path(file_path).suffix.lower()
+    if suffix == ".py":
+        return "python"
+    if suffix in {".c", ".h"}:
+        return "c"
+    return "other"
+
+
+def _include_target_module_name(target_name: str, kind: str) -> str | None:
+    """
+    Resolve a local include target path back to an indexed module name.
+
+    Parameters
+    ----------
+    target_name : str
+        Include target as stored in the imports table.
+    kind : str
+        Import-like kind recorded for the include artifact.
+
+    Returns
+    -------
+    str | None
+        Indexed module name for local includes, or ``None`` when the target
+        should not resolve into the include graph.
+    """
+    if kind != "include_local":
+        return None
+
+    target_path = Path(target_name)
+    if target_path.suffix not in {".h", ".c"}:
+        return None
+
+    return ".".join(target_path.with_suffix("").parts)
+
+
+def _merge_evidence_bonus(family_scores: dict[str, float]) -> float:
+    """
+    Return a deterministic bonus for multi-family evidence support.
+
+    Parameters
+    ----------
+    family_scores : dict[str, float]
+        Aggregate weighted evidence scores keyed by evidence family.
+
+    Returns
+    -------
+    float
+        Small additive bonus rewarding symbols supported by multiple
+        independent evidence families.
+    """
+    family_count = len(family_scores)
+    if family_count <= 1:
+        return 0.0
+    return float(family_count - 1) * MERGE_CROSS_FAMILY_BONUS
 
 
 def _channel_order() -> list[ChannelName]:
@@ -1196,6 +1582,7 @@ def _build_channel_bundles(
     query: str,
     conn: sqlite3.Connection,
     intent: QueryIntent,
+    plan: RetrievalPlan,
     prefix: str | None,
 ) -> list[ChannelBundle]:
     """
@@ -1211,6 +1598,8 @@ def _build_channel_bundles(
         Open database connection.
     intent : repoindex.query.classifier.QueryIntent
         Structured query classification.
+    plan : repoindex.query.classifier.RetrievalPlan
+        Deterministic retrieval plan derived from the query intent.
     prefix : str | None
         Absolute normalized prefix used to restrict candidate files.
 
@@ -1219,13 +1608,13 @@ def _build_channel_bundles(
     list[repoindex.types.ChannelBundle]
         Channel names paired with their ranked results.
     """
-    channel_fns = _get_channel_functions(intent)
+    channel_fns = _get_channel_functions(plan)
 
     return [(name, fn(root, query, conn, intent, prefix)) for name, fn in channel_fns]
 
 
 def _get_channel_functions(
-    intent: QueryIntent,
+    plan: RetrievalPlan,
 ) -> list[
     tuple[
         ChannelName,
@@ -1240,8 +1629,8 @@ def _get_channel_functions(
 
     Parameters
     ----------
-    intent : repoindex.query.classifier.QueryIntent
-        Structured query classification.
+    plan : repoindex.query.classifier.RetrievalPlan
+        Deterministic retrieval plan derived from query intent.
 
     Returns
     -------
@@ -1262,14 +1651,8 @@ def _get_channel_functions(
     ]
         Ordered channel names and their retrieval callables.
     """
-    order = _channel_order()
     registry = _channel_registry()
-
-    all_channels = [(name, registry[name]) for name in order if name in registry]
-
-    selected = _filter_channels_by_intent(intent, all_channels)
-
-    return selected
+    return [(name, registry[name]) for name in plan.channels if name in registry]
 
 
 def _retrieve_semantic_candidates(
@@ -1309,7 +1692,7 @@ def _retrieve_semantic_candidates(
     docstring text when that auxiliary table exists.
     """
 
-    del root, intent
+    del root
 
     tokens = [t.lower() for t in _tokenize(query) if len(t) >= 3]
     if not tokens:
@@ -1377,9 +1760,6 @@ def _retrieve_semantic_candidates(
         if name.startswith("_"):
             semantic_score -= 1.0
 
-        if module_name.startswith("tests."):
-            semantic_score -= 0.5
-
         if semantic_score >= SEMANTIC_WEIGHT:
             results.append((semantic_score, symbol))
 
@@ -1407,8 +1787,7 @@ def _retrieve_embedding_candidates(
     conn : sqlite3.Connection
         Open database connection.
     intent : repoindex.query.classifier.QueryIntent
-        Structured query classification. The current implementation does not
-        use it directly.
+        Structured query classification used to apply role-aware ranking bias.
     prefix : str | None
         Absolute normalized prefix used to restrict candidate files.
 
@@ -1417,8 +1796,7 @@ def _retrieve_embedding_candidates(
     repoindex.types.ChannelResults
         Ranked embedding-channel candidates for the query.
     """
-    del intent
-    return embedding_candidates(
+    results = embedding_candidates(
         root,
         query,
         limit=EMBEDDING_RESULT_LIMIT,
@@ -1426,6 +1804,9 @@ def _retrieve_embedding_candidates(
         prefix=prefix,
         conn=conn,
     )
+    sorted_results = list(results)
+    sorted_results.sort(key=_scored_symbol_sort_key)
+    return sorted_results
 
 
 def _channel_registry() -> dict[
@@ -1468,151 +1849,38 @@ def _channel_registry() -> dict[
     }
 
 
-def _filter_channels_by_intent(
-    intent: QueryIntent,
-    channels: list[
-        tuple[
-            ChannelName,
-            Callable[
-                [Path, str, sqlite3.Connection, QueryIntent, str | None],
-                ChannelResults,
-            ],
-        ]
-    ],
-) -> list[
-    tuple[
-        ChannelName,
-        Callable[
-            [Path, str, sqlite3.Connection, QueryIntent, str | None],
-            ChannelResults,
-        ],
-    ]
-]:
-    """
-    Filter and order channels according to query intent.
-
-    Parameters
-    ----------
-    intent : repoindex.query.classifier.QueryIntent
-        Structured query classification.
-    channels : list[
-        tuple[
-            repoindex.types.ChannelName,
-            collections.abc.Callable[
-                [
-                    pathlib.Path,
-                    str,
-                    sqlite3.Connection,
-                    repoindex.query.classifier.QueryIntent,
-                ],
-                repoindex.types.ChannelResults,
-            ],
-        ]
-    ]
-        Candidate channels to filter and order.
-
-    Returns
-    -------
-    list[
-        tuple[
-            repoindex.types.ChannelName,
-            collections.abc.Callable[
-                [
-                    pathlib.Path,
-                    str,
-                    sqlite3.Connection,
-                    repoindex.query.classifier.QueryIntent,
-                ],
-                repoindex.types.ChannelResults,
-            ],
-        ]
-    ]
-        Enabled channels in priority order.
-    """
-    priority = _channel_priority(intent)
-
-    enabled = _enabled_channels(intent)
-
-    filtered = [item for item in channels if item[0] in enabled]
-
-    ordered = sorted(
-        filtered,
-        key=lambda item: priority.get(item[0], 100),
-    )
-
-    return ordered
-
-
-def _enabled_channels(intent: QueryIntent) -> set[ChannelName]:
+def _enabled_channels(plan: RetrievalPlan) -> set[ChannelName]:
     """
     Return the set of channels enabled for an intent.
 
     Parameters
     ----------
-    intent : repoindex.query.classifier.QueryIntent
-        Structured query classification.
+    plan : repoindex.query.classifier.RetrievalPlan
+        Deterministic retrieval plan.
 
     Returns
     -------
     set[repoindex.types.ChannelName]
         Enabled retrieval channels.
     """
-    if intent.is_test_related:
-        return {
-            "test",
-            "symbol",
-            "embedding",
-            "semantic",
-        }
-    if intent.is_script_related:
-        return {
-            "script",
-            "symbol",
-            "embedding",
-            "semantic",
-        }
-    return {
-        "symbol",
-        "embedding",
-        "semantic",
-    }
+    return set(plan.channels)
 
 
-def _channel_priority(intent: QueryIntent) -> dict[ChannelName, int]:
+def _channel_priority(plan: RetrievalPlan) -> dict[ChannelName, int]:
     """
     Return channel priority values for an intent.
 
     Parameters
     ----------
-    intent : repoindex.query.classifier.QueryIntent
-        Structured query classification.
+    plan : repoindex.query.classifier.RetrievalPlan
+        Deterministic retrieval plan.
 
     Returns
     -------
     dict[repoindex.types.ChannelName, int]
         Lower values indicate higher routing priority.
     """
-    if intent.is_test_related:
-        return {
-            "test": 0,
-            "symbol": 1,
-            "embedding": 2,
-            "script": 3,
-        }
-    if intent.is_script_related:
-        return {
-            "script": 0,
-            "symbol": 1,
-            "embedding": 2,
-            "test": 3,
-        }
-    return {
-        "symbol": 0,
-        "embedding": 1,
-        "semantic": 2,
-        "test": 3,
-        "script": 4,
-    }
+    return {channel: index for index, channel in enumerate(plan.channels)}
 
 
 def _is_issue_query(query: str) -> bool:
@@ -1710,11 +1978,8 @@ def _issue_driven_symbols(
             module_name = symbol[1]
 
             # Reject obvious noise
-            if (
-                module_name.startswith("tests.")
-                or module_name.startswith("scripts.")
-                or module_name.startswith(".")
-            ):
+            role = _classify_file_role(symbol[3], module_name)
+            if role in {"test", "tooling"} or module_name.startswith("."):
                 continue
 
             bonus = 3 if issue_type == "missing" else 1
@@ -1812,8 +2077,7 @@ def _is_test_file(path: str) -> bool:
     bool
         ``True`` when the path looks like a pytest-style test module.
     """
-    path_obj = Path(path)
-    return "tests" in path_obj.parts or path_obj.name.startswith("test_")
+    return _classify_file_role(path, "") == "test"
 
 
 def _dedupe_and_cap_references(
@@ -1867,13 +2131,132 @@ def _dedupe_and_cap_references(
     return result
 
 
+def _expand_include_graph_neighbors(
+    root: Path,
+    symbol: SymbolRow,
+    conn: sqlite3.Connection,
+    *,
+    prefix: str | None,
+) -> tuple[list[SymbolRow], list[dict[str, object]]]:
+    """
+    Expand one symbol through direct local C include relationships.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index database.
+    symbol : repoindex.types.SymbolRow
+        Seed symbol whose owning module should be expanded.
+    conn : sqlite3.Connection
+        Open database connection reused for exact graph lookups.
+    prefix : str | None
+        Absolute normalized prefix used to restrict owner files and symbols.
+
+    Returns
+    -------
+    tuple[list[repoindex.types.SymbolRow], list[dict[str, object]]]
+        Related symbols discovered through direct include edges plus
+        deterministic include-expansion diagnostics.
+    """
+    module_name = symbol[1]
+    file_language = _classify_file_language(symbol[3])
+    if file_language != "c":
+        return [], []
+
+    related: list[SymbolRow] = []
+    seen: set[tuple[str, str]] = set()
+    diagnostics: list[dict[str, object]] = []
+
+    def _append_symbols(
+        target_module: str,
+        *,
+        via_module: str,
+        target_name: str,
+        kind: str,
+        direction: str,
+    ) -> None:
+        for candidate in _symbols_in_module(root, target_module, prefix=prefix):
+            key = (candidate[1], candidate[2])
+            if key in seen:
+                continue
+            seen.add(key)
+            related.append(candidate)
+            diagnostics.append(
+                {
+                    "seed_module": module_name,
+                    "via_module": via_module,
+                    "target_name": target_name,
+                    "kind": kind,
+                    "direction": direction,
+                    "expanded_module": candidate[1],
+                    "expanded_name": candidate[2],
+                }
+            )
+
+    pending_modules: list[str] = [module_name]
+    visited_modules: set[str] = set()
+
+    while pending_modules:
+        current_module = pending_modules.pop(0)
+        if current_module in visited_modules:
+            continue
+        visited_modules.add(current_module)
+
+        outgoing_edges: list[IncludeEdgeRow] = find_include_edges(
+            root,
+            current_module,
+            prefix=prefix,
+            conn=conn,
+        )
+        for _owner_module, target_name, kind, _lineno in outgoing_edges:
+            target_module = _include_target_module_name(target_name, kind)
+            if target_module is None:
+                continue
+            _append_symbols(
+                target_module,
+                via_module=current_module,
+                target_name=target_name,
+                kind=kind,
+                direction="outgoing",
+            )
+            if target_module not in visited_modules:
+                pending_modules.append(target_module)
+
+    current_module_path = Path(*module_name.split("."))
+    current_target_name = f"{current_module_path.name}.h"
+    if len(current_module_path.parts) > 1:
+        current_target_name = str(
+            Path(*current_module_path.parts[:-1]) / current_target_name
+        )
+
+    incoming_edges: list[IncludeEdgeRow] = find_include_edges(
+        root,
+        current_target_name,
+        incoming=True,
+        prefix=prefix,
+        conn=conn,
+    )
+    for owner_module, _target_name, _kind, _lineno in incoming_edges:
+        _append_symbols(
+            owner_module,
+            via_module=owner_module,
+            target_name=current_target_name,
+            kind="include_local",
+            direction="incoming",
+        )
+
+    return related, diagnostics
+
+
 def _expand_and_collect_references(
     root: Path,
     top_matches: list[SymbolRow],
     conn: sqlite3.Connection,
     *,
+    include_include_graph: bool,
+    include_references: bool,
     prefix: str | None = None,
-) -> tuple[list[SymbolRow], list[ReferenceRow]]:
+) -> tuple[list[SymbolRow], list[ReferenceRow], ExpansionDiagnostics]:
     """
     Perform module expansion and collect cross-module references.
 
@@ -1886,14 +2269,24 @@ def _expand_and_collect_references(
     conn : sqlite3.Connection
         Open database connection reused for graph lookups and symbol
         expansion.
+    include_include_graph : bool
+        Whether include-graph expansion is enabled by the retrieval plan.
+    include_references : bool
+        Whether cross-module reference collection is enabled by the retrieval
+        plan.
     prefix : str | None, optional
         Absolute normalized prefix used to restrict owner files, expanded
         symbols, and scanned references.
 
     Returns
     -------
-    tuple[list[repoindex.types.SymbolRow], list[repoindex.types.ReferenceRow]]
-        Expanded related symbols and cross-module reference locations.
+    tuple[
+        list[repoindex.types.SymbolRow],
+        list[repoindex.types.ReferenceRow],
+        repoindex.query.context.ExpansionDiagnostics,
+    ]
+        Expanded related symbols, cross-module reference locations, and
+        deterministic expansion diagnostics.
 
     Notes
     -----
@@ -1904,6 +2297,7 @@ def _expand_and_collect_references(
     """
     expanded: list[SymbolRow] = []
     seen_symbols: set[SymbolRow] = set(top_matches)
+    include_expansion: list[dict[str, object]] = []
 
     def add_related_symbol(symbol: SymbolRow) -> None:
         symbol_type, module_name, name, _file_path, _lineno = symbol
@@ -1911,15 +2305,27 @@ def _expand_and_collect_references(
             return
         if name.startswith("_"):
             return
-        if symbol_type == "module" and module_name.startswith(("tests.", "scripts.")):
+        role = _classify_file_role(symbol[3], module_name)
+        if symbol_type == "module" and role in {"test", "tooling"}:
             return
-        if module_name.startswith(("tests.", "scripts.")):
+        if role in {"test", "tooling"}:
             return
         seen_symbols.add(symbol)
         expanded.append(symbol)
 
     # --- PHASE 4A: graph-based expansion ---
     for symbol in top_matches:
+        if include_include_graph:
+            include_related, include_entries = _expand_include_graph_neighbors(
+                root,
+                symbol,
+                conn,
+                prefix=prefix,
+            )
+            for related in include_related:
+                add_related_symbol(related)
+            include_expansion.extend(include_entries)
+
         symbol_type, module_name, _name, _file_path, _lineno = symbol
         if symbol_type not in {"function", "method"}:
             continue
@@ -1941,20 +2347,28 @@ def _expand_and_collect_references(
             prefix=prefix,
             conn=conn,
         )
-        outgoing_refs = find_callable_refs(
-            root,
-            logical_name,
-            module=module_name,
-            prefix=prefix,
-            conn=conn,
+        outgoing_refs = (
+            find_callable_refs(
+                root,
+                logical_name,
+                module=module_name,
+                prefix=prefix,
+                conn=conn,
+            )
+            if include_references
+            else []
         )
-        incoming_refs = find_callable_refs(
-            root,
-            logical_name,
-            module=module_name,
-            incoming=True,
-            prefix=prefix,
-            conn=conn,
+        incoming_refs = (
+            find_callable_refs(
+                root,
+                logical_name,
+                module=module_name,
+                incoming=True,
+                prefix=prefix,
+                conn=conn,
+            )
+            if include_references
+            else []
         )
 
         for (
@@ -2066,49 +2480,56 @@ def _expand_and_collect_references(
 
     expanded = filtered[:20]
 
-    symbol_names = {name for _, _, name, _, _ in top_matches if name}
-    project_files = [
-        path for path in iter_project_files(root) if path_has_prefix(path, prefix)
-    ]
-
-    # --- PHASE 5: cross-module references ---
-    top_files = {file_path for _, _, _, file_path, _ in top_matches}
-
-    file_cache: dict[Path, list[str]] = {}
-
-    test_refs: list[ReferenceRow] = []
-    other_refs: list[ReferenceRow] = []
-
-    for name in symbol_names:
-        for file_path, lineno in _find_references(
-            root,
-            name,
-            project_files,
-            file_cache=file_cache,
-        ):
-            if file_path in top_files:
-                continue
-
-            ref = (file_path, lineno)
-
-            if _is_test_file(file_path):
-                test_refs.append(ref)
-            else:
-                other_refs.append(ref)
-
-    seen_refs: set[ReferenceRow] = set()
     unique_refs: list[ReferenceRow] = []
+    if include_references:
+        symbol_names = {name for _, _, name, _, _ in top_matches if name}
+        project_files = [
+            path
+            for path in iter_project_files(
+                root,
+                analyzers=active_language_analyzers(),
+            )
+            if path_has_prefix(path, prefix)
+        ]
 
-    # prioritize test references first
-    for ref in test_refs + other_refs:
-        if ref not in seen_refs:
-            seen_refs.add(ref)
-            unique_refs.append(ref)
+        # --- PHASE 5: cross-module references ---
+        top_files = {file_path for _, _, _, file_path, _ in top_matches}
 
-    unique_refs = _dedupe_and_cap_references(unique_refs)
-    unique_refs = unique_refs[:20]
+        file_cache: dict[Path, list[str]] = {}
 
-    return expanded, unique_refs
+        test_refs: list[ReferenceRow] = []
+        other_refs: list[ReferenceRow] = []
+
+        for name in symbol_names:
+            for file_path, lineno in _find_references(
+                root,
+                name,
+                project_files,
+                file_cache=file_cache,
+            ):
+                if file_path in top_files:
+                    continue
+
+                ref = (file_path, lineno)
+
+                if _is_test_file(file_path):
+                    test_refs.append(ref)
+                else:
+                    other_refs.append(ref)
+
+        seen_refs: set[ReferenceRow] = set()
+
+        # prioritize test references first
+        for ref in test_refs + other_refs:
+            if ref not in seen_refs:
+                seen_refs.add(ref)
+                unique_refs.append(ref)
+
+        unique_refs = _dedupe_and_cap_references(unique_refs)
+        unique_refs = unique_refs[:20]
+
+    diagnostics: ExpansionDiagnostics = {"include_graph": include_expansion}
+    return expanded, unique_refs, diagnostics
 
 
 def _prompt_symbol_line(root: Path, symbol: SymbolRow) -> str:
@@ -2210,11 +2631,14 @@ def _render_context_json(
     confidence_map: dict[SymbolRow, float] | None = None,
     explain: bool = False,
     intent: QueryIntent | None = None,
+    plan: RetrievalPlan | None = None,
     enabled_channels: set[ChannelName] | None = None,
     channel_priority: dict[ChannelName, int] | None = None,
     ordered_channels: list[ChannelName] | None = None,
     bundles: list[ChannelBundle] | None = None,
-    provenance: dict[SymbolRow, dict[str, float]] | None = None,
+    provenance: MergeDiagnostics | None = None,
+    diversity: DiversityDiagnostics | None = None,
+    expansion: ExpansionDiagnostics | None = None,
 ) -> str:
     """
     Render context output as structured JSON.
@@ -2237,6 +2661,8 @@ def _render_context_json(
         Whether explain metadata should be included.
     intent : repoindex.query.classifier.QueryIntent | None, optional
         Structured query classification.
+    plan : repoindex.query.classifier.RetrievalPlan | None, optional
+        Deterministic retrieval plan derived from query intent.
     enabled_channels : set[repoindex.types.ChannelName] | None, optional
         Channels enabled for the query.
     channel_priority : dict[repoindex.types.ChannelName, int] | None, optional
@@ -2245,8 +2671,12 @@ def _render_context_json(
         Ordered channel names.
     bundles : list[repoindex.types.ChannelBundle] | None, optional
         Raw channel results.
-    provenance : dict[repoindex.types.SymbolRow, dict[str, float]] | None, optional
-        Per-channel scores for merged symbols.
+    provenance : repoindex.query.context.MergeDiagnostics | None, optional
+        Merge diagnostics for ranked symbols.
+    diversity : repoindex.query.context.DiversityDiagnostics | None, optional
+        Diversity-selection diagnostics for merged symbols.
+    expansion : repoindex.query.context.ExpansionDiagnostics | None, optional
+        Expansion diagnostics for graph-derived module expansion.
 
     Returns
     -------
@@ -2314,7 +2744,17 @@ def _render_context_json(
                 "is_test_related": intent.is_test_related,
                 "is_script_related": intent.is_script_related,
                 "is_multi_term": intent.is_multi_term,
+                "primary_intent": intent.primary_intent,
                 "raw": intent.raw,
+            }
+
+        if plan is not None:
+            explain_block["planner"] = {
+                "primary_intent": plan.primary_intent,
+                "channels": list(plan.channels),
+                "include_doc_issues": plan.include_doc_issues,
+                "include_include_graph": plan.include_include_graph,
+                "include_references": plan.include_references,
             }
 
         if enabled_channels is not None:
@@ -2353,17 +2793,20 @@ def _render_context_json(
             merge_entries: list[dict[str, object]] = []
 
             for symbol in top_matches:
-                channel_scores = provenance.get(symbol)
-                if not channel_scores:
+                merge_details = provenance.get(symbol)
+                if not merge_details:
                     continue
 
                 symbol_type, module_name, name, _, lineno = symbol
-
-                sorted_scores = sorted(
-                    channel_scores.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
+                role = _classify_file_role(symbol[3], module_name)
+                role_bias = _file_role_bias(role, intent)
+                merge_channels = cast(dict[str, float], merge_details["channels"])
+                merge_families = cast(dict[str, float], merge_details["families"])
+                merge_rrf_score = cast(float, merge_details["rrf_score"])
+                merge_evidence_bonus = cast(float, merge_details["evidence_bonus"])
+                merge_role_bonus = cast(float, merge_details["role_bonus"])
+                merge_score = cast(float, merge_details["merge_score"])
+                merge_winner = cast(str, merge_details["winner"])
 
                 merge_entries.append(
                     {
@@ -2371,11 +2814,25 @@ def _render_context_json(
                         "module": module_name,
                         "name": name,
                         "lineno": lineno,
-                        "scores": dict(sorted_scores),
+                        "channels": merge_channels,
+                        "families": merge_families,
+                        "rrf_score": round(merge_rrf_score, 4),
+                        "evidence_bonus": round(merge_evidence_bonus, 4),
+                        "role_bonus": round(merge_role_bonus, 4),
+                        "merge_score": round(merge_score, 4),
+                        "winner": merge_winner,
+                        "role": role,
+                        "role_bias": role_bias,
                     }
                 )
 
             explain_block["merge"] = merge_entries
+
+        if diversity is not None:
+            explain_block["diversity"] = diversity
+
+        if expansion is not None:
+            explain_block["expansion"] = expansion
 
         result["explain"] = explain_block
 
@@ -2436,11 +2893,14 @@ def _render_context(
     as_prompt: bool = False,
     explain: bool = False,
     intent: QueryIntent | None = None,
+    plan: RetrievalPlan | None = None,
     enabled_channels: set[ChannelName] | None = None,
     channel_priority: dict[ChannelName, int] | None = None,
     ordered_channels: list[ChannelName] | None = None,
     bundles: list[ChannelBundle] | None = None,
-    provenance: dict[SymbolRow, dict[str, float]] | None = None,
+    provenance: MergeDiagnostics | None = None,
+    diversity: DiversityDiagnostics | None = None,
+    expansion: ExpansionDiagnostics | None = None,
 ) -> str:
     """
     Render final structured context output.
@@ -2469,6 +2929,8 @@ def _render_context(
         Whether to include explain metadata.
     intent : repoindex.query.classifier.QueryIntent | None, optional
         Structured query classification.
+    plan : repoindex.query.classifier.RetrievalPlan | None, optional
+        Deterministic retrieval plan derived from query intent.
     enabled_channels : set[repoindex.types.ChannelName] | None, optional
         Channels enabled for the query.
     channel_priority : dict[repoindex.types.ChannelName, int] | None, optional
@@ -2477,8 +2939,12 @@ def _render_context(
         Ordered channel names.
     bundles : list[repoindex.types.ChannelBundle] | None, optional
         Raw channel results.
-    provenance : dict[repoindex.types.SymbolRow, dict[str, float]] | None, optional
-        Per-channel scores for merged symbols.
+    provenance : repoindex.query.context.MergeDiagnostics | None, optional
+        Merge diagnostics for ranked symbols.
+    diversity : repoindex.query.context.DiversityDiagnostics | None, optional
+        Diversity-selection diagnostics for merged symbols.
+    expansion : repoindex.query.context.ExpansionDiagnostics | None, optional
+        Expansion diagnostics for graph-derived module expansion.
 
     Returns
     -------
@@ -2495,11 +2961,14 @@ def _render_context(
             confidence_map=confidence_map,
             explain=explain,
             intent=intent,
+            plan=plan,
             enabled_channels=enabled_channels,
             channel_priority=channel_priority,
             ordered_channels=ordered_channels,
             bundles=bundles,
             provenance=provenance,
+            diversity=diversity,
+            expansion=expansion,
         )
 
     if as_prompt:
@@ -2519,11 +2988,14 @@ def _render_context(
             lines,
             explain=explain,
             intent=intent,
+            plan=plan,
             enabled_channels=enabled_channels,
             channel_priority=channel_priority,
             ordered_channels=ordered_channels,
             bundles=bundles,
             provenance=provenance,
+            diversity=diversity,
+            expansion=expansion,
             top_matches=top_matches,
         )
 
@@ -2544,11 +3016,14 @@ def _append_explain_sections(
     *,
     explain: bool,
     intent: QueryIntent | None,
+    plan: RetrievalPlan | None,
     enabled_channels: set[ChannelName] | None,
     channel_priority: dict[ChannelName, int] | None,
     ordered_channels: list[ChannelName] | None,
     bundles: list[ChannelBundle] | None,
-    provenance: dict[SymbolRow, dict[str, float]] | None,
+    provenance: MergeDiagnostics | None,
+    diversity: DiversityDiagnostics | None,
+    expansion: ExpansionDiagnostics | None,
     top_matches: list[SymbolRow],
 ) -> None:
     """
@@ -2562,6 +3037,8 @@ def _append_explain_sections(
         Whether explain sections should be rendered.
     intent : repoindex.query.classifier.QueryIntent | None
         Structured query classification.
+    plan : repoindex.query.classifier.RetrievalPlan | None
+        Deterministic retrieval plan derived from query intent.
     enabled_channels : set[repoindex.types.ChannelName] | None
         Channels enabled for the query.
     channel_priority : dict[repoindex.types.ChannelName, int] | None
@@ -2570,8 +3047,12 @@ def _append_explain_sections(
         Ordered channel names.
     bundles : list[repoindex.types.ChannelBundle] | None
         Raw channel results.
-    provenance : dict[repoindex.types.SymbolRow, dict[str, float]] | None
-        Per-channel scores for merged symbols.
+    provenance : repoindex.query.context.MergeDiagnostics | None
+        Merge diagnostics for ranked symbols.
+    diversity : repoindex.query.context.DiversityDiagnostics | None
+        Diversity-selection diagnostics for merged symbols.
+    expansion : repoindex.query.context.ExpansionDiagnostics | None
+        Expansion diagnostics for graph-derived module expansion.
     top_matches : list[repoindex.types.SymbolRow]
         Primary merged symbols to explain.
 
@@ -2596,9 +3077,16 @@ def _append_explain_sections(
             lines.append(f"is_test_related: {intent.is_test_related}")
             lines.append(f"is_script_related: {intent.is_script_related}")
             lines.append(f"is_multi_term: {intent.is_multi_term}")
+            lines.append(f"primary_intent: {intent.primary_intent}")
             lines.append(f"raw: {intent.raw}")
 
         lines.append("\n=== EXPLAIN: CHANNEL ROUTING ===")
+        if plan is not None:
+            lines.append(f"planner.primary_intent: {plan.primary_intent}")
+            lines.append(f"planner.channels: {list(plan.channels)}")
+            lines.append(f"planner.include_doc_issues: {plan.include_doc_issues}")
+            lines.append(f"planner.include_include_graph: {plan.include_include_graph}")
+            lines.append(f"planner.include_references: {plan.include_references}")
         if enabled_channels is not None:
             lines.append(f"enabled_channels: {sorted(enabled_channels)}")
         if channel_priority is not None:
@@ -2641,23 +3129,97 @@ def _append_explain_sections(
             else:
                 label = f"{module_name}.{name}:{lineno}"
 
-            channel_scores = provenance.get(symbol)
+            merge_details = provenance.get(symbol)
 
-            if not channel_scores:
+            if not merge_details:
                 continue
 
             lines.append(label)
-
-            sorted_scores = sorted(
-                channel_scores.items(),
-                key=lambda item: item[1],
-                reverse=True,
+            role = _classify_file_role(symbol[3], module_name)
+            role_bias = _file_role_bias(role, intent)
+            merge_rrf_score = cast(float, merge_details["rrf_score"])
+            merge_evidence_bonus = cast(float, merge_details["evidence_bonus"])
+            merge_role_bonus = cast(float, merge_details["role_bonus"])
+            merge_score = cast(float, merge_details["merge_score"])
+            lines.append(
+                "  "
+                f"winner={cast(str, merge_details['winner'])} "
+                f"rrf_score={merge_rrf_score:.4f} "
+                f"evidence_bonus={merge_evidence_bonus:.4f} "
+                f"role_bonus={merge_role_bonus:.4f} "
+                f"merge_score={merge_score:.4f}"
             )
+            lines.append("  " f"role={role} " f"role_bias={role_bias}")
 
-            for channel_name, score in sorted_scores:
-                lines.append(f"  {channel_name}: {score:.2f}")
+            family_scores = cast(dict[str, float], merge_details["families"])
+            for family_name, score in family_scores.items():
+                lines.append(f"  family.{family_name}: {score:.2f}")
+
+            channel_scores = cast(dict[str, float], merge_details["channels"])
+            for channel_name, score in channel_scores.items():
+                lines.append(f"  channel.{channel_name}: {score:.2f}")
 
         lines.append("")
+
+    if explain and diversity is not None:
+        lines.append("=== EXPLAIN: DIVERSITY ===")
+        lines.append(f"max_per_file: {MERGE_MAX_PER_FILE}")
+        lines.append(f"role_caps: {MERGE_ROLE_CAPS}")
+        lines.append(f"language_caps: {MERGE_LANGUAGE_CAPS}")
+
+        selected_entries = diversity.get("selected")
+        if isinstance(selected_entries, list) and selected_entries:
+            lines.append("selected:")
+            for entry in selected_entries[: len(top_matches)]:
+                if not isinstance(entry, dict):
+                    continue
+                label = (
+                    f"{entry.get('module')}.{entry.get('name')}:"
+                    f"{entry.get('lineno')}"
+                )
+                lines.append(
+                    "  "
+                    f"{label} role={entry.get('role')} "
+                    f"language={entry.get('language')} "
+                    f"stage={entry.get('selection_stage')}"
+                )
+
+        deferred_entries = diversity.get("deferred")
+        if isinstance(deferred_entries, list) and deferred_entries:
+            lines.append("deferred:")
+            for entry in deferred_entries[:5]:
+                if not isinstance(entry, dict):
+                    continue
+                label = (
+                    f"{entry.get('module')}.{entry.get('name')}:"
+                    f"{entry.get('lineno')}"
+                )
+                lines.append(
+                    "  "
+                    f"{label} role={entry.get('role')} "
+                    f"language={entry.get('language')} "
+                    f"reason={entry.get('reason')}"
+                )
+
+        lines.append("")
+
+    if explain and expansion is not None:
+        include_entries = expansion.get("include_graph")
+        if isinstance(include_entries, list) and include_entries:
+            lines.append("=== EXPLAIN: EXPANSION ===")
+            lines.append("include_graph:")
+            for entry in include_entries[:10]:
+                if not isinstance(entry, dict):
+                    continue
+                lines.append(
+                    "  "
+                    f"seed={entry.get('seed_module')} "
+                    f"via={entry.get('via_module')} "
+                    f"target={entry.get('target_name')} "
+                    f"direction={entry.get('direction')} "
+                    f"expanded={entry.get('expanded_module')}.{entry.get('expanded_name')}"
+                )
+            lines.append("")
 
 
 def _append_main_context_sections(
@@ -2791,19 +3353,35 @@ def context_for(
         If the repository index cannot be opened or queried.
     """
     normalized_prefix = normalize_prefix(root, prefix)
-    conn = sqlite3.connect(get_db_path(root))
+    conn = active_index_backend().open_connection(root)
     intent: QueryIntent = classify_query(query)
+    plan = build_retrieval_plan(intent)
+    diversity: DiversityDiagnostics | None = None
+    expansion: ExpansionDiagnostics | None = None
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
-    bundles = _build_channel_bundles(root, query, conn, intent, normalized_prefix)
+    bundles = _build_channel_bundles(
+        root,
+        query,
+        conn,
+        intent,
+        plan,
+        normalized_prefix,
+    )
 
     if explain:
-        top_matches, provenance = _merge_ranked_channel_bundles_explain(bundles)
-        enabled = _enabled_channels(intent)
-        priority = _channel_priority(intent)
-        ordered_channels = [name for name, _ in _get_channel_functions(intent)]
+        ranked_merged, provenance = _rank_merged_symbols_with_provenance(
+            bundles,
+            intent=intent,
+        )
+        top_matches, diversity = _diversify_merged_symbols_explain(
+            [symbol for symbol, _score in ranked_merged]
+        )
+        enabled = _enabled_channels(plan)
+        priority = _channel_priority(plan)
+        ordered_channels = [name for name, _ in _get_channel_functions(plan)]
     else:
-        top_matches = _merge_ranked_channels(bundles)
+        top_matches = _merge_ranked_channels(bundles, intent=intent)
         enabled = None
         priority = None
         ordered_channels = None
@@ -2865,6 +3443,9 @@ def context_for(
                 [],
                 as_json=True,
                 explain=explain,
+                diversity=diversity,
+                expansion=expansion,
+                plan=plan,
             )
             conn.close()
             return result
@@ -2879,6 +3460,9 @@ def context_for(
                 [],
                 as_prompt=True,
                 explain=explain,
+                diversity=diversity,
+                expansion=expansion,
+                plan=plan,
             )
             conn.close()
             return result
@@ -2887,13 +3471,16 @@ def context_for(
         return "No relevant matches found."
 
     # --- PHASE 3: related docstring issues ---
-    doc_issues, related_symbols = _collect_doc_issues_and_related(
-        root,
-        query,
-        top_matches,
-        conn,
-        prefix=normalized_prefix,
-    )
+    if plan.include_doc_issues:
+        doc_issues, related_symbols = _collect_doc_issues_and_related(
+            root,
+            query,
+            top_matches,
+            conn,
+            prefix=normalized_prefix,
+        )
+    else:
+        doc_issues, related_symbols = [], []
 
     doc_issues = doc_issues[:MAX_ISSUES]
 
@@ -2904,10 +3491,12 @@ def context_for(
     top_matches = top_matches[:10]
 
     # --- PHASE 4+5: module expansion + references ---
-    expanded, unique_refs = _expand_and_collect_references(
+    expanded, unique_refs, expansion = _expand_and_collect_references(
         root,
         top_matches,
         conn,
+        include_include_graph=plan.include_include_graph,
+        include_references=plan.include_references,
         prefix=normalized_prefix,
     )
 
@@ -2924,11 +3513,14 @@ def context_for(
         as_prompt=as_prompt,
         explain=explain,
         intent=intent,
+        plan=plan,
         enabled_channels=enabled,
         channel_priority=priority,
         ordered_channels=ordered_channels,
         bundles=bundles if explain else None,
         provenance=provenance if explain else None,
+        diversity=diversity if explain else None,
+        expansion=expansion if explain else None,
     )
     conn.close()
     return result
