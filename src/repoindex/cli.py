@@ -11,7 +11,14 @@ from collections import OrderedDict
 from pathlib import Path
 
 from repoindex._version import version as __version__
-from repoindex.indexer import CoverageIssue, audit_repo_coverage, index_repo
+from repoindex.indexer import (
+    CoverageIssue,
+    IndexFailure,
+    IndexReport,
+    IndexWarning,
+    audit_repo_coverage,
+    index_repo,
+)
 from repoindex.prefix import normalize_prefix
 from repoindex.query.context import context_for
 from repoindex.query.exact import (
@@ -493,55 +500,16 @@ def _run_index(
         Process exit status for a successful indexing run.
     """
     coverage_issues = audit_repo_coverage(root)
-    if require_full_coverage and coverage_issues:
-        print(
-            "[repoindex] Coverage incomplete — install the missing analyzer "
-            "plugins or rerun without --require-full-coverage",
-            file=sys.stderr,
-        )
-        _render_coverage_issues(root, coverage_issues)
+    if require_full_coverage and _render_required_coverage_failure(
+        root,
+        coverage_issues,
+    ):
         return 2
 
     init_db(root)
     report = index_repo(root, full=full)
-
-    commit = _get_head_commit(root)
-    metadata = _read_index_metadata(root)
-    metadata["schema_version"] = str(SCHEMA_VERSION)
-    if commit:
-        metadata["commit"] = commit
-    _write_index_metadata(root, metadata)
-
-    print(f"Indexed: {report.indexed}")
-    print(f"Reused: {report.reused}")
-    print(f"Deleted: {report.deleted}")
-    print(f"Failed: {report.failed}")
-    print(f"Embeddings recomputed: {report.embeddings_recomputed}")
-    print(f"Embeddings reused: {report.embeddings_reused}")
-    _render_coverage_issues(root, report.coverage_issues)
-    for warning in report.warnings:
-        rel_path = Path(warning.path)
-        try:
-            rel_label = rel_path.relative_to(root).as_posix()
-        except ValueError:
-            rel_label = warning.path
-        line_suffix = f", line {warning.line}" if warning.line is not None else ""
-        print(
-            "warning: "
-            f"{rel_label} ({warning.analyzer_name}, {warning.warning_type}"
-            f"{line_suffix}, {warning.reason})"
-        )
-    for failure in report.failures:
-        rel_path = Path(failure.path)
-        try:
-            rel_label = rel_path.relative_to(root).as_posix()
-        except ValueError:
-            rel_label = failure.path
-        print(
-            "failure: "
-            f"{rel_label} ({failure.analyzer_name}, {failure.error_type}, "
-            f"{failure.reason})"
-        )
+    _write_index_head_metadata(root)
+    _render_index_report(root, report)
     if explain:
         for decision in report.decisions:
             rel_path = Path(decision.path)
@@ -551,6 +519,159 @@ def _run_index(
                 rel_label = decision.path
             print(f"{decision.action}: {rel_label} ({decision.reason})")
     return 0
+
+
+def _render_required_coverage_failure(
+    root: Path,
+    coverage_issues: list[CoverageIssue],
+) -> bool:
+    """
+    Render strict coverage failure output when indexing must stop early.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for relative path labels.
+    coverage_issues : list[repoindex.indexer.CoverageIssue]
+        Coverage-issue rows discovered before indexing.
+
+    Returns
+    -------
+    bool
+        ``True`` when strict coverage mode should abort indexing.
+    """
+    if not coverage_issues:
+        return False
+    print(
+        "[repoindex] Coverage incomplete — install the missing analyzer "
+        "plugins or rerun without --require-full-coverage",
+        file=sys.stderr,
+    )
+    _render_coverage_issues(root, coverage_issues)
+    return True
+
+
+def _write_index_head_metadata(root: Path) -> None:
+    """
+    Persist index metadata derived from the current repository head.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose metadata should be updated.
+
+    Returns
+    -------
+    None
+        Index metadata is updated in place.
+    """
+    commit = _get_head_commit(root)
+    metadata = _read_index_metadata(root)
+    metadata["schema_version"] = str(SCHEMA_VERSION)
+    if commit:
+        metadata["commit"] = commit
+    _write_index_metadata(root, metadata)
+
+
+def _relative_report_path(root: Path, path: str) -> str:
+    """
+    Convert one absolute diagnostic path into a repo-relative label.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for path relativization.
+    path : str
+        Absolute or already-relative path to render.
+
+    Returns
+    -------
+    str
+        Repo-relative diagnostic label when possible.
+    """
+    path_obj = Path(path)
+    try:
+        return path_obj.relative_to(root).as_posix()
+    except ValueError:
+        return path
+
+
+def _render_index_report(root: Path, report: IndexReport) -> None:
+    """
+    Render the deterministic summary and diagnostics for one index run.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for relative diagnostic labels.
+    report : repoindex.indexer.IndexReport
+        Completed index-run report to render.
+
+    Returns
+    -------
+    None
+        Summary lines and diagnostics are printed to standard output.
+    """
+    print(f"Indexed: {report.indexed}")
+    print(f"Reused: {report.reused}")
+    print(f"Deleted: {report.deleted}")
+    print(f"Failed: {report.failed}")
+    print(f"Embeddings recomputed: {report.embeddings_recomputed}")
+    print(f"Embeddings reused: {report.embeddings_reused}")
+    _render_coverage_issues(root, report.coverage_issues)
+    _render_index_warnings(root, report.warnings)
+    _render_index_failures(root, report.failures)
+
+
+def _render_index_warnings(root: Path, warnings: list[IndexWarning]) -> None:
+    """
+    Render file-scoped analysis warnings from one index run.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for relative diagnostic labels.
+    warnings : list[repoindex.indexer.IndexWarning]
+        Recorded warning diagnostics to print.
+
+    Returns
+    -------
+    None
+        Warning diagnostics are printed to standard output.
+    """
+    for warning in warnings:
+        rel_label = _relative_report_path(root, warning.path)
+        line_suffix = f", line {warning.line}" if warning.line is not None else ""
+        print(
+            "warning: "
+            f"{rel_label} ({warning.analyzer_name}, {warning.warning_type}"
+            f"{line_suffix}, {warning.reason})"
+        )
+
+
+def _render_index_failures(root: Path, failures: list[IndexFailure]) -> None:
+    """
+    Render file-scoped analysis failures from one index run.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for relative diagnostic labels.
+    failures : list[repoindex.indexer.IndexFailure]
+        Recorded failure diagnostics to print.
+
+    Returns
+    -------
+    None
+        Failure diagnostics are printed to standard output.
+    """
+    for failure in failures:
+        rel_label = _relative_report_path(root, failure.path)
+        print(
+            "failure: "
+            f"{rel_label} ({failure.analyzer_name}, {failure.error_type}, "
+            f"{failure.reason})"
+        )
 
 
 def _render_coverage_issues(root: Path, issues: list[CoverageIssue]) -> None:
