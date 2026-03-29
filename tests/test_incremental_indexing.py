@@ -11,7 +11,7 @@ import pytest
 
 from repoindex.analyzers import PythonAnalyzer
 from repoindex.cli import _ensure_index, _write_index_metadata, main
-from repoindex.indexer import SQLiteIndexBackend, index_repo
+from repoindex.indexer import SQLiteIndexBackend, audit_repo_coverage, index_repo
 from repoindex.query.exact import find_symbol
 from repoindex.scanner import file_metadata
 from repoindex.schema import SCHEMA_VERSION
@@ -320,8 +320,163 @@ def test_index_cli_reports_summary_and_decisions(
     assert "Indexed: 1" in captured.out
     assert "Reused: 0" in captured.out
     assert "Deleted: 0" in captured.out
+    assert "Failed: 0" in captured.out
     assert "Embeddings recomputed:" in captured.out
     assert "indexed: pkg/sample.py" in captured.out
+
+
+def test_index_repo_skips_python_files_with_syntax_errors(tmp_path: Path) -> None:
+    """
+    Continue indexing when one Python file fails under the primary parser.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts valid files are indexed while syntax-invalid files are
+        reported as failures without aborting the run.
+    """
+    valid_module = tmp_path / "pkg" / "valid.py"
+    legacy_module = tmp_path / "pkg" / "legacy.py"
+    _write_module(
+        valid_module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+    _write_module(legacy_module, 'print "hi"\n')
+
+    init_db(tmp_path)
+    report = index_repo(tmp_path)
+
+    assert report.indexed == 1
+    assert report.failed == 1
+    assert report.reused == 0
+    assert report.deleted == 0
+    assert report.warnings == []
+    assert len(report.failures) == 1
+    assert report.failures[0].path == str(legacy_module)
+    assert report.failures[0].analyzer_name == "python"
+    assert report.failures[0].error_type == "SyntaxError"
+
+    conn = sqlite3.connect(get_db_path(tmp_path))
+    try:
+        indexed_paths = [
+            row[0] for row in conn.execute("SELECT path FROM files ORDER BY path")
+        ]
+    finally:
+        conn.close()
+
+    assert indexed_paths == [str(valid_module)]
+
+
+def test_index_cli_reports_failures_without_aborting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render per-file failures while keeping the CLI exit status successful.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts index failures are reported without aborting indexing.
+    """
+    valid_module = tmp_path / "pkg" / "valid.py"
+    legacy_module = tmp_path / "pkg" / "legacy.py"
+    _write_module(
+        valid_module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+    _write_module(legacy_module, 'print "hi"\n')
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "Indexed: 1" in captured.out
+    assert "Failed: 1" in captured.out
+    assert "failure: pkg/legacy.py (python, SyntaxError," in captured.out
+
+
+def test_index_repo_captures_parse_warnings_per_file(tmp_path: Path) -> None:
+    """
+    Record parse-time warnings without turning them into raw process output.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts warning metadata is attached to the indexed file.
+    """
+    warned_module = tmp_path / "pkg" / "warned.py"
+    _write_module(warned_module, 'value = "\\$"\n')
+
+    init_db(tmp_path)
+    report = index_repo(tmp_path)
+
+    assert report.indexed == 1
+    assert report.failed == 0
+    assert len(report.warnings) == 1
+    assert report.warnings[0].path == str(warned_module)
+    assert report.warnings[0].analyzer_name == "python"
+    assert report.warnings[0].warning_type == "SyntaxWarning"
+    assert report.warnings[0].line == 1
+    assert report.warnings[0].reason == "invalid escape sequence '\\$'"
+
+
+def test_index_cli_reports_warnings_with_file_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render structured warnings instead of raw parser warnings on stdout.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts the CLI prints file-scoped warning diagnostics.
+    """
+    warned_module = tmp_path / "pkg" / "warned.py"
+    _write_module(warned_module, 'value = "\\$"\n')
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "<unknown>:" not in captured.out
+    assert (
+        "warning: pkg/warned.py (python, SyntaxWarning, line 1, "
+        "invalid escape sequence '\\$')"
+    ) in captured.out
 
 
 def test_index_repo_indexes_mixed_python_and_c_sources(tmp_path: Path) -> None:
@@ -444,7 +599,8 @@ def test_index_cli_prints_coverage_issues(
     captured = capsys.readouterr()
     assert "Coverage issues: 1" in captured.out
     assert (
-        "coverage: scripts/build.sh (scripts, .sh, "
+        "coverage: .sh x1 in scripts "
+        "(.sh, "
         "no registered analyzer covers this canonical file)"
     ) in captured.out
 
@@ -489,10 +645,101 @@ def test_coverage_cli_reports_uncovered_canonical_files(
     assert "Coverage complete: no" in captured.out
     assert "Active analyzers:" in captured.out
     assert (
-        "coverage: scripts/build.sh (scripts, .sh, "
+        "coverage: .sh x1 in scripts "
+        "(.sh, "
         "no registered analyzer covers this canonical file)"
     ) in captured.out
     assert not get_db_path(tmp_path).exists()
+
+
+def test_coverage_cli_groups_text_output_by_suffix_and_directory(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Group human-readable coverage diagnostics by suffix and top-level directory.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch argv and cwd.
+
+    Returns
+    -------
+    None
+        The test asserts text coverage output summarizes repeated suffixes
+        across canonical directories.
+    """
+    src_json = tmp_path / "src" / "schema.json"
+    tests_json = tmp_path / "tests" / "fixtures" / "sample.json"
+    src_json.parent.mkdir(parents=True, exist_ok=True)
+    tests_json.parent.mkdir(parents=True, exist_ok=True)
+    src_json.write_text('{"name": "demo"}\n', encoding="utf-8")
+    tests_json.write_text('{"name": "fixture"}\n', encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["repoindex", "coverage"])
+
+    assert main() == 1
+    captured = capsys.readouterr()
+    assert "Coverage issues: 2" in captured.out
+    assert (
+        "coverage: .json x2 in "
+        "src, tests (.json, no registered analyzer covers this canonical file)"
+    ) in captured.out
+
+
+def test_audit_repo_coverage_ignores_suppressed_suffixes(tmp_path: Path) -> None:
+    """
+    Exclude configured non-source suffixes from canonical coverage gaps.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts ignored suffix classes do not produce diagnostics.
+    """
+    markdown_file = tmp_path / "src" / "notes.md"
+    text_file = tmp_path / "tests" / "fixture.txt"
+    suffixless_file = tmp_path / "scripts" / "runner"
+    markdown_file.parent.mkdir(parents=True, exist_ok=True)
+    text_file.parent.mkdir(parents=True, exist_ok=True)
+    suffixless_file.parent.mkdir(parents=True, exist_ok=True)
+    markdown_file.write_text("# Notes\n", encoding="utf-8")
+    text_file.write_text("fixture\n", encoding="utf-8")
+    suffixless_file.write_text("echo demo\n", encoding="utf-8")
+
+    assert audit_repo_coverage(tmp_path) == []
+
+
+def test_audit_repo_coverage_ignores_binary_files(tmp_path: Path) -> None:
+    """
+    Exclude obvious binary files from canonical coverage gaps.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts files containing NUL bytes are ignored.
+    """
+    binary_file = tmp_path / "tests" / "fixture.rdb"
+    binary_file.parent.mkdir(parents=True, exist_ok=True)
+    binary_file.write_bytes(b"REDIS\x00DATA")
+
+    assert audit_repo_coverage(tmp_path) == []
 
 
 def test_coverage_cli_emits_json(

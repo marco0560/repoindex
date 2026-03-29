@@ -7,6 +7,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+from collections import OrderedDict
 from pathlib import Path
 
 from repoindex._version import version as __version__
@@ -514,9 +515,33 @@ def _run_index(
     print(f"Indexed: {report.indexed}")
     print(f"Reused: {report.reused}")
     print(f"Deleted: {report.deleted}")
+    print(f"Failed: {report.failed}")
     print(f"Embeddings recomputed: {report.embeddings_recomputed}")
     print(f"Embeddings reused: {report.embeddings_reused}")
     _render_coverage_issues(root, report.coverage_issues)
+    for warning in report.warnings:
+        rel_path = Path(warning.path)
+        try:
+            rel_label = rel_path.relative_to(root).as_posix()
+        except ValueError:
+            rel_label = warning.path
+        line_suffix = f", line {warning.line}" if warning.line is not None else ""
+        print(
+            "warning: "
+            f"{rel_label} ({warning.analyzer_name}, {warning.warning_type}"
+            f"{line_suffix}, {warning.reason})"
+        )
+    for failure in report.failures:
+        rel_path = Path(failure.path)
+        try:
+            rel_label = rel_path.relative_to(root).as_posix()
+        except ValueError:
+            rel_label = failure.path
+        print(
+            "failure: "
+            f"{rel_label} ({failure.analyzer_name}, {failure.error_type}, "
+            f"{failure.reason})"
+        )
     if explain:
         for decision in report.decisions:
             rel_path = Path(decision.path)
@@ -545,15 +570,23 @@ def _render_coverage_issues(root: Path, issues: list[CoverageIssue]) -> None:
         Coverage diagnostics are printed to standard output.
     """
     print(f"Coverage issues: {len(issues)}")
+    grouped: OrderedDict[str, tuple[int, OrderedDict[str, None]]] = OrderedDict()
     for issue in issues:
         rel_path = Path(str(issue.path))
         try:
             rel_text = rel_path.relative_to(root).as_posix()
         except ValueError:
             rel_text = str(issue.path)
+        top_level_directory = rel_text.split("/", 1)[0]
+        count, directories = grouped.setdefault(issue.suffix, (0, OrderedDict()))
+        directories[top_level_directory] = None
+        grouped[issue.suffix] = (count + 1, directories)
+    for suffix, (count, directories) in grouped.items():
+        directory_list = ", ".join(directories)
         print(
             "coverage: "
-            f"{rel_text} ({issue.directory}, {issue.suffix}, {issue.reason})"
+            f"{suffix} x{count} in {directory_list} "
+            f"({suffix}, no registered analyzer covers this canonical file)"
         )
 
 

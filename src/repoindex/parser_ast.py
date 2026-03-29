@@ -537,7 +537,7 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
         Parsed module, class, function, and import metadata ready for indexing.
     """
     source = path.read_text(encoding="utf-8")
-    tree = ast.parse(source)
+    tree = ast.parse(source, filename=str(path))
 
     module_doc = ast.get_docstring(tree)
 

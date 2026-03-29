@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -46,6 +47,8 @@ ParsedFile = tuple[Path, FileMetadataSnapshot, AnalysisResult]
 CallEdgeRow = tuple[str, str, str | None, str | None, int]
 CallableRefRow = tuple[str, str, str | None, str | None, int]
 EmbeddingInventoryRow = tuple[str, str, int, int]
+_IGNORED_COVERAGE_SUFFIXES = frozenset({"<no-suffix>", ".md", ".txt"})
+_BINARY_SNIFF_BYTES = 8192
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,55 @@ class CoverageIssue:
 
 
 @dataclass(frozen=True)
+class IndexFailure:
+    """
+    Deterministic per-file indexing failure diagnostic.
+
+    Parameters
+    ----------
+    path : str
+        Absolute path to the file that could not be indexed.
+    analyzer_name : str
+        Analyzer selected for the file.
+    error_type : str
+        Exception class name raised during analysis.
+    reason : str
+        Stable human-readable failure summary.
+    """
+
+    path: str
+    analyzer_name: str
+    error_type: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class IndexWarning:
+    """
+    Deterministic per-file indexing warning diagnostic.
+
+    Parameters
+    ----------
+    path : str
+        Absolute path to the file that emitted the warning.
+    analyzer_name : str
+        Analyzer selected for the file.
+    warning_type : str
+        Warning category class name raised during analysis.
+    line : int | None
+        Source line associated with the warning when available.
+    reason : str
+        Stable human-readable warning summary.
+    """
+
+    path: str
+    analyzer_name: str
+    warning_type: str
+    line: int | None
+    reason: str
+
+
+@dataclass(frozen=True)
 class IndexReport:
     """
     Summary of one indexing run.
@@ -99,17 +151,23 @@ class IndexReport:
     Parameters
     ----------
     indexed : int
-        Number of files reparsed and reindexed.
+        Number of files reparsed and successfully reindexed.
     reused : int
         Number of files reused without reparsing.
     deleted : int
         Number of deleted files removed from the index.
+    failed : int
+        Number of files skipped because analysis failed.
     embeddings_recomputed : int
         Number of embeddings written during the run.
     embeddings_reused : int
         Number of existing embeddings preserved for unchanged files.
     decisions : list[IndexDecision]
         Deterministic per-file decisions for explain mode.
+    failures : list[IndexFailure]
+        Deterministic per-file analysis failures recorded during the run.
+    warnings : list[IndexWarning]
+        Deterministic per-file analysis warnings recorded during the run.
     coverage_issues : list[CoverageIssue]
         Uncovered canonical-directory files detected during the run.
     """
@@ -117,10 +175,53 @@ class IndexReport:
     indexed: int
     reused: int
     deleted: int
+    failed: int
     embeddings_recomputed: int
     embeddings_reused: int
     decisions: list[IndexDecision]
+    failures: list[IndexFailure]
+    warnings: list[IndexWarning]
     coverage_issues: list[CoverageIssue]
+
+
+def _is_binary_coverage_candidate(path: Path) -> bool:
+    """
+    Return whether a coverage candidate should be treated as binary.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Repository file to inspect conservatively.
+
+    Returns
+    -------
+    bool
+        ``True`` when the initial file chunk contains a NUL byte, which is
+        sufficient for repoindex coverage suppression of obvious binary files.
+    """
+    with path.open("rb") as handle:
+        return b"\x00" in handle.read(_BINARY_SNIFF_BYTES)
+
+
+def _should_ignore_coverage_gap(path: Path) -> bool:
+    """
+    Return whether an uncovered canonical file should be excluded from coverage.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Repository file that no analyzer claimed.
+
+    Returns
+    -------
+    bool
+        ``True`` when the file belongs to a deliberately ignored suffix class
+        or is conservatively identified as binary content.
+    """
+    suffix = path.suffix.lower() or "<no-suffix>"
+    if suffix in _IGNORED_COVERAGE_SUFFIXES:
+        return True
+    return _is_binary_coverage_candidate(path)
 
 
 def _audit_canonical_directory_coverage(
@@ -151,6 +252,8 @@ def _audit_canonical_directory_coverage(
         rel_path = path.relative_to(root)
         top_dir = rel_path.parts[0] if rel_path.parts else ""
         if top_dir not in CANONICAL_SOURCE_DIRS:
+            continue
+        if _should_ignore_coverage_gap(path):
             continue
         suffix = path.suffix.lower() or "<no-suffix>"
         issues.append(
@@ -2876,7 +2979,7 @@ def _collect_indexed_file_analyses(
     indexed_paths: list[str],
     current_metadata: dict[str, dict[str, object]],
     analyzers: list[LanguageAnalyzer],
-) -> list[ParsedFile]:
+) -> tuple[list[ParsedFile], list[IndexFailure], list[IndexWarning]]:
     """
     Analyze reindexed files and collect normalized artifacts.
 
@@ -2893,25 +2996,46 @@ def _collect_indexed_file_analyses(
 
     Returns
     -------
-    list[ParsedFile]
-        Deterministic analyzed file snapshots ready for backend persistence.
+    tuple[list[ParsedFile], list[IndexFailure], list[IndexWarning]]
+        Successful analyzed file snapshots plus deterministic failures and
+        warnings.
     """
     parsed_files: list[ParsedFile] = []
+    failures: list[IndexFailure] = []
+    collected_warnings: list[IndexWarning] = []
 
     for path in indexed_paths:
         path_obj = Path(path)
         metadata_snapshot = _snapshot_from_metadata(current_metadata[path])
         analyzer = _select_language_analyzer(path_obj, analyzers)
         metadata_snapshot = _snapshot_with_analyzer(metadata_snapshot, analyzer)
-        parsed_files.append(
-            (
-                path_obj,
-                metadata_snapshot,
-                analyzer.analyze_file(path_obj, root),
+        try:
+            with warnings.catch_warnings(record=True) as warning_records:
+                warnings.simplefilter("always")
+                analysis = analyzer.analyze_file(path_obj, root)
+        except (SyntaxError, UnicodeDecodeError, ValueError) as exc:
+            failures.append(
+                IndexFailure(
+                    path=path,
+                    analyzer_name=str(analyzer.name),
+                    error_type=type(exc).__name__,
+                    reason=str(exc),
+                )
             )
-        )
+            continue
+        for warning_record in warning_records:
+            collected_warnings.append(
+                IndexWarning(
+                    path=path,
+                    analyzer_name=str(analyzer.name),
+                    warning_type=warning_record.category.__name__,
+                    line=warning_record.lineno,
+                    reason=str(warning_record.message),
+                )
+            )
+        parsed_files.append((path_obj, metadata_snapshot, analysis))
 
-    return parsed_files
+    return parsed_files, failures, collected_warnings
 
 
 def _persist_indexed_file_analyses(
@@ -3082,7 +3206,7 @@ def index_repo(
             )
         )
 
-        parsed_files = _collect_indexed_file_analyses(
+        parsed_files, failures, collected_warnings = _collect_indexed_file_analyses(
             root,
             indexed_paths,
             current_metadata,
@@ -3113,14 +3237,34 @@ def index_repo(
                 decision.reason,
             )
         )
+        failures.sort(
+            key=lambda failure: (
+                failure.path,
+                failure.analyzer_name,
+                failure.error_type,
+                failure.reason,
+            )
+        )
+        collected_warnings.sort(
+            key=lambda warning: (
+                warning.path,
+                warning.analyzer_name,
+                warning.warning_type,
+                -1 if warning.line is None else warning.line,
+                warning.reason,
+            )
+        )
 
         return IndexReport(
-            indexed=len(indexed_paths),
+            indexed=len(parsed_files),
             reused=len(reused_paths),
             deleted=len(deleted_paths),
+            failed=len(failures),
             embeddings_recomputed=embeddings_recomputed,
             embeddings_reused=embeddings_reused,
             decisions=decisions,
+            failures=failures,
+            warnings=collected_warnings,
             coverage_issues=coverage_issues,
         )
     finally:

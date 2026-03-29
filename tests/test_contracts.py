@@ -1134,7 +1134,7 @@ def test_collect_indexed_file_analyses_routes_paths_to_analyzers(
         encoding="utf-8",
     )
 
-    rows = _collect_indexed_file_analyses(
+    rows, failures, collected_warnings = _collect_indexed_file_analyses(
         tmp_path,
         [str(module)],
         {
@@ -1148,6 +1148,8 @@ def test_collect_indexed_file_analyses_routes_paths_to_analyzers(
         [_FakeAnalyzer()],
     )
 
+    assert failures == []
+    assert collected_warnings == []
     assert len(rows) == 1
     path, snapshot, analysis = rows[0]
     assert path == module
