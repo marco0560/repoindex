@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/marco0560/repoindex/compare/v1.1.0...v1.1.1) (2026-03-29)
+
+
+### Bug Fixes
+
+* **semantic:** streamline first-party embedding setup ([331e730](https://github.com/marco0560/repoindex/commit/331e730f5bab9bd6ed0a21ad6ed47ccb7746ebba))
+
 # [1.1.0](https://github.com/marco0560/repoindex/compare/v1.0.3...v1.1.0) (2026-03-29)
 
 
