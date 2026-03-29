@@ -184,6 +184,72 @@ class IndexReport:
     coverage_issues: list[CoverageIssue]
 
 
+@dataclass(frozen=True)
+class ProjectScanState:
+    """
+    Current repository scan state used for incremental planning.
+
+    Parameters
+    ----------
+    analyzers_by_path : dict[str, repoindex.contracts.LanguageAnalyzer]
+        Active analyzer selected for each tracked project file.
+    metadata_by_path : dict[str, dict[str, object]]
+        Current raw file metadata snapshots keyed by absolute path.
+    paths : list[str]
+        Deterministically ordered tracked project paths.
+    """
+
+    analyzers_by_path: dict[str, LanguageAnalyzer]
+    metadata_by_path: dict[str, dict[str, object]]
+    paths: list[str]
+
+
+@dataclass(frozen=True)
+class ExistingIndexState:
+    """
+    Persisted index state used to determine reuse decisions.
+
+    Parameters
+    ----------
+    file_hashes : dict[str, str]
+        Indexed content hashes keyed by absolute file path.
+    file_ownership : dict[str, tuple[str, str]]
+        Persisted analyzer ownership keyed by absolute file path.
+    paths : list[str]
+        Deterministically ordered indexed file paths.
+    embedding_backend_matches : bool
+        Whether persisted embeddings match the active embedding backend.
+    """
+
+    file_hashes: dict[str, str]
+    file_ownership: dict[str, tuple[str, str]]
+    paths: list[str]
+    embedding_backend_matches: bool
+
+
+@dataclass(frozen=True)
+class IndexPlan:
+    """
+    Deterministic plan for one indexing pass.
+
+    Parameters
+    ----------
+    indexed_paths : list[str]
+        Files that must be reparsed and persisted.
+    reused_paths : list[str]
+        Files whose persisted data can be reused unchanged.
+    deleted_paths : list[str]
+        Files to remove from the persisted index.
+    decisions : list[IndexDecision]
+        Per-file explanations for indexed, reused, and deleted outcomes.
+    """
+
+    indexed_paths: list[str]
+    reused_paths: list[str]
+    deleted_paths: list[str]
+    decisions: list[IndexDecision]
+
+
 def _is_binary_coverage_candidate(path: Path) -> bool:
     """
     Return whether a coverage candidate should be treated as binary.
@@ -3438,6 +3504,282 @@ def _persist_indexed_file_analyses(
     return embeddings_recomputed
 
 
+def _collect_project_scan_state(
+    root: Path,
+    *,
+    analyzers: list[LanguageAnalyzer],
+) -> ProjectScanState:
+    """
+    Collect the current tracked file state used by index planning.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root being indexed.
+    analyzers : list[repoindex.contracts.LanguageAnalyzer]
+        Active analyzers available for file routing.
+
+    Returns
+    -------
+    ProjectScanState
+        Deterministic scan state for the current working tree.
+    """
+    analyzers_by_path = {
+        str(path): _select_language_analyzer(path, analyzers)
+        for path in sorted(iter_project_files(root, analyzers=analyzers))
+    }
+    metadata_by_path = {
+        path: file_metadata(Path(path)) for path in sorted(analyzers_by_path)
+    }
+    return ProjectScanState(
+        analyzers_by_path=analyzers_by_path,
+        metadata_by_path=metadata_by_path,
+        paths=sorted(metadata_by_path),
+    )
+
+
+def _load_existing_index_state(
+    root: Path,
+    *,
+    sqlite_backend: SQLiteIndexBackend,
+    embedding_backend: EmbeddingBackendSpec,
+    conn: sqlite3.Connection,
+) -> ExistingIndexState:
+    """
+    Load the persisted state needed for incremental index planning.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose index should be queried.
+    sqlite_backend : repoindex.indexer.SQLiteIndexBackend
+        Concrete backend providing the persisted state.
+    embedding_backend : repoindex.semantic.embeddings.EmbeddingBackendSpec
+        Active embedding backend metadata.
+    conn : sqlite3.Connection
+        Open backend connection reused across reads.
+
+    Returns
+    -------
+    ExistingIndexState
+        Deterministic persisted state used for reuse decisions.
+    """
+    file_hashes = sqlite_backend.load_existing_file_hashes(root, conn=conn)
+    return ExistingIndexState(
+        file_hashes=file_hashes,
+        file_ownership=sqlite_backend.load_existing_file_ownership(
+            root,
+            conn=conn,
+        ),
+        paths=sorted(file_hashes),
+        embedding_backend_matches=sqlite_backend.current_embedding_state_matches(
+            root,
+            embedding_backend=embedding_backend,
+            conn=conn,
+        ),
+    )
+
+
+def _plan_index_run(
+    *,
+    full: bool,
+    current_state: ProjectScanState,
+    existing_state: ExistingIndexState,
+) -> IndexPlan:
+    """
+    Build the deterministic indexing plan for one repository pass.
+
+    Parameters
+    ----------
+    full : bool
+        Whether a full rebuild was requested.
+    current_state : ProjectScanState
+        Current tracked-file scan state.
+    existing_state : ExistingIndexState
+        Persisted index state used for reuse comparisons.
+
+    Returns
+    -------
+    IndexPlan
+        Planned indexed, reused, and deleted paths with stable reasons.
+    """
+    deleted_paths = [
+        path
+        for path in existing_state.paths
+        if path not in current_state.metadata_by_path
+    ]
+    reused_paths: list[str] = []
+    indexed_paths: list[str] = []
+    decisions: list[IndexDecision] = []
+
+    if full:
+        indexed_paths = list(current_state.paths)
+        for path in current_state.paths:
+            decisions.append(IndexDecision(path, "indexed", "full rebuild requested"))
+    else:
+        for path in current_state.paths:
+            existing_hash = existing_state.file_hashes.get(path)
+            current_analyzer = current_state.analyzers_by_path[path]
+            current_owner = (
+                str(current_analyzer.name),
+                str(current_analyzer.version),
+            )
+            current_hash = str(current_state.metadata_by_path[path]["hash"])
+            if existing_hash is None:
+                indexed_paths.append(path)
+                decisions.append(IndexDecision(path, "indexed", "new file"))
+            elif existing_hash != current_hash:
+                indexed_paths.append(path)
+                decisions.append(IndexDecision(path, "indexed", "file content changed"))
+            elif existing_state.file_ownership.get(path) != current_owner:
+                indexed_paths.append(path)
+                decisions.append(
+                    IndexDecision(
+                        path,
+                        "indexed",
+                        "analyzer plugin or version changed",
+                    )
+                )
+            elif not existing_state.embedding_backend_matches:
+                indexed_paths.append(path)
+                decisions.append(
+                    IndexDecision(
+                        path,
+                        "indexed",
+                        "embedding backend or version changed",
+                    )
+                )
+            else:
+                reused_paths.append(path)
+                decisions.append(IndexDecision(path, "reused", "file hash unchanged"))
+
+    for path in deleted_paths:
+        decisions.append(IndexDecision(path, "deleted", "file removed"))
+
+    return IndexPlan(
+        indexed_paths=indexed_paths,
+        reused_paths=reused_paths,
+        deleted_paths=deleted_paths,
+        decisions=decisions,
+    )
+
+
+def _prepare_index_storage(
+    root: Path,
+    *,
+    full: bool,
+    plan: IndexPlan,
+    sqlite_backend: SQLiteIndexBackend,
+    conn: sqlite3.Connection,
+) -> None:
+    """
+    Delete persisted rows that the current index plan will replace.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root being indexed.
+    full : bool
+        Whether the current run is a full rebuild.
+    plan : IndexPlan
+        Deterministic indexing plan for the current run.
+    sqlite_backend : repoindex.indexer.SQLiteIndexBackend
+        Concrete backend receiving deletion requests.
+    conn : sqlite3.Connection
+        Open backend connection reused across writes.
+
+    Returns
+    -------
+    None
+        Persisted rows are removed in place before fresh analysis is stored.
+    """
+    if full:
+        _clear_index_tables(conn)
+        return
+
+    sqlite_backend.delete_paths(
+        root,
+        paths=sorted(set(plan.indexed_paths) | set(plan.deleted_paths)),
+        conn=conn,
+    )
+
+
+def _finalize_index_report(
+    *,
+    plan: IndexPlan,
+    parsed_files: list[ParsedFile],
+    failures: list[IndexFailure],
+    warnings: list[IndexWarning],
+    coverage_issues: list[CoverageIssue],
+    embeddings_recomputed: int,
+    embeddings_reused: int,
+) -> IndexReport:
+    """
+    Build the deterministic report returned from one index run.
+
+    Parameters
+    ----------
+    plan : IndexPlan
+        Deterministic file-level plan executed during the run.
+    parsed_files : list[ParsedFile]
+        Successfully analyzed files persisted during the run.
+    failures : list[IndexFailure]
+        Per-file analysis failures collected during parsing.
+    warnings : list[IndexWarning]
+        Per-file analysis warnings collected during parsing.
+    coverage_issues : list[CoverageIssue]
+        Uncovered canonical-directory files detected during the run.
+    embeddings_recomputed : int
+        Number of embeddings written during persistence.
+    embeddings_reused : int
+        Number of existing embeddings preserved for reused files.
+
+    Returns
+    -------
+    IndexReport
+        Deterministic report sorted for stable rendering and tests.
+    """
+    decisions = sorted(
+        plan.decisions,
+        key=lambda decision: (
+            decision.action,
+            decision.path,
+            decision.reason,
+        ),
+    )
+    sorted_failures = sorted(
+        failures,
+        key=lambda failure: (
+            failure.path,
+            failure.analyzer_name,
+            failure.error_type,
+            failure.reason,
+        ),
+    )
+    sorted_warnings = sorted(
+        warnings,
+        key=lambda warning: (
+            warning.path,
+            warning.analyzer_name,
+            warning.warning_type,
+            -1 if warning.line is None else warning.line,
+            warning.reason,
+        ),
+    )
+    return IndexReport(
+        indexed=len(parsed_files),
+        reused=len(plan.reused_paths),
+        deleted=len(plan.deleted_paths),
+        failed=len(sorted_failures),
+        embeddings_recomputed=embeddings_recomputed,
+        embeddings_reused=embeddings_reused,
+        decisions=decisions,
+        failures=sorted_failures,
+        warnings=sorted_warnings,
+        coverage_issues=coverage_issues,
+    )
+
+
 def index_repo(
     root: Path,
     *,
@@ -3467,106 +3809,40 @@ def index_repo(
 
     try:
         sqlite_backend.prune_orphaned_embeddings(root, conn=conn)
-        current_analyzers = {
-            str(path): _select_language_analyzer(path, analyzers)
-            for path in sorted(iter_project_files(root, analyzers=analyzers))
-        }
-        current_metadata = {
-            path: file_metadata(Path(path)) for path in sorted(current_analyzers)
-        }
-        current_paths = sorted(current_metadata)
-        existing_hashes = sqlite_backend.load_existing_file_hashes(root, conn=conn)
-        existing_ownership = sqlite_backend.load_existing_file_ownership(
+        current_state = _collect_project_scan_state(root, analyzers=analyzers)
+        existing_state = _load_existing_index_state(
             root,
-            conn=conn,
-        )
-        existing_paths = sorted(existing_hashes)
-        backend_matches = sqlite_backend.current_embedding_state_matches(
-            root,
+            sqlite_backend=sqlite_backend,
             embedding_backend=backend,
             conn=conn,
         )
-
-        deleted_paths = [
-            path for path in existing_paths if path not in current_metadata
-        ]
-        reused_paths: list[str] = []
-        indexed_paths: list[str] = []
-        decisions: list[IndexDecision] = []
-
-        if full:
-            indexed_paths = list(current_paths)
-            for path in current_paths:
-                decisions.append(
-                    IndexDecision(path, "indexed", "full rebuild requested")
-                )
-        else:
-            for path in current_paths:
-                existing_hash = existing_hashes.get(path)
-                current_analyzer = current_analyzers[path]
-                current_owner = (
-                    str(current_analyzer.name),
-                    str(current_analyzer.version),
-                )
-                current_hash = str(current_metadata[path]["hash"])
-                if existing_hash is None:
-                    indexed_paths.append(path)
-                    decisions.append(IndexDecision(path, "indexed", "new file"))
-                elif existing_hash != current_hash:
-                    indexed_paths.append(path)
-                    decisions.append(
-                        IndexDecision(path, "indexed", "file content changed")
-                    )
-                elif existing_ownership.get(path) != current_owner:
-                    indexed_paths.append(path)
-                    decisions.append(
-                        IndexDecision(
-                            path,
-                            "indexed",
-                            "analyzer plugin or version changed",
-                        )
-                    )
-                elif not backend_matches:
-                    indexed_paths.append(path)
-                    decisions.append(
-                        IndexDecision(
-                            path,
-                            "indexed",
-                            "embedding backend or version changed",
-                        )
-                    )
-                else:
-                    reused_paths.append(path)
-                    decisions.append(
-                        IndexDecision(path, "reused", "file hash unchanged")
-                    )
-
-        for path in deleted_paths:
-            decisions.append(IndexDecision(path, "deleted", "file removed"))
-
-        if full:
-            _clear_index_tables(conn)
-        else:
-            sqlite_backend.delete_paths(
-                root,
-                paths=sorted(set(indexed_paths) | set(deleted_paths)),
-                conn=conn,
-            )
+        plan = _plan_index_run(
+            full=full,
+            current_state=current_state,
+            existing_state=existing_state,
+        )
+        _prepare_index_storage(
+            root,
+            full=full,
+            plan=plan,
+            sqlite_backend=sqlite_backend,
+            conn=conn,
+        )
 
         embeddings_reused = (
             0
             if full
             else sqlite_backend.count_reusable_embeddings(
                 root,
-                paths=reused_paths,
+                paths=plan.reused_paths,
                 conn=conn,
             )
         )
 
         parsed_files, failures, collected_warnings = _collect_indexed_file_analyses(
             root,
-            indexed_paths,
-            current_metadata,
+            plan.indexed_paths,
+            current_state.metadata_by_path,
             analyzers,
         )
         embeddings_recomputed = _persist_indexed_file_analyses(
@@ -3587,42 +3863,14 @@ def index_repo(
         )
         conn.commit()
 
-        decisions.sort(
-            key=lambda decision: (
-                decision.action,
-                decision.path,
-                decision.reason,
-            )
-        )
-        failures.sort(
-            key=lambda failure: (
-                failure.path,
-                failure.analyzer_name,
-                failure.error_type,
-                failure.reason,
-            )
-        )
-        collected_warnings.sort(
-            key=lambda warning: (
-                warning.path,
-                warning.analyzer_name,
-                warning.warning_type,
-                -1 if warning.line is None else warning.line,
-                warning.reason,
-            )
-        )
-
-        return IndexReport(
-            indexed=len(parsed_files),
-            reused=len(reused_paths),
-            deleted=len(deleted_paths),
-            failed=len(failures),
-            embeddings_recomputed=embeddings_recomputed,
-            embeddings_reused=embeddings_reused,
-            decisions=decisions,
+        return _finalize_index_report(
+            plan=plan,
+            parsed_files=parsed_files,
             failures=failures,
             warnings=collected_warnings,
             coverage_issues=coverage_issues,
+            embeddings_recomputed=embeddings_recomputed,
+            embeddings_reused=embeddings_reused,
         )
     finally:
         conn.close()
