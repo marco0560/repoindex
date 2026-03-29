@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
-from sentence_transformers import SentenceTransformer
+import sys
 
-from repoindex.semantic.embeddings import EMBEDDING_BACKEND
+from repoindex.semantic.embeddings import (
+    EMBEDDING_BACKEND,
+    EmbeddingBackendError,
+    provision_embedding_model,
+)
 
 
 def main() -> int:
@@ -21,8 +25,11 @@ def main() -> int:
     int
         Process exit code.
     """
-    model = SentenceTransformer(EMBEDDING_BACKEND, device="cpu")
-    model.get_sentence_embedding_dimension()
+    try:
+        provision_embedding_model(quiet=True)
+    except EmbeddingBackendError as exc:
+        print(f"[repoindex] {exc}", file=sys.stderr)
+        return 1
     print(f"Provisioned embedding model: {EMBEDDING_BACKEND}")
     return 0
 

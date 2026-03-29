@@ -9,7 +9,7 @@ configuration:
 python3 scripts/bootstrap_dev_environment.py
 ```
 
-The bootstrap script installs the `semantic` extra and provisions the local
+The bootstrap script installs the `firstparty` extra and provisions the local
 embedding model artifact used by the real local embedding backend, so
 `repoindex index` can build persisted embeddings without ad hoc first-run
 downloads inside this repository.
@@ -23,22 +23,25 @@ Example:
 
 ```bash
 source .venv/bin/activate
-pip install -e ../repoindex[semantic]
+pip install -e ../repoindex[firstparty]
 ```
 
 This keeps the `repoindex` CLI available in the target repository while using
 the live source tree from this repository.
 
-If the semantic extra is not installed, indexing fails fast with an explicit
-dependency error instead of silently degrading or downloading model artifacts
-in the background.
+The `firstparty` extra installs both the built-in analyzers and the local
+embedding backend. The narrower `semantic` extra is still available when you
+only want the embedding stack.
 
-If the semantic extra is installed but the local model artifact is missing,
-run:
+On first indexing run, `repoindex` provisions the configured local model
+artifact automatically if it is missing. If automatic provisioning cannot
+complete, the CLI fails with a concise remediation message.
+
+You can still prefetch the model explicitly:
 
 ```bash
 source .venv/bin/activate
-python scripts/provision_embedding_model.py
+python ../repoindex/scripts/provision_embedding_model.py
 ```
 
 ## First commands

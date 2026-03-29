@@ -33,8 +33,11 @@ Create a new ADR file under `docs/adr/` and append it to the ADR index.
 
 ## `scripts/provision_embedding_model.py`
 
-Download or verify the local sentence-transformers model artifact required by
+Prefetch or verify the local sentence-transformers model artifact required by
 the real semantic embedding backend.
+
+Normal CLI indexing now provisions the model automatically on first use. This
+script remains available when operators want to pre-warm the cache explicitly.
 
 ## `scripts/release_audit.sh`
 

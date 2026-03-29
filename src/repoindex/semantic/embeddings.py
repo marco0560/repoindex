@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import struct
+import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Protocol, cast
@@ -29,19 +32,35 @@ if TYPE_CHECKING:
             show_progress_bar: bool,
         ) -> _EmbeddingArray: ...
 
+    class _SentenceTransformerFactory(Protocol):
+        def __call__(
+            self,
+            model_name: str,
+            *,
+            device: str,
+            local_files_only: bool,
+        ) -> _EmbeddingModel: ...
+
 
 EMBEDDING_BACKEND = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_VERSION = "1"
 EMBEDDING_DIM = 384
 _DEPENDENCY_INSTALL_HINT = (
-    "Install the package with the semantic extra, for example "
-    "'pip install -e .[semantic]'."
+    "Install repoindex with the 'semantic' or 'firstparty' extra. "
+    "For editable installs from another repository, use "
+    "'pip install -e ../repoindex[firstparty]'."
 )
-_MISSING_MODEL_HINT = (
-    "The model must already exist in the local Hugging Face cache because "
-    "repoindex runs in offline mode."
-)
-_MODEL_LOAD_HINT = "The local model artifact could not be loaded in offline mode."
+
+
+class EmbeddingBackendError(RuntimeError):
+    """
+    Stable operator-facing error raised by the embedding backend.
+
+    Parameters
+    ----------
+    message : str
+        Human-readable provisioning or dependency error.
+    """
 
 
 @dataclass(frozen=True)
@@ -84,7 +103,7 @@ def get_embedding_backend() -> EmbeddingBackendSpec:
     )
 
 
-def _dependency_error(message: str) -> RuntimeError:
+def _dependency_error(message: str) -> EmbeddingBackendError:
     """
     Build a stable runtime error for embedding backend provisioning failures.
 
@@ -95,14 +114,127 @@ def _dependency_error(message: str) -> RuntimeError:
 
     Returns
     -------
-    RuntimeError
+    EmbeddingBackendError
         Provisioning error with a repository-specific remediation hint.
     """
-    return RuntimeError(
+    return EmbeddingBackendError(
         "The semantic embedding backend requires the optional 'semantic' "
         "dependency set and a locally available model artifact for "
         f"{EMBEDDING_BACKEND}. {message}"
     )
+
+
+def _wrap_load_error(exc: OSError | RuntimeError) -> EmbeddingBackendError:
+    """
+    Convert low-level model-loading failures into a stable operator error.
+
+    Parameters
+    ----------
+    exc : OSError | RuntimeError
+        Original model-loading exception.
+
+    Returns
+    -------
+    EmbeddingBackendError
+        Concise error suitable for CLI reporting.
+    """
+    return _dependency_error(
+        "Automatic model provisioning failed. "
+        "Check network access or prefetch the artifact with "
+        "'python ../repoindex/scripts/provision_embedding_model.py'. "
+        f"Loader details: {exc}"
+    )
+
+
+def _configure_embedding_environment(*, offline: bool) -> None:
+    """
+    Configure process-local environment variables for model loading.
+
+    Parameters
+    ----------
+    offline : bool
+        Whether model loading should require local artifacts only.
+
+    Returns
+    -------
+    None
+        Environment variables are updated in place for the current process.
+    """
+    os.environ["HF_HUB_OFFLINE"] = "1" if offline else "0"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1" if offline else "0"
+    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+
+
+def _load_sentence_transformer(
+    sentence_transformer: object,
+    *,
+    offline: bool,
+) -> _EmbeddingModel:
+    """
+    Load the configured model with optional offline-only behavior.
+
+    Parameters
+    ----------
+    sentence_transformer : object
+        Imported ``SentenceTransformer`` constructor or compatible callable.
+    offline : bool
+        Whether model loading should require a local artifact.
+
+    Returns
+    -------
+    _EmbeddingModel
+        Loaded embedding model instance.
+    """
+    _configure_embedding_environment(offline=offline)
+    factory = cast("_SentenceTransformerFactory", sentence_transformer)
+    with (
+        contextlib.redirect_stdout(io.StringIO()),
+        contextlib.redirect_stderr(io.StringIO()),
+    ):
+        return factory(
+            EMBEDDING_BACKEND,
+            device="cpu",
+            local_files_only=offline,
+        )
+
+
+def provision_embedding_model(*, quiet: bool = False) -> None:
+    """
+    Ensure the configured local embedding model artifact is available.
+
+    Parameters
+    ----------
+    quiet : bool, optional
+        Whether to suppress the operator-facing provisioning message.
+
+    Returns
+    -------
+    None
+        The model artifact is downloaded or verified in the local cache.
+
+    Raises
+    ------
+    EmbeddingBackendError
+        Raised when the semantic dependency stack is missing or the model
+        artifact cannot be provisioned.
+    """
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise _dependency_error(_DEPENDENCY_INSTALL_HINT) from exc
+
+    if not quiet:
+        print(
+            "[repoindex] Provisioning local embedding model " f"{EMBEDDING_BACKEND}...",
+            file=sys.stderr,
+        )
+
+    try:
+        _load_sentence_transformer(SentenceTransformer, offline=False)
+    except (OSError, RuntimeError) as exc:
+        raise _wrap_load_error(exc) from exc
 
 
 @lru_cache(maxsize=1)
@@ -116,19 +248,14 @@ def _load_model() -> _EmbeddingModel:
 
     Returns
     -------
-    object
+    _EmbeddingModel
         Loaded ``SentenceTransformer`` model instance cached for reuse.
 
     Raises
     ------
-    RuntimeError
+    EmbeddingBackendError
         Raised when the optional dependency or local model artifact is missing.
     """
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
-    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError as exc:
@@ -142,11 +269,15 @@ def _load_model() -> _EmbeddingModel:
         transformers_logging.set_verbosity_error()  # type: ignore[no-untyped-call]
 
     try:
-        model = SentenceTransformer(EMBEDDING_BACKEND, device="cpu")
-    except OSError as exc:
-        raise _dependency_error(_MISSING_MODEL_HINT) from exc
+        model = _load_sentence_transformer(SentenceTransformer, offline=True)
+    except OSError:
+        provision_embedding_model()
+        try:
+            model = _load_sentence_transformer(SentenceTransformer, offline=True)
+        except (OSError, RuntimeError) as exc:
+            raise _wrap_load_error(exc) from exc
     except RuntimeError as exc:
-        raise _dependency_error(_MODEL_LOAD_HINT) from exc
+        raise _wrap_load_error(exc) from exc
 
     dimension = model.get_sentence_embedding_dimension()
     if dimension != EMBEDDING_DIM:
@@ -154,9 +285,9 @@ def _load_model() -> _EmbeddingModel:
             "Loaded embedding model dimension "
             f"{dimension} does not match the repository contract {EMBEDDING_DIM}."
         )
-        raise RuntimeError(msg)
+        raise EmbeddingBackendError(msg)
 
-    return cast("_EmbeddingModel", model)
+    return model
 
 
 def embed_text(text: str) -> list[float]:
@@ -175,7 +306,7 @@ def embed_text(text: str) -> list[float]:
 
     Raises
     ------
-    RuntimeError
+    EmbeddingBackendError
         Raised when the local semantic backend cannot be loaded.
     """
     if not text.strip():

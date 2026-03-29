@@ -103,14 +103,14 @@ def build_bootstrap_commands(
             repo_root,
         ),
         CommandSpec(
-            "Install editable development, documentation, and semantic dependencies",
+            "Install editable development, documentation, and first-party dependencies",
             (
                 str(python_bin),
                 "-m",
                 "pip",
                 "install",
                 "-e",
-                ".[dev,docs,semantic]",
+                ".[dev,docs,firstparty]",
             ),
             repo_root,
         ),

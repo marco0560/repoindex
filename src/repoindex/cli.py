@@ -36,7 +36,7 @@ from repoindex.registry import (
 )
 from repoindex.scanner import iter_project_files
 from repoindex.schema import SCHEMA_VERSION
-from repoindex.semantic.embeddings import get_embedding_backend
+from repoindex.semantic.embeddings import EmbeddingBackendError, get_embedding_backend
 from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import get_db_path, get_repoindex_dir, init_db
 
@@ -1580,81 +1580,85 @@ def main() -> int:
     raw_prefix = getattr(args, "prefix", None)
     prefix = _resolve_prefix_argument(parser, root, raw_prefix)
 
-    if args.command in (None, "help"):
-        return _run_help(parser)
-    if args.command == "index":
-        return _run_index(
-            root,
-            full=args.full,
-            explain=args.explain,
-            require_full_coverage=args.require_full_coverage,
-        )
-    if args.command == "coverage":
-        return _run_coverage(root, as_json=args.json)
-    if args.command == "symbol":
-        _ensure_index(root)
-        return _run_symbol(
-            root,
-            args.name,
-            prefix=prefix,
-            as_json=args.json,
-            query_prefix=raw_prefix,
-        )
-    if args.command == "embeddings":
-        _ensure_index(root)
-        return _run_embeddings(
-            root,
-            args.query,
-            limit=args.limit,
-            prefix=prefix,
-            as_json=args.json,
-            query_prefix=raw_prefix,
-        )
-    if args.command == "calls":
-        _ensure_index(root)
-        return _run_calls(
-            root,
-            args.name,
-            module=args.module,
-            incoming=args.incoming,
-            prefix=prefix,
-            as_json=args.json,
-            query_prefix=raw_prefix,
-        )
-    if args.command == "refs":
-        _ensure_index(root)
-        return _run_refs(
-            root,
-            args.name,
-            module=args.module,
-            incoming=args.incoming,
-            prefix=prefix,
-            as_json=args.json,
-            query_prefix=raw_prefix,
-        )
-    if args.command == "audit-docstrings":
-        _ensure_index(root)
-        return _run_audit_docstrings(
-            root,
-            prefix=prefix,
-            as_json=args.json,
-            query_prefix=raw_prefix,
-        )
-    if args.command == "plugins":
-        return _run_plugins(as_json=args.json)
-    if args.command == "context-for":
-        _ensure_index(root)
+    try:
+        if args.command in (None, "help"):
+            return _run_help(parser)
+        if args.command == "index":
+            return _run_index(
+                root,
+                full=args.full,
+                explain=args.explain,
+                require_full_coverage=args.require_full_coverage,
+            )
+        if args.command == "coverage":
+            return _run_coverage(root, as_json=args.json)
+        if args.command == "symbol":
+            _ensure_index(root)
+            return _run_symbol(
+                root,
+                args.name,
+                prefix=prefix,
+                as_json=args.json,
+                query_prefix=raw_prefix,
+            )
+        if args.command == "embeddings":
+            _ensure_index(root)
+            return _run_embeddings(
+                root,
+                args.query,
+                limit=args.limit,
+                prefix=prefix,
+                as_json=args.json,
+                query_prefix=raw_prefix,
+            )
+        if args.command == "calls":
+            _ensure_index(root)
+            return _run_calls(
+                root,
+                args.name,
+                module=args.module,
+                incoming=args.incoming,
+                prefix=prefix,
+                as_json=args.json,
+                query_prefix=raw_prefix,
+            )
+        if args.command == "refs":
+            _ensure_index(root)
+            return _run_refs(
+                root,
+                args.name,
+                module=args.module,
+                incoming=args.incoming,
+                prefix=prefix,
+                as_json=args.json,
+                query_prefix=raw_prefix,
+            )
+        if args.command == "audit-docstrings":
+            _ensure_index(root)
+            return _run_audit_docstrings(
+                root,
+                prefix=prefix,
+                as_json=args.json,
+                query_prefix=raw_prefix,
+            )
+        if args.command == "plugins":
+            return _run_plugins(as_json=args.json)
+        if args.command == "context-for":
+            _ensure_index(root)
 
-        result = context_for(
-            root,
-            args.query,
-            prefix=prefix,
-            as_json=args.json,
-            as_prompt=args.prompt,
-            explain=args.explain,
-        )
-        print(result)
-        return 0
+            result = context_for(
+                root,
+                args.query,
+                prefix=prefix,
+                as_json=args.json,
+                as_prompt=args.prompt,
+                explain=args.explain,
+            )
+            print(result)
+            return 0
+    except EmbeddingBackendError as exc:
+        print(f"[repoindex] {exc}", file=sys.stderr)
+        return 2
 
     parser.print_help()
     return 0

@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import types
 from typing import TYPE_CHECKING
 
 from repoindex.cli import main
 from repoindex.indexer import index_repo
 from repoindex.query.exact import find_symbol
+from repoindex.semantic import embeddings as embeddings_module
 from repoindex.semantic.embeddings import (
     EMBEDDING_BACKEND,
     EMBEDDING_DIM,
     EMBEDDING_VERSION,
+    EmbeddingBackendError,
     embed_text,
 )
 from repoindex.semantic.search import embedding_candidates
@@ -444,3 +447,102 @@ def test_embeddings_cli_prints_backend_and_matches(
         f" dim={EMBEDDING_DIM}"
     ) in captured.out
     assert "pkg.sample.validate_schema_rules" in captured.out
+
+
+def test_cli_reports_embedding_errors_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Collapse embedding backend failures into concise CLI output.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control CLI dispatch behavior.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts operator-facing stderr output and exit status.
+    """
+    monkeypatch.setattr(
+        "repoindex.cli._run_index",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            EmbeddingBackendError("Install repoindex[firstparty].")
+        ),
+    )
+    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+
+    assert main() == 2
+    captured = capsys.readouterr()
+    assert "[repoindex] Install repoindex[firstparty]." in captured.err
+    assert captured.out == ""
+
+
+def test_load_model_provisions_missing_local_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Provision the embedding artifact automatically on first load miss.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control model-loading side effects.
+
+    Returns
+    -------
+    None
+        The test asserts provisioning occurs before the final offline retry.
+    """
+
+    class _FakeModel:
+        def get_sentence_embedding_dimension(self) -> int:
+            return EMBEDDING_DIM
+
+    provisioned = False
+    calls: list[bool] = []
+
+    def fake_load_sentence_transformer(
+        sentence_transformer: type[object],
+        *,
+        offline: bool,
+    ) -> object:
+        del sentence_transformer
+        calls.append(offline)
+        if offline and not provisioned:
+            msg = "missing local artifact"
+            raise OSError(msg)
+        return _FakeModel()
+
+    def fake_provision_embedding_model(*, quiet: bool = False) -> None:
+        nonlocal provisioned
+        del quiet
+        provisioned = True
+
+    embeddings_module._load_model.cache_clear()
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        types.SimpleNamespace(SentenceTransformer=object),
+    )
+    monkeypatch.setattr(
+        embeddings_module,
+        "_load_sentence_transformer",
+        fake_load_sentence_transformer,
+    )
+    monkeypatch.setattr(
+        embeddings_module,
+        "provision_embedding_model",
+        fake_provision_embedding_model,
+    )
+
+    model = embeddings_module._load_model()
+
+    assert isinstance(model, _FakeModel)
+    assert calls == [True, True]
+    assert provisioned is True
+    embeddings_module._load_model.cache_clear()
