@@ -2442,72 +2442,82 @@ def _expand_include_graph_neighbors(
     return related, diagnostics
 
 
-def _expand_and_collect_references(
+def _add_related_symbol(
+    expanded: list[SymbolRow],
+    seen_symbols: set[SymbolRow],
+    symbol: SymbolRow,
+) -> None:
+    """
+    Add one related symbol when it survives expansion filters.
+
+    Parameters
+    ----------
+    expanded : list[repoindex.types.SymbolRow]
+        Pending expanded symbols collected for the query.
+    seen_symbols : set[repoindex.types.SymbolRow]
+        Symbols already admitted to the expanded result set.
+    symbol : repoindex.types.SymbolRow
+        Candidate related symbol discovered during expansion.
+
+    Returns
+    -------
+    None
+        The symbol is appended in place when it passes all filters.
+    """
+    symbol_type, module_name, name, _file_path, _lineno = symbol
+    if symbol in seen_symbols:
+        return
+    if name.startswith("_"):
+        return
+    role = _classify_file_role(symbol[3], module_name)
+    if symbol_type == "module" and role in {"test", "tooling"}:
+        return
+    if role in {"test", "tooling"}:
+        return
+    seen_symbols.add(symbol)
+    expanded.append(symbol)
+
+
+def _expand_graph_related_symbols(
     root: Path,
     top_matches: list[SymbolRow],
     conn: sqlite3.Connection,
     *,
     include_include_graph: bool,
     include_references: bool,
-    prefix: str | None = None,
-) -> tuple[list[SymbolRow], list[ReferenceRow], ExpansionDiagnostics]:
+    prefix: str | None,
+    expanded: list[SymbolRow],
+    seen_symbols: set[SymbolRow],
+) -> list[dict[str, object]]:
     """
-    Perform module expansion and collect cross-module references.
+    Expand top matches through include, call, and callable-reference graphs.
 
     Parameters
     ----------
     root : pathlib.Path
-        Repository root used for file discovery and path normalization.
+        Repository root containing the index database.
     top_matches : list[repoindex.types.SymbolRow]
         Primary ranked symbols for the query.
     conn : sqlite3.Connection
-        Open database connection reused for graph lookups and symbol
-        expansion.
+        Open database connection reused for exact graph lookups.
     include_include_graph : bool
-        Whether include-graph expansion is enabled by the retrieval plan.
+        Whether include-graph expansion is enabled.
     include_references : bool
-        Whether cross-module reference collection is enabled by the retrieval
-        plan.
-    prefix : str | None, optional
-        Absolute normalized prefix used to restrict owner files, expanded
-        symbols, and scanned references.
+        Whether callable-reference expansion is enabled.
+    prefix : str | None
+        Absolute normalized prefix used to restrict owner files and symbols.
+    expanded : list[repoindex.types.SymbolRow]
+        Pending expanded symbols collected for the query.
+    seen_symbols : set[repoindex.types.SymbolRow]
+        Symbols already admitted to the expanded result set.
 
     Returns
     -------
-    tuple[
-        list[repoindex.types.SymbolRow],
-        list[repoindex.types.ReferenceRow],
-        repoindex.query.context.ExpansionDiagnostics,
-    ]
-        Expanded related symbols, cross-module reference locations, and
-        deterministic expansion diagnostics.
-
-    Notes
-    -----
-    Expansion excludes private helpers and removes test or script modules to
-    keep the final context focused on reusable project code. It also uses
-    stored call edges and callable references to pull in cross-module related
-    symbols around the primary matches.
+    list[dict[str, object]]
+        Deterministic include-graph diagnostics collected during expansion.
     """
-    expanded: list[SymbolRow] = []
-    seen_symbols: set[SymbolRow] = set(top_matches)
     include_expansion: list[dict[str, object]] = []
 
-    def add_related_symbol(symbol: SymbolRow) -> None:
-        symbol_type, module_name, name, _file_path, _lineno = symbol
-        if symbol in seen_symbols:
-            return
-        if name.startswith("_"):
-            return
-        role = _classify_file_role(symbol[3], module_name)
-        if symbol_type == "module" and role in {"test", "tooling"}:
-            return
-        if role in {"test", "tooling"}:
-            return
-        seen_symbols.add(symbol)
-        expanded.append(symbol)
-
-    # --- PHASE 4A: graph-based expansion ---
     for symbol in top_matches:
         if include_include_graph:
             include_related, include_entries = _expand_include_graph_neighbors(
@@ -2517,7 +2527,7 @@ def _expand_and_collect_references(
                 prefix=prefix,
             )
             for related in include_related:
-                add_related_symbol(related)
+                _add_related_symbol(expanded, seen_symbols, related)
             include_expansion.extend(include_entries)
 
         symbol_type, module_name, _name, _file_path, _lineno = symbol
@@ -2525,7 +2535,6 @@ def _expand_and_collect_references(
             continue
 
         logical_name = logical_symbol_name(root, symbol, conn=conn)
-
         outgoing_edges = find_call_edges(
             root,
             logical_name,
@@ -2581,7 +2590,7 @@ def _expand_and_collect_references(
                 prefix=prefix,
                 conn=conn,
             ):
-                add_related_symbol(related)
+                _add_related_symbol(expanded, seen_symbols, related)
 
         for (
             caller_module,
@@ -2599,7 +2608,7 @@ def _expand_and_collect_references(
                 prefix=prefix,
                 conn=conn,
             ):
-                add_related_symbol(related)
+                _add_related_symbol(expanded, seen_symbols, related)
 
         for (
             _owner_module,
@@ -2617,7 +2626,7 @@ def _expand_and_collect_references(
                 prefix=prefix,
                 conn=conn,
             ):
-                add_related_symbol(related)
+                _add_related_symbol(expanded, seen_symbols, related)
 
         for (
             owner_module,
@@ -2635,93 +2644,221 @@ def _expand_and_collect_references(
                 prefix=prefix,
                 conn=conn,
             ):
-                add_related_symbol(related)
+                _add_related_symbol(expanded, seen_symbols, related)
 
-    # --- PHASE 4B: module expansion ---
+    return include_expansion
+
+
+def _expand_module_related_symbols(
+    root: Path,
+    top_matches: list[SymbolRow],
+    *,
+    prefix: str | None,
+    expanded: list[SymbolRow],
+    seen_symbols: set[SymbolRow],
+) -> None:
+    """
+    Expand top matches to other public symbols in the same modules.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for exact module lookups.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols for the query.
+    prefix : str | None
+        Absolute normalized prefix used to restrict module symbols.
+    expanded : list[repoindex.types.SymbolRow]
+        Pending expanded symbols collected for the query.
+    seen_symbols : set[repoindex.types.SymbolRow]
+        Symbols already admitted to the expanded result set.
+
+    Returns
+    -------
+    None
+        Related module-local symbols are appended in place.
+    """
     seen_modules: set[str] = set()
 
     for _, module_name, _, _, _ in top_matches:
         if module_name in seen_modules:
             continue
-
         seen_modules.add(module_name)
-
         for symbol in _symbols_in_module(root, module_name, prefix=prefix):
-            name = symbol[2]
-
-            # --- FILTER: skip internal helpers ---
-            if name.startswith("_"):
+            if symbol[2].startswith("_"):
                 continue
+            _add_related_symbol(expanded, seen_symbols, symbol)
 
-            add_related_symbol(symbol)
 
-    # remove duplicates by (module, name)
+def _finalize_expanded_symbols(expanded: list[SymbolRow]) -> list[SymbolRow]:
+    """
+    Dedupe expanded symbols by module and name and cap the final result.
+
+    Parameters
+    ----------
+    expanded : list[repoindex.types.SymbolRow]
+        Pending expanded symbols collected for the query.
+
+    Returns
+    -------
+    list[repoindex.types.SymbolRow]
+        Deduplicated and capped expanded symbols.
+    """
     seen_keys: set[tuple[str, str]] = set()
     deduped: list[SymbolRow] = []
 
-    for t, m, n, f, lin in expanded:
-        key = (m, n)
+    for symbol_type, module_name, name, file_path, lineno in expanded:
+        key = (module_name, name)
         if key in seen_keys:
             continue
         seen_keys.add(key)
-        deduped.append((t, m, n, f, lin))
+        deduped.append((symbol_type, module_name, name, file_path, lineno))
 
-    # --- FILTER NOISE: remove test and script modules ---
-    filtered: list[SymbolRow] = []
+    return deduped[:20]
 
-    for t, m, n, f, lin in deduped:
-        filtered.append((t, m, n, f, lin))
 
-    expanded = filtered[:20]
+def _collect_reference_rows(
+    root: Path,
+    top_matches: list[SymbolRow],
+    *,
+    include_references: bool,
+    prefix: str | None,
+) -> list[ReferenceRow]:
+    """
+    Collect cross-module reference rows for the primary top matches.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for project-file scans.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols for the query.
+    include_references : bool
+        Whether reference collection is enabled.
+    prefix : str | None
+        Absolute normalized prefix used to restrict scanned files.
+
+    Returns
+    -------
+    list[repoindex.types.ReferenceRow]
+        Deduplicated and capped reference rows in deterministic order.
+    """
+    if not include_references:
+        return []
+
+    symbol_names = {name for _, _, name, _, _ in top_matches if name}
+    project_files = [
+        path
+        for path in iter_project_files(
+            root,
+            analyzers=active_language_analyzers(),
+        )
+        if path_has_prefix(path, prefix)
+    ]
+    top_files = {file_path for _, _, _, file_path, _ in top_matches}
+    file_cache: dict[Path, list[str]] = {}
+    test_refs: list[ReferenceRow] = []
+    other_refs: list[ReferenceRow] = []
+
+    for name in symbol_names:
+        for file_path, lineno in _find_references(
+            root,
+            name,
+            project_files,
+            file_cache=file_cache,
+        ):
+            if file_path in top_files:
+                continue
+            ref = (file_path, lineno)
+            if _is_test_file(file_path):
+                test_refs.append(ref)
+            else:
+                other_refs.append(ref)
 
     unique_refs: list[ReferenceRow] = []
-    if include_references:
-        symbol_names = {name for _, _, name, _, _ in top_matches if name}
-        project_files = [
-            path
-            for path in iter_project_files(
-                root,
-                analyzers=active_language_analyzers(),
-            )
-            if path_has_prefix(path, prefix)
-        ]
+    seen_refs: set[ReferenceRow] = set()
+    for ref in test_refs + other_refs:
+        if ref in seen_refs:
+            continue
+        seen_refs.add(ref)
+        unique_refs.append(ref)
 
-        # --- PHASE 5: cross-module references ---
-        top_files = {file_path for _, _, _, file_path, _ in top_matches}
+    return _dedupe_and_cap_references(unique_refs)[:20]
 
-        file_cache: dict[Path, list[str]] = {}
 
-        test_refs: list[ReferenceRow] = []
-        other_refs: list[ReferenceRow] = []
+def _expand_and_collect_references(
+    root: Path,
+    top_matches: list[SymbolRow],
+    conn: sqlite3.Connection,
+    *,
+    include_include_graph: bool,
+    include_references: bool,
+    prefix: str | None = None,
+) -> tuple[list[SymbolRow], list[ReferenceRow], ExpansionDiagnostics]:
+    """
+    Perform module expansion and collect cross-module references.
 
-        for name in symbol_names:
-            for file_path, lineno in _find_references(
-                root,
-                name,
-                project_files,
-                file_cache=file_cache,
-            ):
-                if file_path in top_files:
-                    continue
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root used for file discovery and path normalization.
+    top_matches : list[repoindex.types.SymbolRow]
+        Primary ranked symbols for the query.
+    conn : sqlite3.Connection
+        Open database connection reused for graph lookups and symbol
+        expansion.
+    include_include_graph : bool
+        Whether include-graph expansion is enabled by the retrieval plan.
+    include_references : bool
+        Whether cross-module reference collection is enabled by the retrieval
+        plan.
+    prefix : str | None, optional
+        Absolute normalized prefix used to restrict owner files, expanded
+        symbols, and scanned references.
 
-                ref = (file_path, lineno)
+    Returns
+    -------
+    tuple[
+        list[repoindex.types.SymbolRow],
+        list[repoindex.types.ReferenceRow],
+        repoindex.query.context.ExpansionDiagnostics,
+    ]
+        Expanded related symbols, cross-module reference locations, and
+        deterministic expansion diagnostics.
 
-                if _is_test_file(file_path):
-                    test_refs.append(ref)
-                else:
-                    other_refs.append(ref)
-
-        seen_refs: set[ReferenceRow] = set()
-
-        # prioritize test references first
-        for ref in test_refs + other_refs:
-            if ref not in seen_refs:
-                seen_refs.add(ref)
-                unique_refs.append(ref)
-
-        unique_refs = _dedupe_and_cap_references(unique_refs)
-        unique_refs = unique_refs[:20]
-
+    Notes
+    -----
+    Expansion excludes private helpers and removes test or script modules to
+    keep the final context focused on reusable project code. It also uses
+    stored call edges and callable references to pull in cross-module related
+    symbols around the primary matches.
+    """
+    expanded: list[SymbolRow] = []
+    seen_symbols: set[SymbolRow] = set(top_matches)
+    include_expansion = _expand_graph_related_symbols(
+        root,
+        top_matches,
+        conn,
+        include_include_graph=include_include_graph,
+        include_references=include_references,
+        prefix=prefix,
+        expanded=expanded,
+        seen_symbols=seen_symbols,
+    )
+    _expand_module_related_symbols(
+        root,
+        top_matches,
+        prefix=prefix,
+        expanded=expanded,
+        seen_symbols=seen_symbols,
+    )
+    expanded = _finalize_expanded_symbols(expanded)
+    unique_refs = _collect_reference_rows(
+        root,
+        top_matches,
+        include_references=include_references,
+        prefix=prefix,
+    )
     diagnostics: ExpansionDiagnostics = {"include_graph": include_expansion}
     return expanded, unique_refs, diagnostics
 
