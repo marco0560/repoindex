@@ -159,6 +159,8 @@ def _iter_source_files(
     ----------
     root : pathlib.Path
         Repository root to scan recursively.
+    discovery_globs : collections.abc.Sequence[str]
+        Filename patterns contributed by the active analyzers.
 
     Yields
     ------
@@ -190,6 +192,8 @@ def iter_project_files(
     ----------
     root : pathlib.Path
         Repository root to inspect.
+    analyzers : collections.abc.Sequence[repoindex.contracts.LanguageAnalyzer]
+        Active analyzers whose discovery globs define eligible source files.
 
     Returns
     -------
@@ -308,6 +312,12 @@ def iter_canonical_project_files(root: Path) -> Iterator[Path]:
     collections.abc.Iterator[pathlib.Path]
         Deterministically ordered files under ``src/``, ``tests/``, and
         ``scripts/``.
+
+    Raises
+    ------
+    subprocess.CalledProcessError
+        If ``git ls-files`` fails for a reason other than "not a git
+        repository".
     """
     try:
         result = subprocess.run(

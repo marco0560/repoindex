@@ -756,6 +756,8 @@ def _score_match(
         Normalized query tokens.
     symbol : repoindex.types.SymbolRow
         Candidate symbol row to score.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Query intent used to bias ranking toward the user's apparent goal.
 
     Returns
     -------
@@ -1172,6 +1174,8 @@ def _merge_ranked_channels(
     ----------
     channels : list[repoindex.types.ChannelBundle]
         Ranked channel results to combine.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Query intent used to bias merged ranking decisions.
 
     Returns
     -------
@@ -1193,6 +1197,8 @@ def _merge_ranked_channel_bundles_explain(
     ----------
     bundles : list[repoindex.types.ChannelBundle]
         Ranked channel bundles to combine.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Query intent used to bias merged ranking decisions.
 
     Returns
     -------
@@ -1220,6 +1226,8 @@ def _merge_ranked_channel_bundles(
     ----------
     bundles : list[repoindex.types.ChannelBundle]
         Ranked channel bundles to combine.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Query intent used to bias merged ranking decisions.
 
     Returns
     -------
@@ -1242,6 +1250,8 @@ def _rank_merged_symbols_with_provenance(
     ----------
     bundles : list[repoindex.types.ChannelBundle]
         Ranked channel bundles to combine.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Query intent used to bias merged ranking decisions.
 
     Returns
     -------

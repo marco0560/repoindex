@@ -13,5 +13,16 @@ class DemoBackend(SQLiteIndexBackend):
 
 
 def build_backend() -> IndexBackend:
-    """Build the example backend plugin instance."""
+    """
+    Build the example backend plugin instance.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    repoindex.contracts.IndexBackend
+        Example backend instance cast to the public plugin contract.
+    """
     return cast(IndexBackend, DemoBackend())

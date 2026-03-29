@@ -355,6 +355,12 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
     -------
     None
         The test asserts the registry keeps Python active and omits C.
+
+    Raises
+    ------
+    ModuleNotFoundError
+        Raised by the patched import hook to emulate a missing optional C
+        dependency.
     """
     real_import_module = importlib.import_module
 
@@ -388,6 +394,12 @@ def test_select_language_analyzer_reports_optional_extra_hint(
     -------
     None
         The test asserts the failure message includes the C extra hint.
+
+    Raises
+    ------
+    ModuleNotFoundError
+        Raised by the patched import hook to emulate a missing optional C
+        dependency.
     """
     real_import_module = importlib.import_module
 
@@ -956,6 +968,11 @@ def test_active_index_backend_rejects_unknown_configured_backend(
     -------
     None
         The test asserts an informative failure for unsupported backend names.
+
+    Raises
+    ------
+    ValueError
+        Raised when the configured backend name is not registered.
     """
     monkeypatch.setenv("REPOINDEX_INDEX_BACKEND", "unknown")
 
@@ -982,6 +999,12 @@ def test_instantiating_language_analyzers_requires_a_non_empty_registry() -> Non
     -------
     None
         The test asserts the registry failure path used by Phase 8.
+
+    Raises
+    ------
+    ValueError
+        Raised when analyzer instantiation is attempted with an empty
+        registry.
     """
     try:
         _instantiate_language_analyzers(())
@@ -1089,6 +1112,12 @@ def test_select_language_analyzer_uses_first_supporting_analyzer(
     -------
     None
         The test asserts first-match routing for a supported path.
+
+    Raises
+    ------
+    AssertionError
+        Raised if the rejecting analyzer is called despite not supporting the
+        path.
     """
 
     class _RejectingAnalyzer:

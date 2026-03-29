@@ -25,7 +25,20 @@ class _FakeDistribution:
 
 @dataclass(frozen=True)
 class _FakeEntryPoint:
-    """Minimal entry-point stub used for registry tests."""
+    """
+    Minimal entry-point stub used for registry tests.
+
+    Parameters
+    ----------
+    name : str
+        Entry-point name exposed by the fake distribution.
+    value : str
+        Raw entry-point target string.
+    dist : _FakeDistribution
+        Fake distribution metadata owning the entry point.
+    loaded : object
+        Object or exception returned when the entry point is loaded.
+    """
 
     name: str
     value: str
@@ -33,25 +46,73 @@ class _FakeEntryPoint:
     loaded: object
 
     def load(self) -> object:
-        """Return or raise the configured load target."""
+        """
+        Return or raise the configured load target.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        object
+            Loaded plugin object for the fake entry point.
+
+        Raises
+        ------
+        Exception
+            Re-raises the configured failure when ``loaded`` is an exception.
+        """
         if isinstance(self.loaded, Exception):
             raise self.loaded
         return self.loaded
 
 
 class _DemoAnalyzer:
-    """Small analyzer plugin stub."""
+    """
+    Small analyzer plugin stub.
+
+    Parameters
+    ----------
+    None
+    """
 
     name = "demo"
     version = "1"
     discovery_globs: tuple[str, ...] = ("*.demo",)
 
     def supports_path(self, path: Path) -> bool:
-        """Reject all paths for this isolated registry test."""
+        """
+        Return whether the fake analyzer accepts the supplied path.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Candidate repository path.
+
+        Returns
+        -------
+        bool
+            ``True`` when the path uses the ``.demo`` suffix.
+        """
         return path.suffix == ".demo"
 
     def analyze_file(self, path: Path, root: Path) -> AnalysisResult:
-        """Return an empty deterministic analysis result."""
+        """
+        Return an empty deterministic analysis result.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Source path supplied to the analyzer.
+        root : pathlib.Path
+            Repository root supplied to the analyzer.
+
+        Returns
+        -------
+        repoindex.models.AnalysisResult
+            Empty normalized analysis result for the fake plugin.
+        """
         del path, root
         return AnalysisResult(
             source_path=Path("demo.demo"),
@@ -75,7 +136,23 @@ def _patch_entry_points(
     analyzers: list[_FakeEntryPoint],
     backends: list[_FakeEntryPoint],
 ) -> None:
-    """Patch registry entry-point discovery for one test."""
+    """
+    Patch registry entry-point discovery for one test.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture used to override registry discovery hooks.
+    analyzers : list[_FakeEntryPoint]
+        Fake analyzer entry points exposed during the test.
+    backends : list[_FakeEntryPoint]
+        Fake backend entry points exposed during the test.
+
+    Returns
+    -------
+    None
+        Registry entry-point discovery is patched in place.
+    """
 
     def fake_group_loader(group: str) -> list[_FakeEntryPoint]:
         if group == registry.ANALYZER_ENTRY_POINT_GROUP:
