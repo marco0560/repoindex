@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/marco0560/repoindex/compare/v1.0.3...v1.1.0) (2026-03-29)
+
+
+### Features
+
+* **semantic:** introduce real persisted embeddings with durable symbol identity ([cdc56b7](https://github.com/marco0560/repoindex/commit/cdc56b701dda5376ae0baeeaf57e421f8dc0bd7f)), closes [#1](https://github.com/marco0560/repoindex/issues/1)
+
 ## [1.0.3](https://github.com/marco0560/repoindex/compare/v1.0.2...v1.0.3) (2026-03-29)
 
 
