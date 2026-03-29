@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/marco0560/repoindex/compare/v1.0.0...v1.0.1) (2026-03-29)
+
+
+### Bug Fixes
+
+* **c-analyzer:** skip malformed macro pseudo-functions ([57c3cc2](https://github.com/marco0560/repoindex/commit/57c3cc20015082cb28aa864eaf2f666c1c534a2b))
+
 # [1.0.0](https://github.com/marco0560/repoindex/compare/v0.34.0...v1.0.0) (2026-03-29)
 
 
