@@ -1273,6 +1273,675 @@ def _reference_tuple(
     )
 
 
+def _insert_symbol_index_row(
+    conn: sqlite3.Connection,
+    *,
+    name: str,
+    symbol_type: str,
+    module_name: str,
+    file_id: int,
+    lineno: int,
+) -> int:
+    """
+    Insert one symbol-index row and return its integer identifier.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    name : str
+        Symbol name stored in the index.
+    symbol_type : str
+        Stable symbol kind stored in the index.
+    module_name : str
+        Module name owning the symbol.
+    file_id : int
+        Integer identifier of the owner file.
+    lineno : int
+        Source line of the indexed symbol.
+
+    Returns
+    -------
+    int
+        Inserted symbol row identifier.
+    """
+    cur = conn.execute(
+        "INSERT INTO symbol_index"
+        "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
+        (name, symbol_type, module_name, file_id, lineno),
+    )
+    assert cur.lastrowid is not None
+    return int(cur.lastrowid)
+
+
+def _append_embedding_row(
+    embedding_rows: list[tuple[str, int, str]],
+    *,
+    symbol_row_id: int,
+    module_name: str,
+    symbol_name: str,
+    symbol_type: str,
+    signature: str | None = None,
+    docstring: str | None = None,
+    extra_context: tuple[str, ...] = (),
+) -> None:
+    """
+    Append one normalized symbol embedding payload to the pending batch.
+
+    Parameters
+    ----------
+    embedding_rows : list[tuple[str, int, str]]
+        Pending embedding rows collected for the current file.
+    symbol_row_id : int
+        Inserted symbol row identifier referenced by the embedding.
+    module_name : str
+        Module name owning the symbol.
+    symbol_name : str
+        Logical symbol name used for embedding text.
+    symbol_type : str
+        Stable symbol kind used for embedding text.
+    signature : str | None, optional
+        Callable or declaration signature when available.
+    docstring : str | None, optional
+        Symbol docstring when available.
+    extra_context : tuple[str, ...], optional
+        Additional analyzer-specific context lines.
+
+    Returns
+    -------
+    None
+        The embedding row is appended in place.
+    """
+    embedding_rows.append(
+        (
+            "symbol",
+            symbol_row_id,
+            _embedding_text(
+                module_name=module_name,
+                symbol_name=symbol_name,
+                symbol_type=symbol_type,
+                signature=signature,
+                docstring=docstring,
+                extra_context=extra_context,
+            ),
+        )
+    )
+
+
+def _persist_docstring_issues(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    label: str,
+    docstring: str | None,
+    is_public: int,
+    function_id: int | None = None,
+    class_id: int | None = None,
+    module_id: int | None = None,
+    parameters: list[str] | None = None,
+    require_callable_sections: bool = False,
+    yields_value: bool = False,
+    returns_value: bool = False,
+    raises_exception: bool = False,
+) -> None:
+    """
+    Persist docstring-audit findings for one indexed artifact.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    file_id : int
+        Integer identifier of the owner file.
+    label : str
+        Stable artifact label prefixed onto each issue message.
+    docstring : str | None
+        Artifact docstring to validate.
+    is_public : int
+        Public-visibility flag passed to the validator.
+    function_id : int | None, optional
+        Function row identifier when the issues belong to a callable.
+    class_id : int | None, optional
+        Class row identifier when the issues belong to a class.
+    module_id : int | None, optional
+        Module row identifier when the issues belong to a module.
+    parameters : list[str] | None, optional
+        Callable parameters used by the validator.
+    require_callable_sections : bool, optional
+        Whether callable-specific sections must be present.
+    yields_value : bool, optional
+        Whether the callable yields values.
+    returns_value : bool, optional
+        Whether the callable returns values.
+    raises_exception : bool, optional
+        Whether the callable raises exceptions.
+
+    Returns
+    -------
+    None
+        Matching docstring issues are inserted in place.
+    """
+    for issue_type, message in validate_docstring(
+        docstring,
+        is_public=is_public,
+        parameters=parameters or [],
+        require_callable_sections=require_callable_sections,
+        yields_value=yields_value,
+        returns_value=returns_value,
+        raises_exception=raises_exception,
+    ):
+        conn.execute(
+            "INSERT INTO docstring_issues"
+            "(file_id, function_id, class_id, module_id, issue_type, message) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                file_id,
+                function_id,
+                class_id,
+                module_id,
+                issue_type,
+                f"{label}: {message}",
+            ),
+        )
+
+
+def _persist_module_artifacts(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    analysis: AnalysisResult,
+    embedding_rows: list[tuple[str, int, str]],
+) -> tuple[str, int, tuple[str, ...]]:
+    """
+    Persist module-level rows for one analyzed file.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    file_id : int
+        Integer identifier of the owner file.
+    analysis : repoindex.models.AnalysisResult
+        Normalized analyzer output for the file.
+    embedding_rows : list[tuple[str, int, str]]
+        Pending embedding rows collected for the file.
+
+    Returns
+    -------
+    tuple[str, int, tuple[str, ...]]
+        Module name, inserted module row identifier, and C-family embedding
+        context for downstream artifacts.
+    """
+    module = analysis.module
+    module_name = module.name
+    c_embedding_context = _c_embedding_context(analysis)
+    cur = conn.execute(
+        "INSERT INTO modules"
+        "(file_id, name, docstring, has_docstring) VALUES (?, ?, ?, ?)",
+        (
+            file_id,
+            module_name,
+            module.docstring,
+            module.has_docstring,
+        ),
+    )
+    assert cur.lastrowid is not None
+    module_id = int(cur.lastrowid)
+    symbol_row_id = _insert_symbol_index_row(
+        conn,
+        name=module_name,
+        symbol_type="module",
+        module_name=module_name,
+        file_id=file_id,
+        lineno=1,
+    )
+    _append_embedding_row(
+        embedding_rows,
+        symbol_row_id=symbol_row_id,
+        module_name=module_name,
+        symbol_name=module_name,
+        symbol_type="module",
+        docstring=module.docstring,
+        extra_context=c_embedding_context,
+    )
+    _persist_docstring_issues(
+        conn,
+        file_id=file_id,
+        module_id=module_id,
+        label=f"Module {module_name}",
+        docstring=module.docstring,
+        is_public=1,
+    )
+    return module_name, module_id, c_embedding_context
+
+
+def _persist_class_artifacts(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    module_id: int,
+    module_name: str,
+    analysis: AnalysisResult,
+    c_embedding_context: tuple[str, ...],
+    embedding_rows: list[tuple[str, int, str]],
+    call_rows: list[tuple[int, str, str, str, str, str, int, int]],
+    ref_rows: list[tuple[int, str, str, str, str, str, str, int, int]],
+) -> None:
+    """
+    Persist classes and methods for one analyzed file.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    file_id : int
+        Integer identifier of the owner file.
+    module_id : int
+        Inserted module row identifier.
+    module_name : str
+        Module name owning the classes.
+    analysis : repoindex.models.AnalysisResult
+        Normalized analyzer output for the file.
+    c_embedding_context : tuple[str, ...]
+        C-family embedding context reused by declarations and classes.
+    embedding_rows : list[tuple[str, int, str]]
+        Pending embedding rows collected for the file.
+    call_rows : list[tuple[int, str, str, str, str, str, int, int]]
+        Pending call rows collected for the file.
+    ref_rows : list[tuple[int, str, str, str, str, str, str, int, int]]
+        Pending callable-reference rows collected for the file.
+
+    Returns
+    -------
+    None
+        Class and method rows are inserted in place.
+    """
+    for cls in analysis.classes:
+        cur = conn.execute(
+            "INSERT INTO classes"
+            "(module_id, name, lineno, end_lineno, docstring, has_docstring) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                module_id,
+                cls.name,
+                cls.lineno,
+                cls.end_lineno,
+                cls.docstring,
+                cls.has_docstring,
+            ),
+        )
+        assert cur.lastrowid is not None
+        class_id = int(cur.lastrowid)
+        symbol_row_id = _insert_symbol_index_row(
+            conn,
+            name=cls.name,
+            symbol_type="class",
+            module_name=module_name,
+            file_id=file_id,
+            lineno=cls.lineno,
+        )
+        _append_embedding_row(
+            embedding_rows,
+            symbol_row_id=symbol_row_id,
+            module_name=module_name,
+            symbol_name=cls.name,
+            symbol_type="class",
+            docstring=cls.docstring,
+            extra_context=c_embedding_context,
+        )
+        _persist_docstring_issues(
+            conn,
+            file_id=file_id,
+            class_id=class_id,
+            label=f"Class {cls.name}",
+            docstring=cls.docstring,
+            is_public=1,
+        )
+
+        for method in cls.methods:
+            logical_name = _qualified_callable_name(method.name, cls.name)
+            python_embedding_context = _python_embedding_context(
+                analysis,
+                method,
+                class_name=cls.name,
+            )
+            cur = conn.execute(
+                "INSERT INTO functions"
+                "(module_id, class_id, name, lineno, end_lineno, signature, "
+                "docstring, has_docstring, is_method, is_public) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    module_id,
+                    class_id,
+                    method.name,
+                    method.lineno,
+                    method.end_lineno,
+                    method.signature,
+                    method.docstring,
+                    method.has_docstring,
+                    method.is_method,
+                    method.is_public,
+                ),
+            )
+            assert cur.lastrowid is not None
+            function_id = int(cur.lastrowid)
+            symbol_row_id = _insert_symbol_index_row(
+                conn,
+                name=method.name,
+                symbol_type="method",
+                module_name=module_name,
+                file_id=file_id,
+                lineno=method.lineno,
+            )
+            _append_embedding_row(
+                embedding_rows,
+                symbol_row_id=symbol_row_id,
+                module_name=module_name,
+                symbol_name=logical_name,
+                symbol_type="method",
+                signature=method.signature,
+                docstring=method.docstring,
+                extra_context=python_embedding_context or c_embedding_context,
+            )
+            _persist_docstring_issues(
+                conn,
+                file_id=file_id,
+                function_id=function_id,
+                label=f"Method {cls.name}.{method.name}",
+                docstring=method.docstring,
+                is_public=method.is_public,
+                parameters=list(method.parameters),
+                require_callable_sections=True,
+                yields_value=bool(method.yields_value),
+                returns_value=bool(method.returns_value),
+                raises_exception=bool(method.raises),
+            )
+            for call in method.calls:
+                call_rows.append(
+                    _record_tuple(file_id, module_name, logical_name, call)
+                )
+            for ref in method.callable_refs:
+                ref_rows.append(
+                    _reference_tuple(file_id, module_name, logical_name, ref)
+                )
+
+
+def _persist_function_artifacts(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    module_id: int,
+    module_name: str,
+    analysis: AnalysisResult,
+    c_embedding_context: tuple[str, ...],
+    embedding_rows: list[tuple[str, int, str]],
+    call_rows: list[tuple[int, str, str, str, str, str, int, int]],
+    ref_rows: list[tuple[int, str, str, str, str, str, str, int, int]],
+) -> None:
+    """
+    Persist top-level functions for one analyzed file.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    file_id : int
+        Integer identifier of the owner file.
+    module_id : int
+        Inserted module row identifier.
+    module_name : str
+        Module name owning the functions.
+    analysis : repoindex.models.AnalysisResult
+        Normalized analyzer output for the file.
+    c_embedding_context : tuple[str, ...]
+        C-family embedding context reused by declarations and functions.
+    embedding_rows : list[tuple[str, int, str]]
+        Pending embedding rows collected for the file.
+    call_rows : list[tuple[int, str, str, str, str, str, int, int]]
+        Pending call rows collected for the file.
+    ref_rows : list[tuple[int, str, str, str, str, str, str, int, int]]
+        Pending callable-reference rows collected for the file.
+
+    Returns
+    -------
+    None
+        Function rows are inserted in place.
+    """
+    for fn in analysis.functions:
+        python_embedding_context = _python_embedding_context(analysis, fn)
+        cur = conn.execute(
+            "INSERT INTO functions"
+            "(module_id, class_id, name, lineno, end_lineno, signature, "
+            "docstring, has_docstring, is_method, is_public) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                module_id,
+                None,
+                fn.name,
+                fn.lineno,
+                fn.end_lineno,
+                fn.signature,
+                fn.docstring,
+                fn.has_docstring,
+                fn.is_method,
+                fn.is_public,
+            ),
+        )
+        assert cur.lastrowid is not None
+        function_id = int(cur.lastrowid)
+        symbol_row_id = _insert_symbol_index_row(
+            conn,
+            name=fn.name,
+            symbol_type="function",
+            module_name=module_name,
+            file_id=file_id,
+            lineno=fn.lineno,
+        )
+        _append_embedding_row(
+            embedding_rows,
+            symbol_row_id=symbol_row_id,
+            module_name=module_name,
+            symbol_name=fn.name,
+            symbol_type="function",
+            signature=fn.signature,
+            docstring=fn.docstring,
+            extra_context=python_embedding_context or c_embedding_context,
+        )
+        _persist_docstring_issues(
+            conn,
+            file_id=file_id,
+            function_id=function_id,
+            label=f"Function {fn.name}",
+            docstring=fn.docstring,
+            is_public=fn.is_public,
+            parameters=list(fn.parameters),
+            require_callable_sections=True,
+            yields_value=bool(fn.yields_value),
+            returns_value=bool(fn.returns_value),
+            raises_exception=bool(fn.raises),
+        )
+        for call in fn.calls:
+            call_rows.append(_record_tuple(file_id, module_name, fn.name, call))
+        for ref in fn.callable_refs:
+            ref_rows.append(_reference_tuple(file_id, module_name, fn.name, ref))
+
+
+def _persist_declaration_artifacts(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    module_name: str,
+    analysis: AnalysisResult,
+    c_embedding_context: tuple[str, ...],
+    embedding_rows: list[tuple[str, int, str]],
+) -> None:
+    """
+    Persist declaration-style symbol artifacts for one analyzed file.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    file_id : int
+        Integer identifier of the owner file.
+    module_name : str
+        Module name owning the declarations.
+    analysis : repoindex.models.AnalysisResult
+        Normalized analyzer output for the file.
+    c_embedding_context : tuple[str, ...]
+        C-family embedding context reused by declaration embeddings.
+    embedding_rows : list[tuple[str, int, str]]
+        Pending embedding rows collected for the file.
+
+    Returns
+    -------
+    None
+        Declaration symbol rows are inserted in place.
+    """
+    for decl in analysis.declarations:
+        symbol_row_id = _insert_symbol_index_row(
+            conn,
+            name=decl.name,
+            symbol_type=decl.kind,
+            module_name=module_name,
+            file_id=file_id,
+            lineno=decl.lineno,
+        )
+        _append_embedding_row(
+            embedding_rows,
+            symbol_row_id=symbol_row_id,
+            module_name=module_name,
+            symbol_name=decl.name,
+            symbol_type=decl.kind,
+            signature=decl.signature,
+            docstring=decl.docstring,
+            extra_context=c_embedding_context,
+        )
+
+
+def _persist_import_artifacts(
+    conn: sqlite3.Connection,
+    *,
+    module_id: int,
+    analysis: AnalysisResult,
+) -> None:
+    """
+    Persist import rows for one analyzed file.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    module_id : int
+        Inserted module row identifier.
+    analysis : repoindex.models.AnalysisResult
+        Normalized analyzer output for the file.
+
+    Returns
+    -------
+    None
+        Import rows are inserted in place.
+    """
+    for imp in analysis.imports:
+        conn.execute(
+            "INSERT INTO imports(module_id, name, alias, kind, lineno) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                module_id,
+                imp.name,
+                imp.alias,
+                imp.kind,
+                imp.lineno,
+            ),
+        )
+
+
+def _flush_persisted_relationship_rows(
+    conn: sqlite3.Connection,
+    *,
+    call_rows: list[tuple[int, str, str, str, str, str, int, int]],
+    ref_rows: list[tuple[int, str, str, str, str, str, str, int, int]],
+) -> None:
+    """
+    Flush pending call and callable-reference rows to SQLite.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    call_rows : list[tuple[int, str, str, str, str, str, int, int]]
+        Pending normalized call rows.
+    ref_rows : list[tuple[int, str, str, str, str, str, str, int, int]]
+        Pending normalized callable-reference rows.
+
+    Returns
+    -------
+    None
+        Relationship rows are inserted in deterministic order.
+    """
+    for row in sorted(call_rows):
+        conn.execute(
+            "INSERT INTO call_records"
+            "(file_id, owner_module, owner_name, kind, base, target, "
+            "lineno, col_offset) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            row,
+        )
+
+    for ref_row in sorted(ref_rows):
+        conn.execute(
+            "INSERT INTO callable_ref_records"
+            "(file_id, owner_module, owner_name, kind, ref_kind, base, "
+            "target, lineno, col_offset) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ref_row,
+        )
+
+
+def _flush_embedding_rows(
+    conn: sqlite3.Connection,
+    *,
+    embedding_rows: list[tuple[str, int, str]],
+    backend: EmbeddingBackendSpec,
+) -> int:
+    """
+    Persist pending embedding payloads for one analyzed file.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection.
+    embedding_rows : list[tuple[str, int, str]]
+        Pending embedding payloads keyed by object type and identifier.
+    backend : EmbeddingBackendSpec
+        Active embedding backend metadata.
+
+    Returns
+    -------
+    int
+        Number of embedding rows written.
+    """
+    for object_type, object_id, text in sorted(
+        embedding_rows,
+        key=lambda item: item[:2],
+    ):
+        conn.execute(
+            "INSERT INTO embeddings"
+            "(object_type, object_id, backend, version, dim, vector) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                object_type,
+                object_id,
+                backend.name,
+                backend.version,
+                backend.dim,
+                serialize_vector(embed_text(text)),
+            ),
+        )
+
+    return len(embedding_rows)
+
+
 def _store_analysis(
     conn: sqlite3.Connection,
     file_metadata: FileMetadataSnapshot,
@@ -1318,369 +1987,57 @@ def _store_analysis(
     )
     assert cur.lastrowid is not None
     file_id = int(cur.lastrowid)
-    module = analysis.module
-    module_name = module.name
-    c_embedding_context = _c_embedding_context(analysis)
-
-    cur = conn.execute(
-        "INSERT INTO modules"
-        "(file_id, name, docstring, has_docstring) VALUES (?, ?, ?, ?)",
-        (
-            file_id,
-            module_name,
-            module.docstring,
-            module.has_docstring,
-        ),
+    module_name, module_id, c_embedding_context = _persist_module_artifacts(
+        conn,
+        file_id=file_id,
+        analysis=analysis,
+        embedding_rows=embedding_rows,
     )
-    module_id = cur.lastrowid
-
-    cur = conn.execute(
-        "INSERT INTO symbol_index"
-        "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
-        (module_name, "module", module_name, file_id, 1),
+    _persist_class_artifacts(
+        conn,
+        file_id=file_id,
+        module_id=module_id,
+        module_name=module_name,
+        analysis=analysis,
+        c_embedding_context=c_embedding_context,
+        embedding_rows=embedding_rows,
+        call_rows=call_rows,
+        ref_rows=ref_rows,
     )
-    assert cur.lastrowid is not None
-    symbol_row_id = int(cur.lastrowid)
-    embedding_rows.append(
-        (
-            "symbol",
-            symbol_row_id,
-            _embedding_text(
-                module_name=module_name,
-                symbol_name=module_name,
-                symbol_type="module",
-                docstring=module.docstring,
-                extra_context=c_embedding_context,
-            ),
-        )
+    _persist_function_artifacts(
+        conn,
+        file_id=file_id,
+        module_id=module_id,
+        module_name=module_name,
+        analysis=analysis,
+        c_embedding_context=c_embedding_context,
+        embedding_rows=embedding_rows,
+        call_rows=call_rows,
+        ref_rows=ref_rows,
     )
-
-    for issue_type, message in validate_docstring(
-        module.docstring,
-        is_public=1,
-    ):
-        conn.execute(
-            "INSERT INTO docstring_issues"
-            "(file_id, function_id, class_id, module_id, issue_type, message) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                file_id,
-                None,
-                None,
-                module_id,
-                issue_type,
-                f"Module {module_name}: {message}",
-            ),
-        )
-
-    for cls in analysis.classes:
-        cur = conn.execute(
-            "INSERT INTO classes"
-            "(module_id, name, lineno, end_lineno, docstring, has_docstring) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                module_id,
-                cls.name,
-                cls.lineno,
-                cls.end_lineno,
-                cls.docstring,
-                cls.has_docstring,
-            ),
-        )
-        class_id = cur.lastrowid
-
-        cur = conn.execute(
-            "INSERT INTO symbol_index"
-            "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
-            (
-                cls.name,
-                "class",
-                module_name,
-                file_id,
-                cls.lineno,
-            ),
-        )
-        assert cur.lastrowid is not None
-        symbol_row_id = int(cur.lastrowid)
-        embedding_rows.append(
-            (
-                "symbol",
-                symbol_row_id,
-                _embedding_text(
-                    module_name=module_name,
-                    symbol_name=cls.name,
-                    symbol_type="class",
-                    docstring=cls.docstring,
-                    extra_context=c_embedding_context,
-                ),
-            )
-        )
-
-        for issue_type, message in validate_docstring(
-            cls.docstring,
-            is_public=1,
-        ):
-            conn.execute(
-                "INSERT INTO docstring_issues"
-                "(file_id, function_id, class_id, module_id, issue_type, message) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    file_id,
-                    None,
-                    class_id,
-                    None,
-                    issue_type,
-                    f"Class {cls.name}: {message}",
-                ),
-            )
-
-        for method in cls.methods:
-            logical_name = _qualified_callable_name(
-                method.name,
-                cls.name,
-            )
-            python_embedding_context = _python_embedding_context(
-                analysis,
-                method,
-                class_name=cls.name,
-            )
-            cur = conn.execute(
-                "INSERT INTO functions"
-                "(module_id, class_id, name, lineno, end_lineno, signature, "
-                "docstring, has_docstring, is_method, is_public) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    module_id,
-                    class_id,
-                    method.name,
-                    method.lineno,
-                    method.end_lineno,
-                    method.signature,
-                    method.docstring,
-                    method.has_docstring,
-                    method.is_method,
-                    method.is_public,
-                ),
-            )
-            function_id = cur.lastrowid
-
-            cur = conn.execute(
-                "INSERT INTO symbol_index"
-                "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
-                (
-                    method.name,
-                    "method",
-                    module_name,
-                    file_id,
-                    method.lineno,
-                ),
-            )
-            assert cur.lastrowid is not None
-            symbol_row_id = int(cur.lastrowid)
-            embedding_rows.append(
-                (
-                    "symbol",
-                    symbol_row_id,
-                    _embedding_text(
-                        module_name=module_name,
-                        symbol_name=logical_name,
-                        symbol_type="method",
-                        signature=method.signature,
-                        docstring=method.docstring,
-                        extra_context=python_embedding_context or c_embedding_context,
-                    ),
-                )
-            )
-
-            for issue_type, message in validate_docstring(
-                method.docstring,
-                method.is_public,
-                parameters=list(method.parameters),
-                require_callable_sections=True,
-                yields_value=bool(method.yields_value),
-                returns_value=bool(method.returns_value),
-                raises_exception=bool(method.raises),
-            ):
-                conn.execute(
-                    "INSERT INTO docstring_issues"
-                    "(file_id, function_id, class_id, module_id, issue_type, message) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (
-                        file_id,
-                        function_id,
-                        None,
-                        None,
-                        issue_type,
-                        f"Method {cls.name}.{method.name}: {message}",
-                    ),
-                )
-
-            for call in method.calls:
-                call_rows.append(
-                    _record_tuple(file_id, module_name, logical_name, call)
-                )
-            for ref in method.callable_refs:
-                ref_rows.append(
-                    _reference_tuple(file_id, module_name, logical_name, ref)
-                )
-
-    for fn in analysis.functions:
-        python_embedding_context = _python_embedding_context(analysis, fn)
-        cur = conn.execute(
-            "INSERT INTO functions"
-            "(module_id, class_id, name, lineno, end_lineno, signature, "
-            "docstring, has_docstring, is_method, is_public) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                module_id,
-                None,
-                fn.name,
-                fn.lineno,
-                fn.end_lineno,
-                fn.signature,
-                fn.docstring,
-                fn.has_docstring,
-                fn.is_method,
-                fn.is_public,
-            ),
-        )
-        function_id = cur.lastrowid
-
-        cur = conn.execute(
-            "INSERT INTO symbol_index"
-            "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
-            (
-                fn.name,
-                "function",
-                module_name,
-                file_id,
-                fn.lineno,
-            ),
-        )
-        assert cur.lastrowid is not None
-        symbol_row_id = int(cur.lastrowid)
-        embedding_rows.append(
-            (
-                "symbol",
-                symbol_row_id,
-                _embedding_text(
-                    module_name=module_name,
-                    symbol_name=fn.name,
-                    symbol_type="function",
-                    signature=fn.signature,
-                    docstring=fn.docstring,
-                    extra_context=python_embedding_context or c_embedding_context,
-                ),
-            )
-        )
-
-        for issue_type, message in validate_docstring(
-            fn.docstring,
-            fn.is_public,
-            parameters=list(fn.parameters),
-            require_callable_sections=True,
-            yields_value=bool(fn.yields_value),
-            returns_value=bool(fn.returns_value),
-            raises_exception=bool(fn.raises),
-        ):
-            conn.execute(
-                "INSERT INTO docstring_issues"
-                "(file_id, function_id, class_id, module_id, issue_type, message) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    file_id,
-                    function_id,
-                    None,
-                    None,
-                    issue_type,
-                    f"Function {fn.name}: {message}",
-                ),
-            )
-
-        for call in fn.calls:
-            call_rows.append(_record_tuple(file_id, module_name, fn.name, call))
-        for ref in fn.callable_refs:
-            ref_rows.append(_reference_tuple(file_id, module_name, fn.name, ref))
-
-    for decl in analysis.declarations:
-        cur = conn.execute(
-            "INSERT INTO symbol_index"
-            "(name, type, module_name, file_id, lineno) VALUES (?, ?, ?, ?, ?)",
-            (
-                decl.name,
-                decl.kind,
-                module_name,
-                file_id,
-                decl.lineno,
-            ),
-        )
-        assert cur.lastrowid is not None
-        symbol_row_id = int(cur.lastrowid)
-        embedding_rows.append(
-            (
-                "symbol",
-                symbol_row_id,
-                _embedding_text(
-                    module_name=module_name,
-                    symbol_name=decl.name,
-                    symbol_type=decl.kind,
-                    signature=decl.signature,
-                    docstring=decl.docstring,
-                    extra_context=c_embedding_context,
-                ),
-            )
-        )
-
-    for imp in analysis.imports:
-        conn.execute(
-            "INSERT INTO imports(module_id, name, alias, kind, lineno) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                module_id,
-                imp.name,
-                imp.alias,
-                imp.kind,
-                imp.lineno,
-            ),
-        )
-
-    for row in sorted(call_rows):
-        conn.execute(
-            "INSERT INTO call_records"
-            "(file_id, owner_module, owner_name, kind, base, target, "
-            "lineno, col_offset) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            row,
-        )
-
-    for ref_row in sorted(ref_rows):
-        conn.execute(
-            "INSERT INTO callable_ref_records"
-            "(file_id, owner_module, owner_name, kind, ref_kind, base, "
-            "target, lineno, col_offset) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ref_row,
-        )
-
-    for object_type, object_id, text in sorted(
-        embedding_rows,
-        key=lambda item: item[:2],
-    ):
-        conn.execute(
-            "INSERT INTO embeddings"
-            "(object_type, object_id, backend, version, dim, vector) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                object_type,
-                object_id,
-                backend.name,
-                backend.version,
-                backend.dim,
-                serialize_vector(embed_text(text)),
-            ),
-        )
-
-    return len(embedding_rows)
+    _persist_declaration_artifacts(
+        conn,
+        file_id=file_id,
+        module_name=module_name,
+        analysis=analysis,
+        c_embedding_context=c_embedding_context,
+        embedding_rows=embedding_rows,
+    )
+    _persist_import_artifacts(
+        conn,
+        module_id=module_id,
+        analysis=analysis,
+    )
+    _flush_persisted_relationship_rows(
+        conn,
+        call_rows=call_rows,
+        ref_rows=ref_rows,
+    )
+    return _flush_embedding_rows(
+        conn,
+        embedding_rows=embedding_rows,
+        backend=backend,
+    )
 
 
 def _snapshot_from_metadata(meta: dict[str, object]) -> FileMetadataSnapshot:
