@@ -255,6 +255,64 @@ def _extract_parameter_names(
     return tuple(parameters)
 
 
+def _find_parameter_list(node: Node | None) -> Node | None:
+    """
+    Find the parameter-list node nested inside one declarator tree.
+
+    Parameters
+    ----------
+    node : tree_sitter.Node | None
+        Declarator subtree that may own a function declarator.
+
+    Returns
+    -------
+    tree_sitter.Node | None
+        Nested ``parameter_list`` node when present.
+    """
+    if node is None:
+        return None
+    if node.type == "parameter_list":
+        return node
+
+    parameter_list = node.child_by_field_name("parameters")
+    if parameter_list is not None:
+        return parameter_list
+
+    declarator = node.child_by_field_name("declarator")
+    if declarator is not None:
+        nested = _find_parameter_list(declarator)
+        if nested is not None:
+            return nested
+
+    for child in node.named_children:
+        nested = _find_parameter_list(child)
+        if nested is not None:
+            return nested
+    return None
+
+
+def _is_supported_function_definition(node: Node) -> bool:
+    """
+    Decide whether one parsed function-definition node is semantically usable.
+
+    Parameters
+    ----------
+    node : tree_sitter.Node
+        Candidate top-level ``function_definition`` node.
+
+    Returns
+    -------
+    bool
+        ``True`` when the node exposes a callable declarator with parameters
+        and contains no top-level parse error markers.
+    """
+    if any(child.type == "ERROR" for child in node.named_children):
+        return False
+
+    declarator = node.child_by_field_name("declarator")
+    return _find_parameter_list(declarator) is not None
+
+
 def _call_site_from_expression(node: Node, source: bytes) -> CallSite | None:
     """
     Convert one tree-sitter call expression into a normalized call record.
@@ -377,6 +435,8 @@ def _extract_functions(root: Node, source: bytes) -> tuple[FunctionArtifact, ...
     for child in root.children:
         if child.type != "function_definition":
             continue
+        if not _is_supported_function_definition(child):
+            continue
 
         declarator = child.child_by_field_name("declarator")
         body = child.child_by_field_name("body")
@@ -387,7 +447,7 @@ def _extract_functions(root: Node, source: bytes) -> tuple[FunctionArtifact, ...
         if name is None:
             continue
 
-        parameter_list = declarator.child_by_field_name("parameters")
+        parameter_list = _find_parameter_list(declarator)
         parameters = _extract_parameter_names(parameter_list, source)
         signature_end = body.start_byte if body is not None else declarator.end_byte
         signature = source[child.start_byte : signature_end].decode("utf-8").strip()

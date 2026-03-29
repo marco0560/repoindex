@@ -739,6 +739,49 @@ def test_c_analyzer_extracts_calls_returns_and_module_comment(tmp_path: Path) ->
     )
 
 
+def test_c_analyzer_ignores_macro_blocks_misparsed_as_functions(
+    tmp_path: Path,
+) -> None:
+    """
+    Skip malformed macro blocks that tree-sitter exposes as functions.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts only real function definitions are normalized.
+    """
+    source = tmp_path / "native" / "macro_noise.c"
+    source.parent.mkdir()
+    source.write_text(
+        "#define CTL_PROTO(x) x\n"
+        "#define MUTEX_STATS_CTL_PROTO_GEN(n) \\\n"
+        "CTL_PROTO(stats_##n##_num_ops) \\\n"
+        "CTL_PROTO(stats_##n##_num_wait)\n"
+        "\n"
+        "typedef int ctl_named_node_t;\n"
+        "#define OP(mtx) MUTEX_STATS_CTL_PROTO_GEN(mutexes_##mtx)\n"
+        "static const ctl_named_node_t stats_node[] = {\n"
+        "    OP(background_thread),\n"
+        "};\n"
+        "#undef OP\n"
+        "\n"
+        "int real(void) {\n"
+        "    return 1;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = CAnalyzer().analyze_file(source, tmp_path)
+
+    assert tuple(function.name for function in result.functions) == ("real",)
+    assert result.functions[0].signature == "int real(void)"
+
+
 def test_c_import_kinds_persist_through_sqlite_backend(tmp_path: Path) -> None:
     """
     Persist C include-kind metadata through the current SQLite backend.
