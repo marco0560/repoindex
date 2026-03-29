@@ -1,3 +1,15 @@
+# [1.0.0](https://github.com/marco0560/repoindex/compare/v0.34.0...v1.0.0) (2026-03-29)
+
+
+### Features
+
+* **release:** promote stable major versioning ([c64aac1](https://github.com/marco0560/repoindex/commit/c64aac139970a1ef725413940f91b207ba3e6ce7))
+
+
+### BREAKING CHANGES
+
+* **release:** semantic-release now promotes breaking changes on the pre-1.0 line to major releases, so the next breaking publish from main enters the 1.x series instead of remaining on 0.x.
+
 # [0.34.0](https://github.com/marco0560/repoindex/compare/v0.33.1...v0.34.0) (2026-03-29)
 
 
