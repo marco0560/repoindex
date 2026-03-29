@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/marco0560/repoindex/compare/v1.0.1...v1.0.2) (2026-03-29)
+
+
+### Bug Fixes
+
+* **indexer:** keep indexing through parser warnings and failures ([8b6a021](https://github.com/marco0560/repoindex/commit/8b6a0211bd1c7b20a270c7eb50bf612016721d7f)), closes [#3](https://github.com/marco0560/repoindex/issues/3)
+
 ## [1.0.1](https://github.com/marco0560/repoindex/compare/v1.0.0...v1.0.1) (2026-03-29)
 
 
