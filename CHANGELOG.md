@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/marco0560/repoindex/compare/v1.0.2...v1.0.3) (2026-03-29)
+
+
+### Bug Fixes
+
+* **mypy:** tolerate optional tree-sitter imports ([42e94a1](https://github.com/marco0560/repoindex/commit/42e94a1dd77e33e0138f7424e5d6350802b03340))
+
 ## [1.0.2](https://github.com/marco0560/repoindex/compare/v1.0.1...v1.0.2) (2026-03-29)
 
 
