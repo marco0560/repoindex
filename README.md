@@ -1,6 +1,8 @@
 # repoindex
 
+[![CI](https://github.com/marco0560/repoindex/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/marco0560/repoindex/actions/workflows/ci.yml)
 [![Docs](https://github.com/marco0560/repoindex/actions/workflows/docs.yml/badge.svg?branch=main)](https://marco0560.github.io/repoindex/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 `repoindex` is a repository-local indexing and context retrieval tool for
 agent-assisted development.
