@@ -111,10 +111,10 @@ def acquire_index_lock(root: Path) -> Iterator[None]:
     root : pathlib.Path
         Repository root whose local index should be locked.
 
-    Returns
-    -------
-    collections.abc.Iterator[None]
-        Context manager yielding while the exclusive lock is held.
+    Yields
+    ------
+    None
+        Control while the exclusive lock is held.
 
     Raises
     ------

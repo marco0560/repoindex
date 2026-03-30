@@ -121,7 +121,7 @@ def _returns_value(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """
     return any(
         isinstance(child, ast.Return) and child.value is not None
-        for child in ast.walk(node)
+        for child in _walk_local_function_body(node)
     )
 
 
@@ -140,7 +140,8 @@ def _yields_value(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         ``True`` when the function contains ``yield`` or ``yield from``.
     """
     return any(
-        isinstance(child, (ast.Yield, ast.YieldFrom)) for child in ast.walk(node)
+        isinstance(child, (ast.Yield, ast.YieldFrom))
+        for child in _walk_local_function_body(node)
     )
 
 
@@ -158,7 +159,46 @@ def _raises_exception(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     bool
         ``True`` when the function contains an explicit ``raise`` statement.
     """
-    return any(isinstance(child, ast.Raise) for child in ast.walk(node))
+    return any(
+        isinstance(child, ast.Raise) for child in _walk_local_function_body(node)
+    )
+
+
+def _walk_local_function_body(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.AST]:
+    """
+    Collect AST nodes belonging to the callable's own execution body.
+
+    Parameters
+    ----------
+    node : ast.FunctionDef | ast.AsyncFunctionDef
+        Function-like AST node to inspect.
+
+    Returns
+    -------
+    list[ast.AST]
+        Descendant nodes excluding nested function, lambda, and class scopes.
+    """
+    local_nodes: list[ast.AST] = []
+
+    def visit(current: ast.AST) -> None:
+        for child in ast.iter_child_nodes(current):
+            if isinstance(
+                child,
+                (
+                    ast.FunctionDef,
+                    ast.AsyncFunctionDef,
+                    ast.Lambda,
+                    ast.ClassDef,
+                ),
+            ):
+                continue
+            local_nodes.append(child)
+            visit(child)
+
+    visit(node)
+    return local_nodes
 
 
 def _has_asserts(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:

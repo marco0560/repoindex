@@ -322,6 +322,54 @@ def test_analysis_result_from_parsed_normalizes_python_artifacts(
     )
 
 
+def test_parse_file_excludes_nested_helper_control_flow_from_outer_metadata(
+    tmp_path: Path,
+) -> None:
+    """
+    Keep nested helper control flow out of outer callable metadata.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts nested helper ``return``, ``yield``, and ``raise``
+        statements do not affect the outer function flags.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    module.parent.mkdir()
+    module.write_text(
+        "import contextlib\n"
+        "\n"
+        "def outer() -> None:\n"
+        '    """Exercise nested helpers."""\n'
+        "    @contextlib.contextmanager\n"
+        "    def locked():\n"
+        "        yield\n"
+        "\n"
+        "    def compute() -> int:\n"
+        "        return 1\n"
+        "\n"
+        "    def fail() -> None:\n"
+        '        raise RuntimeError("boom")\n'
+        "\n"
+        "    with locked():\n"
+        "        pass\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_file(module, tmp_path)
+    function = parsed["functions"][0]
+
+    assert function["name"] == "outer"
+    assert function["returns_value"] == 0
+    assert function["yields_value"] == 0
+    assert function["raises"] == 0
+
+
 def test_language_analyzer_and_index_backend_protocols_are_runtime_checkable() -> None:
     """
     Ensure the Phase 3 protocol types accept conforming implementations.
