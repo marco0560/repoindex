@@ -1,4 +1,19 @@
-"""AST parsing helpers for extracting repository symbols."""
+"""AST parsing helpers for extracting repository symbols.
+
+Responsibilities
+----------------
+- Normalize AST nodes into element-level metadata such as signatures, parameter names, and visibility.
+- Detect returns, yields, and generator semantics needed by docstring validation.
+- Supply portable utilities consumed by normalization and analyzer implementations.
+
+Design principles
+-----------------
+Helpers focus on deterministic AST inspection without building heavy classes or carrying storage state.
+
+Architectural role
+------------------
+This module belongs to the **scanner/indexing layer** and keeps AST-specific heuristics isolated from downstream stages.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,19 @@
-"""Backend-neutral analysis models introduced for ADR-004."""
+"""Backend-neutral analysis models introduced for ADR-004.
+
+Responsibilities
+----------------
+- Define data classes such as `FileMetadataSnapshot`, `ImportArtifact`, `DeclarationArtifact`, `CallSite`, and `FunctionArtifact`.
+- Publish literal types and immutable structures used by normalization, storage, and retrieval.
+- Serve as the canonical representation for normalized artifacts shared across layers.
+
+Design principles
+-----------------
+Models are backend-neutral, immutable, and descriptive so analyzers and storage can share consistent type information.
+
+Architectural role
+------------------
+This module belongs to the **modeling layer** that decouples normalized artifact structures from persistence details.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,18 @@
-"""Tests for the commit-message validator script."""
+"""Tests for the commit-message validator script.
+
+Responsibilities
+----------------
+- Load `scripts/check_commit_messages.py` as a module and emulate commit headers with various scopes.
+- Assert invalid scope formats are rejected and release-safe scopes are accepted.
+
+Design principles
+-----------------
+Validation tests keep the commit guardrails deterministic and focused on scope syntax rules.
+
+Architectural role
+------------------
+This module belongs to the **tooling verification layer** and protects commit validator behavior.
+"""
 
 from __future__ import annotations
 

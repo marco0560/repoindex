@@ -1,4 +1,19 @@
-"""Tests for third-party plugin discovery and reporting."""
+"""Tests for third-party plugin discovery and reporting.
+
+Responsibilities
+----------------
+- Simulate entry-point loading, plugin registration, and analyzer/backend discovery flows.
+- Assert that the registry reports active analyzers and backends with deterministic metadata.
+- Verify CLI plugin listing and failure handling for loader exceptions.
+
+Design principles
+-----------------
+Tests use fake distribution and entry-point fixtures so plugin discovery remains deterministic and isolated.
+
+Architectural role
+------------------
+This module belongs to the **registry verification layer** and safeguards plugin discovery/reporting expectations.
+"""
 
 from __future__ import annotations
 

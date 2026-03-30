@@ -1,4 +1,18 @@
-"""Deterministic tests for the local embedding backend and retrieval channel."""
+"""Deterministic tests for the local embedding backend and retrieval channel.
+
+Responsibilities
+----------------
+- Validate embedding determinism, storage of symbol embeddings, and candidate ranking behaviors.
+- Use small fixtures to cover backend metadata, vector shape, and retrieval overlap.
+
+Design principles
+-----------------
+Tests isolate embedding behaviors to avoid interference with other indexing heuristics.
+
+Architectural role
+------------------
+This module belongs to the **semantic retrieval verification layer** that guards embedding stability.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,18 @@
-"""Regression tests for retrieval merge stability."""
+"""Regression tests for retrieval merge stability.
+
+Responsibilities
+----------------
+- Assert channel deduplication, tie-breaking, and cross-family bonuses in merge helpers.
+- Validate final merged ordering, provenance metrics, and role/explain data.
+
+Design principles
+-----------------
+Tests keep merge coverage specific to fix retrieval ordering so merged outputs stay deterministic.
+
+Architectural role
+------------------
+This module belongs to the **retrieval verification layer** that ensures stable merged outputs for prompts and CLI consumers.
+"""
 
 from __future__ import annotations
 

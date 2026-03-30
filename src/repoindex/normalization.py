@@ -1,4 +1,19 @@
-"""Normalization helpers for converting parser output into ADR-004 models."""
+"""Normalization helpers for converting parser output into ADR-004 models.
+
+Responsibilities
+----------------
+- Transform parsed AST metadata into `AnalysisResult`, `ModuleArtifact`, `FunctionArtifact`, and `CallSite` records.
+- Apply deterministic rules for docstring detection, return/yield inference, and signature normalization.
+- Provide utilities for normalized parameter names and stable identity generation.
+
+Design principles
+-----------------
+Normalization stays isolated from scanners, simply translating parser output into storage-friendly models without side effects.
+
+Architectural role
+------------------
+This module belongs to the **normalization layer** that bridges AST parsing and persistence.
+"""
 
 from __future__ import annotations
 

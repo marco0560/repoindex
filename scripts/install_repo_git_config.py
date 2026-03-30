@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
-"""Install deterministic repo-local Git configuration."""
+"""Install deterministic repo-local Git configuration.
+
+Responsibilities
+----------------
+- Define stable Git config entries such as hooks paths, commit template, and helpful aliases.
+- Apply all entries via `git config --local` to the repository.
+- Mirror repo tooling commands through aliases for bootstrap, context, clean-repo, and release helpers.
+
+Design principles
+-----------------
+Configuration is explicit, deterministic, and avoids personal or environment-specific overrides.
+
+Architectural role
+------------------
+This script belongs to the **tooling layer** ensuring consistent Git behavior for contributors.
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
-"""Create the local development environment for this repository."""
+"""Bootstrap the repository-local development environment.
+
+Responsibilities
+----------------
+- Create the `.venv` virtual environment and install editable application plus dev/docs/first-party dependencies.
+- Provision deterministic commands like the local embedding model and repo-local Git configuration.
+- Optionally run validation steps such as pre-commit hooks and tooling checks.
+
+Design principles
+-----------------
+Bootstrap steps are explicit, deterministic, and confined to repository-owned state without touching personal configuration.
+
+Architectural role
+------------------
+This module belongs to the **developer tooling layer** and provides a portable, reproducible environment setup entrypoint for contributors.
+"""
 
 from __future__ import annotations
 

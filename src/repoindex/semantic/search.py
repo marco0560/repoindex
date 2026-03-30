@@ -1,4 +1,19 @@
-"""Deterministic search helpers for stored semantic embeddings."""
+"""Deterministic search helpers for stored semantic embeddings.
+
+Responsibilities
+----------------
+- Generate ranked embedding candidates for user queries using the active backend.
+- Support candidate filtering by score, limit, and minimum threshold.
+- Integrate embedding helper data into retrieval plans and CLI context output.
+
+Design principles
+-----------------
+Search helpers operate deterministically, rely on stored embedding metadata, and emit consistent result ordering.
+
+Architectural role
+------------------
+This module belongs to the **semantic retrieval layer** that supplies embedding candidates to the context builder.
+"""
 
 from __future__ import annotations
 

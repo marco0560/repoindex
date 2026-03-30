@@ -1,4 +1,19 @@
-"""Deterministic query-intent classification for retrieval routing."""
+"""Deterministic query-intent classification for retrieval routing.
+
+Responsibilities
+----------------
+- Provide structured models (`QueryIntent`, `RetrievalPlan`) capturing query intent, channel choices, and enrichment flags.
+- Classify raw queries into intent families such as behavior, test, configuration, API surface, and architecture.
+- Expose helper functions that inform retrieval plans used by the context builder.
+
+Design principles
+-----------------
+Classification logic is deterministic, repository-agnostic, and relies only on textual cues to avoid implicit domain assumptions.
+
+Architectural role
+------------------
+This module belongs to the **query planning layer** that routes retrieval work before context assembly.
+"""
 
 from __future__ import annotations
 

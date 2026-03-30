@@ -1,4 +1,19 @@
-"""Deterministic tests for incremental indexing behavior."""
+"""Deterministic tests for incremental indexing behavior.
+
+Responsibilities
+----------------
+- Exercise repository rebuild logic, metadata serialization, and analyzer/backend version handling for incremental runs.
+- Verify file reuse, staleness detection, and coverage auditing steps as source trees or analyzers change.
+- Confirm embedding backend expectations and CLI metadata reporting remain stable across repeated indexes.
+
+Design principles
+-----------------
+Tests stay deterministic by using explicit metadata hooks, temporary roots, and stub analyzers/backends for predictable behavior.
+
+Architectural role
+------------------
+This module belongs to the **indexing verification layer** that guards incremental-run guarantees for repoindex.
+"""
 
 from __future__ import annotations
 

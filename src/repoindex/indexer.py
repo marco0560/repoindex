@@ -1,4 +1,19 @@
-"""Index repository symbols and docstring diagnostics into SQLite."""
+"""Index repository symbols and docstring diagnostics into SQLite.
+
+Responsibilities
+----------------
+- Coordinate file scanning, analyzer invocation, and backend persistence for each repository root.
+- Collect docstring diagnostics, coverage reports, and embedding payloads while respecting analyzer inventory.
+- Emit structured index reports consumed by CLI commands and regression tests.
+
+Design principles
+-----------------
+Indexing maintains determinism by locking the repository, reusing analyzers/backends, and hashing files to avoid ephemeral rearrangements.
+
+Architectural role
+------------------
+This module belongs to the **indexing layer** and glues together analyzers, storage, docstring validation, and embedding persistence.
+"""
 
 from __future__ import annotations
 

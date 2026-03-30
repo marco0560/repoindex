@@ -1,4 +1,19 @@
-"""Regression tests for context rendering quality."""
+"""Regression tests for context rendering quality.
+
+Responsibilities
+----------------
+- Assert snippet extraction, docstring cleanup, and enriched block layout remain consistent.
+- Verify file-role classification, scoring rules, and fallback symbols for context_for.
+- Cover scoring adjustments that influence prompt rendering.
+
+Design principles
+-----------------
+Tests use deterministic fixtures and explicit expectations so prompt rendering regressions are easy to interpret.
+
+Architectural role
+------------------
+This module belongs to the **context rendering verification layer** that keeps textual output precise for agents, QA, and CLI consumers.
+"""
 
 from __future__ import annotations
 

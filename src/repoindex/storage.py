@@ -1,4 +1,19 @@
-"""Persistent storage helpers for the repoindex SQLite database."""
+"""Persistent storage helpers for the repoindex SQLite database.
+
+Responsibilities
+----------------
+- Manage metadata files, advisory locks, and schema application for the local index.
+- Initialize, migrate, and query the SQLite database using the centralized DDL definitions.
+- Provide helpers for atomic metadata writes, lock acquisition, and coverage diagnostics.
+
+Design principles
+-----------------
+Storage helpers keep persistence deterministic, leverage Git-owned directories, and use atomic operations when mutating files.
+
+Architectural role
+------------------
+This module belongs to the **storage layer** that bridges the SQLite database with indexer, analyzer, and query components.
+"""
 
 from __future__ import annotations
 

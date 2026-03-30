@@ -1,4 +1,19 @@
-"""Python language analyzer for ADR-004."""
+"""Python language analyzer for ADR-004.
+
+Responsibilities
+----------------
+- Declare analyzer metadata such as name, version, and discovery globs.
+- Parse Python files via `repoindex.parser_ast` and normalize them into `AnalysisResult` objects.
+- Expose interface methods used for analyzer selection and path support by the indexer.
+
+Design principles
+-----------------
+The analyzer isolates language-specific parsing from storage concerns while staying deterministic.
+
+Architectural role
+------------------
+This module belongs to the **language analyzer layer** of ADR-004 and provides the Python analysis implementation.
+"""
 
 from __future__ import annotations
 

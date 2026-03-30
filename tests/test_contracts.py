@@ -1,4 +1,19 @@
-"""Tests for ADR-004 Phase 3 contract and normalization models."""
+"""Tests for ADR-004 Phase 3 contract and normalization models.
+
+Responsibilities
+----------------
+- Verify analyzer and backend contracts using fake implementations that hook into the existing registry.
+- Ensure normalization from parser output produces the expected AnalysisResult artifacts and deterministic module data.
+- Validate registry discovery, analyzer selection, and backend initialization invariants.
+
+Design principles
+-----------------
+Tests rely on stub analyzers/backends and explicit fixtures so contract violations surface as deterministic failures.
+
+Architectural role
+------------------
+This module belongs to the **contract verification layer** and enforces the ADR-004 Phase 3 language analyzer and backend APIs.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,18 @@
-"""Schema contract tests for JSON context rendering."""
+"""Schema contract tests for JSON context rendering.
+
+Responsibilities
+----------------
+- Load the stored JSON schema and compare `context_for` output in both populated and no-match scenarios.
+- Assert schema properties such as planner metadata, merge diagnostics, and diversity/explain payloads.
+
+Design principles
+-----------------
+Contract tests keep the schema usage deterministic so renderer changes must intentionally update the schema.
+
+Architectural role
+------------------
+This module belongs to the **contract verification layer** supporting context rendering semantics.
+"""
 
 from __future__ import annotations
 

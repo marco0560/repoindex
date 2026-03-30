@@ -1,4 +1,18 @@
-"""Tests for NumPy docstring validation helpers."""
+"""Tests for NumPy docstring validation helpers.
+
+Responsibilities
+----------------
+- Confirm required sections adjust based on callable metadata (returns vs yields vs raises).
+- Ensure unexpected sections are flagged for generators or regular functions.
+
+Design principles
+-----------------
+Tests focus on deterministic docstring validation behavior without nondeterministic fixtures.
+
+Architectural role
+------------------
+This module belongs to the **docstring verification layer** that keeps docstring hygiene consistent for analyzers.
+"""
 
 from __future__ import annotations
 

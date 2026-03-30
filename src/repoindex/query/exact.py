@@ -1,4 +1,19 @@
-"""Exact lookup helpers backed by the active repoindex index backend."""
+"""Exact lookup helpers backed by the active repoindex index backend.
+
+Responsibilities
+----------------
+- Provide APIs to find symbols, call edges, callable references, includes, docstring issues, and embedding inventory.
+- Support prefix filtering, limit enforcement, and deterministic ordering for exact queries.
+- Normalize query parameters and translate them into backend calls used by CLI and context rendering.
+
+Design principles
+-----------------
+Helpers delegate to the active backend while keeping filtering and ordering deterministic.
+
+Architectural role
+------------------
+This module belongs to the **exact query layer** used by CLI and context building when retrieving precise symbols and relations.
+"""
 
 from __future__ import annotations
 

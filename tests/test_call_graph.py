@@ -1,4 +1,19 @@
-"""Deterministic tests for static call-graph indexing and inspection."""
+"""Deterministic tests for static call-graph indexing and inspection.
+
+Responsibilities
+----------------
+- Build small multi-module fixtures that exercise imports, callable references, and example call sites.
+- Index the fixtures, query call edges, and assert deterministic ordering plus deduplication.
+- Validate helper discovery features such as imported-call resolution and include edges.
+
+Design principles
+-----------------
+Fixtures stay small, deterministic, and fully described so call-graph regressions point to indexing logic.
+
+Architectural role
+------------------
+This module belongs to the **verification layer** and protects call-graph expectations used by query rendering.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,19 @@
-"""Filesystem and Git-backed file discovery helpers for indexing."""
+"""Filesystem and Git-backed file discovery helpers for indexing.
+
+Responsibilities
+----------------
+- Walk repository directories, apply gitignore patterns, and filter canonical source directories.
+- Build cross-language discovery globs and evaluate analyzer predicates.
+- Provide predicate helpers for ignore matching and coverage instrumentation.
+
+Design principles
+-----------------
+Scanner logic relies solely on git and filesystem state to stay deterministic and consistent with cleanup rules.
+
+Architectural role
+------------------
+This module belongs to the **scanner layer** that feeds eligible files into the indexer and analyzers.
+"""
 
 from __future__ import annotations
 

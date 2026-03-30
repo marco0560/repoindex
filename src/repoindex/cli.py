@@ -1,4 +1,19 @@
-"""Command-line entry points for repoindex."""
+"""Command-line entry points for repoindex.
+
+Responsibilities
+----------------
+- Parse CLI arguments, build the top-level parser, and dispatch subcommands.
+- Coordinate analyzer inventory reporting, index rebuild logic, and metadata inspection.
+- Expose commands such as `context-for`, `index`, `audit`, and docstring diagnostics.
+
+Design principles
+-----------------
+CLI code keeps argument parsing deterministic, surfaces helpful errors, and delegates work to lower-level indexers and query helpers.
+
+Architectural role
+------------------
+This module belongs to the **CLI layer** that wraps storage, indexing, and query primitives for end users.
+"""
 
 from __future__ import annotations
 

@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""
-Clean repository artifacts.
+"""Clean repository artifacts using git-ignored metadata.
 
-Removes git-ignored files from the working tree in a deterministic
-and safe way.
+Responsibilities
+----------------
+- Enumerate git-ignored paths while respecting protected directories.
+- Remove ignored files or report planned actions when dry-run mode is enabled.
+- Keep protected paths intact and fail fast when Git status cannot be read.
 
-This implementation is adapted from Fontshow and relies on Git as
-the source of truth for what is removable.
+Design principles
+-----------------
+Cleaning relies on Git as the single source of truth and avoids heuristic deletions by only touching ignored files.
+
+Architectural role
+------------------
+This module belongs to the **cleanup tooling layer** that keeps working trees tidy without risking tracked files.
 """
 
 from __future__ import annotations

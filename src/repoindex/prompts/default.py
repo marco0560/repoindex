@@ -1,4 +1,19 @@
-"""Prompt rendering helpers for deterministic agent-facing output."""
+"""Prompt rendering helpers for deterministic agent-facing output.
+
+Responsibilities
+----------------
+- Build structured prompts containing context sections, docstring diagnostics, and retrieval summaries.
+- Provide normalized helper functions for snippet formatting, channel weightings, and doc issue rendering.
+- Emit consistent prompt text shared by CLI `context-for` and automation workflows.
+
+Design principles
+-----------------
+Prompt helpers remain deterministic, dataless, and human-readable so agents can rely on stable formatting.
+
+Architectural role
+------------------
+This module belongs to the **prompt generation layer** consumed by CLI and automation drivers.
+"""
 
 from __future__ import annotations
 

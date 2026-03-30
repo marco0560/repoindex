@@ -1,4 +1,19 @@
-"""Docstring validation helpers used during indexing."""
+"""Docstring validation helpers used during indexing.
+
+Responsibilities
+----------------
+- Inspect NumPy-style sections, detect malformed headings, and enumerate parameter documentation.
+- Decide structured docstring requirements based on callable metadata such as returns, yields, and raises.
+- Validate docstrings and emit diagnostics consumed by the indexer and CLI.
+
+Design principles
+-----------------
+Validation helpers focus on deterministic parsing of cleaned docstrings and avoid heuristics that depend on runtime state.
+
+Architectural role
+------------------
+This module belongs to the **docstring infrastructure layer** that enforces NumPy-style rules across analyzer outputs.
+"""
 
 from __future__ import annotations
 

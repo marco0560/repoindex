@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Provision the local sentence-transformers model used by repoindex."""
+"""Provision the local sentence-transformers model used by repoindex.
+
+Responsibilities
+----------------
+- Download or verify the configured local embedding model artifact through the embeddings backend.
+- Emit clear status messages and non-zero exit codes when provisioning fails.
+
+Design principles
+-----------------
+Provisioning is idempotent, quiet by default, and fails fast when the backend cannot prepare the model.
+
+Architectural role
+------------------
+This script belongs to the **tooling layer** that keeps local embeddings ready for indexing and retrieval.
+"""
 
 from __future__ import annotations
 

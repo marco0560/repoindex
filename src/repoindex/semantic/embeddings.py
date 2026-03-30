@@ -1,4 +1,19 @@
-"""Deterministic local embedding backend for repoindex."""
+"""Deterministic local embedding backend for repoindex.
+
+Responsibilities
+----------------
+- Define backend metadata such as model name, version, and vector dimension.
+- Load and provision sentence-transformers models, applying offline and dependency checks.
+- Normalize embedding vectors, serialize/deserialize them, and register provisioning helpers.
+
+Design principles
+-----------------
+Backend logic keeps provisioning deterministic, caches models locally, and surfaces actionable errors with remediation hints.
+
+Architectural role
+------------------
+This module belongs to the **semantic backend layer** that powers embedding storage and retrieval across repoindex.
+"""
 
 from __future__ import annotations
 

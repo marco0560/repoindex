@@ -1,4 +1,18 @@
-"""ADR-004 Phase 2 characterization tests for stable query ordering."""
+"""ADR-004 Phase 2 characterization tests for stable query ordering.
+
+Responsibilities
+----------------
+- Create fixtures with duplicate symbols to validate deterministic ordering of index decisions and query picks.
+- Confirm retrieval plans honor file-role priorities and merge order across contexts.
+
+Design principles
+-----------------
+Fixtures remain minimal but deterministic so query ordering regressions surface immediately.
+
+Architectural role
+------------------
+This module belongs to the **verification layer** that protects characterization requirements from ADR-004 Phase 2.
+"""
 
 from __future__ import annotations
 

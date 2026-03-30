@@ -1,4 +1,19 @@
-"""C language analyzer backed by tree-sitter."""
+"""C language analyzer backed by tree-sitter.
+
+Responsibilities
+----------------
+- Initialize the tree-sitter C parser and derive module and function stable IDs.
+- Walk parse nodes to extract imports, declarations, call sites, and normalized artifacts.
+- Translate the collected metadata into `AnalysisResult` objects for persistence.
+
+Design principles
+-----------------
+The analyzer confines tree-sitter interaction to this module so language-specific logic stays isolated and deterministic.
+
+Architectural role
+------------------
+This module belongs to the **language analyzer layer** and implements the C-family analysis path for ADR-004.
+"""
 
 from __future__ import annotations
 

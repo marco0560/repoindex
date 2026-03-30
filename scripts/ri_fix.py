@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
-"""
-repoindex → Codex bridge (ri-fix)
+"""Repoindex → Codex bridge (ri-fix) that turns natural-language queries into deterministic prompts.
 
-Generate a deterministic prompt for code modification tasks
-based on repoindex context.
+Responsibilities
+----------------
+- Parse command-line arguments, forward the user query to `repoindex context-for --prompt`, and print the resulting prompt.
+- Display usage guidance when invoked without arguments or with help flags.
+- Surface errors and exit codes from repoindex so automation can react predictably.
+
+Design principles
+-----------------
+The wrapper keeps invocation deterministic, exposes only plain-text prompts, and avoids embedding complex logic beyond glue.
+
+Architectural role
+------------------
+This module belongs to the **tooling layer** that connects repoindex context with Codex-style automation workflows.
 """
 
 from __future__ import annotations

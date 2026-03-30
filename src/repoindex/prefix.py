@@ -1,4 +1,18 @@
-"""Helpers for repo-root-relative prefix filtering."""
+"""Helpers for repo-root-relative prefix filtering.
+
+Responsibilities
+----------------
+- Normalize prefix strings supplied by CLI arguments or retrieval plans.
+- Build SQL clauses and predicate logic to restrict symbols to a filesystem prefix.
+
+Design principles
+-----------------
+Prefix helpers keep normalization deterministic while guarding invalid inputs through validation.
+
+Architectural role
+------------------
+This module belongs to the **query filtering layer** and enforces prefix constraints across index and query surfaces.
+"""
 
 from __future__ import annotations
 

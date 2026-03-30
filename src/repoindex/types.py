@@ -1,4 +1,19 @@
-"""Shared type aliases used across repoindex modules."""
+"""Shared type aliases used across repoindex.
+
+Responsibilities
+----------------
+- Provide stable aliases for symbols such as `SymbolRow`, `ChannelResults`, and diagnostics structures.
+- Centralize type declarations for bundles, references, and scoring metadata.
+- Keep typing consistent without introducing circular imports between modules.
+
+Design principles
+-----------------
+Aliases remain thin and descriptive so the rest of the codebase can depend on consistent typing without logic.
+
+Architectural role
+------------------
+This module belongs to the **typing infrastructure layer** that glues repoindex modules together with structured metadata.
+"""
 
 from __future__ import annotations
 

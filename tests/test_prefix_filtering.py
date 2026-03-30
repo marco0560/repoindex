@@ -1,4 +1,18 @@
-"""Tests for repo-root-relative prefix filtering across query surfaces."""
+"""Tests for repo-root-relative prefix filtering across query surfaces.
+
+Responsibilities
+----------------
+- Build multi-domain fixtures and assert prefix-aware symbol filtering across exact, semantic, and docstring channels.
+- Ensure CLI prefix filtering, normalized prefixes, and ordered results stay deterministic.
+
+Design principles
+-----------------
+Prefixes are tested with small fixtures to keep coverage deterministic and focused on filtering semantics.
+
+Architectural role
+------------------
+This module belongs to the **query verification layer** guarding prefix constraints for retrieval surfaces.
+"""
 
 from __future__ import annotations
 

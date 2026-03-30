@@ -1,4 +1,19 @@
-"""Database schema constants for the repoindex SQLite store."""
+"""Database schema constants for the repoindex SQLite store.
+
+Responsibilities
+----------------
+- Maintain `SCHEMA_VERSION` for compatibility guards and upgrades.
+- Provide canonical DDL statements for files, modules, classes, functions, imports, docstring issues, embeddings, and call edges.
+- Keep schema expectations centralized for the indexer, storage, and query layers.
+
+Design principles
+-----------------
+Schema definitions remain declarative, versioned, and stable so migration checks can run deterministically.
+
+Architectural role
+------------------
+This module belongs to the **storage infrastructure layer** and anchors table definitions for all persistence actions.
+"""
 
 from __future__ import annotations
 

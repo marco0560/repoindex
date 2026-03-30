@@ -1,4 +1,19 @@
-"""Context assembly and rendering for repoindex query results."""
+"""Context assembly and rendering for repoindex query results.
+
+Responsibilities
+----------------
+- Build retrieval plans, merge symbols, and produce prompt-friendly output that includes doc issues, snippets, and channel diagnostics.
+- Coordinate symbol enrichment, embedding summaries, include graph expansion, and diversity heuristics.
+- Render final context, explain plans, and collect docstring issues for reporting.
+
+Design principles
+-----------------
+Context assembly remains deterministic, token-aware, and capped to avoid prompt bloat while keeping evidence transparent.
+
+Architectural role
+------------------
+This module belongs to the **context rendering layer** that consolidates retrieval results into user-facing text and metadata.
+"""
 
 from __future__ import annotations
 

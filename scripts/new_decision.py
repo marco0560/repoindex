@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
-"""Create a new ADR note under docs/adr/."""
+"""Create a new ADR note under docs/adr.
+
+Responsibilities
+----------------
+- Prompt for a one-line description, slugify it deterministically, and select the next incremental ADR number.
+- Author the Markdown decision template and append an entry to the ADR index, respecting dry-run options.
+- Exit with descriptive errors when the ADR directory or index file is missing.
+
+Design principles
+-----------------
+The helper avoids heuristics, keeps the ADR template minimal, and relies on deterministic slugification plus explicit failure modes.
+
+Architectural role
+------------------
+This script belongs to the **decision tooling layer** and keeps repository-level architecture decisions documented consistently.
+"""
 
 from __future__ import annotations
 

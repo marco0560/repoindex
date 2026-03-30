@@ -1,4 +1,19 @@
-"""Backend and analyzer registries for ADR-004 Phase 8."""
+"""Backend and analyzer registries for ADR-004 Phase 8.
+
+Responsibilities
+----------------
+- Discover and register built-in or entry-point analyzers and backends, including dependency metadata.
+- Provide deterministic plugin registration reporting for CLI diagnostics and runtime introspection.
+- Offer helpers to instantiate plugins, check requirements, and enumerate active analyzers/backends.
+
+Design principles
+-----------------
+Registry logic keeps discovery predictable, reports duplicates or skips, and isolates optional extras per analyzer.
+
+Architectural role
+------------------
+This module belongs to the **plugin registration layer** powering ADR-004 analyzer and backend extensibility.
+"""
 
 from __future__ import annotations
 

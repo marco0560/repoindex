@@ -1,4 +1,19 @@
-"""Smoke tests for indexing and exact-query behavior."""
+"""Smoke tests for repoindex CLI and retrieval workflows.
+
+Responsibilities
+----------------
+- Run the `repoindex` CLI to ensure indexing, context, and docstring diagnostics succeed end-to-end.
+- Validate deterministic outputs from exact, semantic, and embedding channels using a minimal fixture repository.
+- Confirm regression coverage for default CLI behaviors such as `context-for` and docstring reporting.
+
+Design principles
+-----------------
+Smoke coverage targets broad entrypoints with minimal fixtures so failures report high-level regressions with little setup.
+
+Architectural role
+------------------
+This module belongs to the **test harness layer** and protects the high-level CLI and retrieval experience.
+"""
 
 from __future__ import annotations
 

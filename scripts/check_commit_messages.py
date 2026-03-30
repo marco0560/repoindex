@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""
-Validate commit message headers used in this repository.
+"""Validate commit message headers used in this repository.
 
-The semantic-release setup in this repository accepts conventional commit
-headers, but some scope characters can cause commits to be ignored by the
-configured analyzer. This script rejects unsafe scope values before they
-reach `main`.
+Responsibilities
+----------------
+- Parse commit headers over a revision range and enforce conventional commit syntax.
+- Reject unsafe scope characters while accepting lowercase release-safe values.
+- Provide a CLI entry point so automation or hooks can gate unsafe headers.
+
+Design principles
+-----------------
+Validator keeps scope rules explicit, deterministic, and fails fast before commits reach protected branches.
+
+Architectural role
+------------------
+This script belongs to the **tooling layer** guarding repository release hygiene.
 """
 
 from __future__ import annotations

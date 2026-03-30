@@ -1,4 +1,19 @@
-"""Core pluggable contracts introduced for ADR-004 Phase 3."""
+"""Core pluggable contracts introduced for ADR-004 Phase 3.
+
+Responsibilities
+----------------
+- Define the `LanguageAnalyzer` and `IndexBackend` protocols that decouple parsing from persistence.
+- Describe expectations for analyzer discovery, file support, and normalized `AnalysisResult` production.
+- Specify backend responsibilities such as initialization, hash loading, deletion, and persistence operations.
+
+Design principles
+-----------------
+Contracts stay explicit, minimal, and runtime-checkable so custom analyzers or backends can plug into the ADR-004 stack deterministically.
+
+Architectural role
+------------------
+This module belongs to the **contract definition layer** that governs pluggable language analysis and storage backends.
+"""
 
 from __future__ import annotations
 
