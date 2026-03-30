@@ -1,3 +1,15 @@
+# [1.2.0](https://github.com/marco0560/repoindex/compare/v1.1.1...v1.2.0) (2026-03-30)
+
+
+### Bug Fixes
+
+* **index:** preserve freshness metadata across queries ([3d314ea](https://github.com/marco0560/repoindex/commit/3d314eab7c94ac62ae2ea9c4af059c948b7b8db0))
+
+
+### Features
+
+* **index:** serialize rebuilds across processes ([0875b3f](https://github.com/marco0560/repoindex/commit/0875b3fc6018580b92a17c41daa33621c3d71c19))
+
 ## [1.1.1](https://github.com/marco0560/repoindex/compare/v1.1.0...v1.1.1) (2026-03-29)
 
 
