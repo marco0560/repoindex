@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 from tree_sitter import Language, Node, Parser
 from tree_sitter_bash import language
 
-from repoindex.models import AnalysisResult, FunctionArtifact, ModuleArtifact
+from repoindex.models import AnalysisResult, CallSite, FunctionArtifact, ModuleArtifact
 
 _BASH_SUFFIXES = {".sh", ".bash"}
 _LANGUAGE = Language(language())
@@ -126,6 +126,76 @@ def _node_text(node: Node, source: bytes) -> str:
     return source[node.start_byte : node.end_byte].decode("utf-8")
 
 
+def _named_descendants(node: Node) -> list[Node]:
+    """
+    Collect named descendants of one syntax node in source order.
+
+    Parameters
+    ----------
+    node : tree_sitter.Node
+        Parent syntax node.
+
+    Returns
+    -------
+    list[tree_sitter.Node]
+        Named descendant nodes in deterministic source order.
+    """
+    descendants: list[Node] = []
+    stack = list(reversed(node.named_children))
+
+    while stack:
+        current = stack.pop()
+        descendants.append(current)
+        stack.extend(reversed(current.named_children))
+
+    return descendants
+
+
+def _extract_calls(body: Node | None, source: bytes) -> tuple[CallSite, ...]:
+    """
+    Extract normalized command invocations from one shell function body.
+
+    Parameters
+    ----------
+    body : tree_sitter.Node | None
+        Node owning the function body.
+    source : bytes
+        Full source buffer.
+
+    Returns
+    -------
+    tuple[repoindex.models.CallSite, ...]
+        Call records in deterministic source order.
+    """
+    if body is None:
+        return ()
+
+    calls: list[CallSite] = []
+
+    for node in _named_descendants(body):
+        if node.type != "command":
+            continue
+
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            continue
+
+        target = _node_text(name_node, source).strip()
+        if not target:
+            continue
+
+        calls.append(
+            CallSite(
+                kind="name",
+                target=target,
+                lineno=name_node.start_point.row + 1,
+                col_offset=name_node.start_point.column,
+            )
+        )
+
+    return tuple(calls)
+
+
 def _extract_functions(
     root: Node,
     source: bytes,
@@ -184,7 +254,7 @@ def _extract_functions(
                 raises=0,
                 has_asserts=0,
                 decorators=(),
-                calls=(),
+                calls=_extract_calls(body, source),
                 callable_refs=(),
             )
         )
