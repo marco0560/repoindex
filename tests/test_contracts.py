@@ -24,7 +24,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from repoindex.analyzers import CAnalyzer, PythonAnalyzer
+from repoindex.analyzers import BashAnalyzer, CAnalyzer, PythonAnalyzer
 from repoindex.contracts import IndexBackend, LanguageAnalyzer
 from repoindex.indexer import (
     SQLiteIndexBackend,
@@ -1363,3 +1363,79 @@ def test_sqlite_backend_persists_runtime_inventory(tmp_path: Path) -> None:
         )
         for analyzer in sorted(active_language_analyzers(), key=lambda item: item.name)
     ]
+
+
+def test_bash_analyzer_extracts_simple_calls(tmp_path: Path) -> None:
+    source = tmp_path / "scripts" / "build.sh"
+    source.parent.mkdir()
+    source.write_text(
+        "build() {\n    echo hello\n    make all\n}\n",
+        encoding="utf-8",
+    )
+
+    result = BashAnalyzer().analyze_file(source, tmp_path)
+
+    assert tuple(call.target for call in result.functions[0].calls) == (
+        "echo",
+        "make",
+    )
+
+
+def test_bash_analyzer_extracts_pipeline_calls(tmp_path: Path) -> None:
+    source = tmp_path / "scripts" / "build.sh"
+    source.parent.mkdir()
+    source.write_text(
+        "build() {\n    cat input.txt | grep foo | sort\n}\n",
+        encoding="utf-8",
+    )
+
+    result = BashAnalyzer().analyze_file(source, tmp_path)
+
+    assert tuple(call.target for call in result.functions[0].calls) == (
+        "cat",
+        "grep",
+        "sort",
+    )
+
+
+def test_bash_analyzer_extracts_subshell_and_substitution_calls(tmp_path: Path) -> None:
+    source = tmp_path / "scripts" / "build.sh"
+    source.parent.mkdir()
+    source.write_text(
+        'build() {\n    (echo hello; make all)\n    value="$(git rev-parse HEAD)"\n}\n',
+        encoding="utf-8",
+    )
+
+    result = BashAnalyzer().analyze_file(source, tmp_path)
+
+    assert tuple(call.target for call in result.functions[0].calls) == (
+        "echo",
+        "make",
+        "git",
+    )
+
+
+def test_bash_analyzer_ignores_plain_assignments(tmp_path: Path) -> None:
+    source = tmp_path / "scripts" / "build.sh"
+    source.parent.mkdir()
+    source.write_text(
+        "build() {\n    value=hello\n    PATH=/tmp/bin\n}\n",
+        encoding="utf-8",
+    )
+
+    result = BashAnalyzer().analyze_file(source, tmp_path)
+
+    assert result.functions[0].calls == ()
+
+
+def test_bash_analyzer_extracts_env_prefixed_command(tmp_path: Path) -> None:
+    source = tmp_path / "scripts" / "build.sh"
+    source.parent.mkdir()
+    source.write_text(
+        "build() {\n    PATH=/tmp/bin make all\n}\n",
+        encoding="utf-8",
+    )
+
+    result = BashAnalyzer().analyze_file(source, tmp_path)
+
+    assert tuple(call.target for call in result.functions[0].calls) == ("make",)
