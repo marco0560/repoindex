@@ -408,7 +408,7 @@ def test_active_phase_8_registries_expose_default_backend_and_analyzers() -> Non
 
     assert isinstance(backend, IndexBackend)
     assert isinstance(backend, SQLiteIndexBackend)
-    assert [analyzer.name for analyzer in analyzers] == ["python", "c"]
+    assert [analyzer.name for analyzer in analyzers] == ["python", "c", "bash"]
 
 
 def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
@@ -448,7 +448,7 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
 
     analyzers = active_language_analyzers()
 
-    assert [analyzer.name for analyzer in analyzers] == ["python"]
+    assert [analyzer.name for analyzer in analyzers] == ["python", "bash"]
 
 
 def test_select_language_analyzer_reports_optional_extra_hint(
@@ -999,7 +999,7 @@ def test_c_declaration_comments_contribute_to_embedding_candidates(
     source = tmp_path / "native" / "types.h"
     source.parent.mkdir()
     source.write_text(
-        "/* Palette lookup for UI themes. */\n" "enum Color { RED, BLUE };\n",
+        "/* Palette lookup for UI themes. */\nenum Color { RED, BLUE };\n",
         encoding="utf-8",
     )
 
@@ -1114,9 +1114,7 @@ def test_sqlite_index_backend_persists_and_deletes_normalized_analysis(
     module = tmp_path / "pkg" / "sample.py"
     module.parent.mkdir()
     module.write_text(
-        "def demo(value):\n"
-        '    """Return the supplied value."""\n'
-        "    return value\n",
+        'def demo(value):\n    """Return the supplied value."""\n    return value\n',
         encoding="utf-8",
     )
 
@@ -1243,7 +1241,7 @@ def test_collect_indexed_file_analyses_routes_paths_to_analyzers(
     module = tmp_path / "pkg" / "sample.py"
     module.parent.mkdir()
     module.write_text(
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
         encoding="utf-8",
     )
 
@@ -1296,7 +1294,7 @@ def test_sqlite_backend_persists_file_analyzer_ownership(tmp_path: Path) -> None
     module = tmp_path / "pkg" / "sample.py"
     module.parent.mkdir()
     module.write_text(
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
         encoding="utf-8",
     )
     snapshot = FileMetadataSnapshot(
@@ -1349,7 +1347,7 @@ def test_sqlite_backend_persists_runtime_inventory(tmp_path: Path) -> None:
     module = tmp_path / "pkg" / "sample.py"
     module.parent.mkdir()
     module.write_text(
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
         encoding="utf-8",
     )
 

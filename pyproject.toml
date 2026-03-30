@@ -19,10 +19,16 @@ c = [
   "tree-sitter-c>=0.24.1"
 ]
 
+bash = [
+  "tree-sitter>=0.25.2",
+  "tree-sitter-bash>=0.25.1"
+]
+
 firstparty = [
   "sentence-transformers>=3.0",
   "tree-sitter>=0.25.2",
-  "tree-sitter-c>=0.24.1"
+  "tree-sitter-c>=0.24.1",
+  "tree-sitter-bash>=0.25.1"
 ]
 
 dev = [
@@ -79,7 +85,7 @@ python_version = "3.13"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["tree_sitter", "tree_sitter_c", "sentence_transformers"]
+module = ["tree_sitter", "tree_sitter_c", "tree_sitter_bash", "sentence_transformers"]
 ignore_missing_imports = true
 
 [tool.ruff.lint]

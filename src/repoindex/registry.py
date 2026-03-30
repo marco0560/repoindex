@@ -35,9 +35,13 @@ DEFAULT_INDEX_BACKEND = "sqlite"
 INDEX_BACKEND_ENV_VAR = "REPOINDEX_INDEX_BACKEND"
 ANALYZER_ENTRY_POINT_GROUP = "repoindex.analyzers"
 BACKEND_ENTRY_POINT_GROUP = "repoindex.backends"
-OPTIONAL_ANALYZER_EXTRA_BY_NAME: dict[str, str] = {"c": "repoindex[c]"}
+OPTIONAL_ANALYZER_EXTRA_BY_NAME: dict[str, str] = {
+    "c": "repoindex[c]",
+    "bash": "repoindex[bash]",
+}
 OPTIONAL_ANALYZER_DEPENDENCY_NAMES: dict[str, set[str]] = {
     "c": {"tree_sitter", "tree_sitter_c"},
+    "bash": {"tree_sitter", "tree_sitter_bash"},
 }
 REQUIRED_BACKEND_METHODS: tuple[str, ...] = (
     "open_connection",
@@ -210,6 +214,14 @@ def _registered_language_analyzer_factories() -> (
     )
     if c_factory is not None:
         factories.append(c_factory)
+
+    bash_factory = _optional_language_analyzer_factory(
+        "repoindex.analyzers.bash",
+        "BashAnalyzer",
+        analyzer_name="bash",
+    )
+    if bash_factory is not None:
+        factories.append(bash_factory)
     return tuple(factories)
 
 
@@ -690,6 +702,21 @@ def missing_language_analyzer_hint(path: Path) -> str | None:
         return (
             "C-family indexing support is optional. "
             f"Install the extra with `{extra}` to enable `*.c` and `*.h` files."
+        )
+
+    if (
+        suffix in {".sh", ".bash"}
+        and _optional_language_analyzer_factory(
+            "repoindex.analyzers.bash",
+            "BashAnalyzer",
+            analyzer_name="bash",
+        )
+        is None
+    ):
+        extra = OPTIONAL_ANALYZER_EXTRA_BY_NAME["bash"]
+        return (
+            "Shell indexing support is optional. "
+            f"Install the extra with `{extra}` to enable `*.sh` and `*.bash` files."
         )
 
     return None

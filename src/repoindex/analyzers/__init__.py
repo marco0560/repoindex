@@ -28,3 +28,11 @@ except ModuleNotFoundError as exc:
         raise
 else:
     __all__.append("CAnalyzer")
+
+try:
+    BashAnalyzer = importlib.import_module("repoindex.analyzers.bash").BashAnalyzer
+except ModuleNotFoundError as exc:
+    if exc.name not in {"tree_sitter", "tree_sitter_bash"}:
+        raise
+else:
+    __all__.append("BashAnalyzer")

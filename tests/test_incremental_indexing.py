@@ -283,11 +283,11 @@ def test_index_repo_removes_deleted_files(tmp_path: Path) -> None:
     drop_module = tmp_path / "pkg" / "drop.py"
     _write_module(
         keep_module,
-        "def keep():\n" '    """Stay indexed."""\n' "    return 1\n",
+        'def keep():\n    """Stay indexed."""\n    return 1\n',
     )
     _write_module(
         drop_module,
-        "def drop_me():\n" '    """Disappear from the index."""\n' "    return 1\n",
+        'def drop_me():\n    """Disappear from the index."""\n    return 1\n',
     )
 
     init_db(tmp_path)
@@ -326,7 +326,7 @@ def test_index_repo_recomputes_embeddings_when_backend_changes(
     module = tmp_path / "pkg" / "sample.py"
     _write_module(
         module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
 
     init_db(tmp_path)
@@ -379,7 +379,7 @@ def test_index_repo_reindexes_unchanged_files_when_analyzer_changes(
     module = tmp_path / "pkg" / "sample.py"
     _write_module(
         module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
 
     init_db(tmp_path)
@@ -435,7 +435,7 @@ def test_index_cli_reports_summary_and_decisions(
     module = tmp_path / "pkg" / "sample.py"
     _write_module(
         module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
 
     monkeypatch.chdir(tmp_path)
@@ -470,7 +470,7 @@ def test_index_repo_skips_python_files_with_syntax_errors(tmp_path: Path) -> Non
     legacy_module = tmp_path / "pkg" / "legacy.py"
     _write_module(
         valid_module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
     _write_module(legacy_module, 'print "hi"\n')
 
@@ -524,7 +524,7 @@ def test_index_cli_reports_failures_without_aborting(
     legacy_module = tmp_path / "pkg" / "legacy.py"
     _write_module(
         valid_module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
     _write_module(legacy_module, 'print "hi"\n')
 
@@ -623,7 +623,7 @@ def test_index_repo_indexes_mixed_python_and_c_sources(tmp_path: Path) -> None:
     c_module = tmp_path / "native" / "sample.c"
     _write_module(
         python_module,
-        "def py_helper():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def py_helper():\n    """Return a constant."""\n    return 1\n',
     )
     _write_module(
         c_module,
@@ -668,7 +668,7 @@ def test_index_repo_reports_uncovered_canonical_files(tmp_path: Path) -> None:
     rust_module = tmp_path / "src" / "lib.rs"
     _write_module(
         python_module,
-        "def py_helper():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def py_helper():\n    """Return a constant."""\n    return 1\n',
     )
     rust_module.parent.mkdir(parents=True, exist_ok=True)
     rust_module.write_text("pub fn helper() {}\n", encoding="utf-8")
@@ -710,13 +710,13 @@ def test_index_cli_prints_coverage_issues(
         The test asserts uncovered canonical files are printed in the summary.
     """
     python_module = tmp_path / "src" / "sample.py"
-    shell_script = tmp_path / "scripts" / "build.sh"
+    config_file = tmp_path / "scripts" / "build.json"
     _write_module(
         python_module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
-    shell_script.parent.mkdir(parents=True, exist_ok=True)
-    shell_script.write_text("echo demo\n", encoding="utf-8")
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text('{"task": "demo"}\n', encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
@@ -725,8 +725,8 @@ def test_index_cli_prints_coverage_issues(
     captured = capsys.readouterr()
     assert "Coverage issues: 1" in captured.out
     assert (
-        "coverage: .sh x1 in scripts "
-        "(.sh, "
+        "coverage: .json x1 in scripts "
+        "(.json, "
         "no registered analyzer covers this canonical file)"
     ) in captured.out
 
@@ -755,13 +755,13 @@ def test_coverage_cli_reports_uncovered_canonical_files(
         canonical files and exits non-zero for incomplete coverage.
     """
     python_module = tmp_path / "src" / "sample.py"
-    shell_script = tmp_path / "scripts" / "build.sh"
+    config_file = tmp_path / "scripts" / "build.json"
     _write_module(
         python_module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
-    shell_script.parent.mkdir(parents=True, exist_ok=True)
-    shell_script.write_text("echo demo\n", encoding="utf-8")
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text('{"task": "demo"}\n', encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", ["repoindex", "coverage"])
@@ -771,8 +771,8 @@ def test_coverage_cli_reports_uncovered_canonical_files(
     assert "Coverage complete: no" in captured.out
     assert "Active analyzers:" in captured.out
     assert (
-        "coverage: .sh x1 in scripts "
-        "(.sh, "
+        "coverage: .json x1 in scripts "
+        "(.json, "
         "no registered analyzer covers this canonical file)"
     ) in captured.out
     assert not get_db_path(tmp_path).exists()
@@ -940,7 +940,7 @@ def test_index_cli_can_require_full_coverage(
     rust_module = tmp_path / "src" / "lib.rs"
     _write_module(
         python_module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
     rust_module.parent.mkdir(parents=True, exist_ok=True)
     rust_module.write_text("pub fn helper() {}\n", encoding="utf-8")
@@ -984,7 +984,7 @@ def test_ensure_index_rebuilds_when_analyzer_inventory_changes(
     module = tmp_path / "pkg" / "sample.py"
     _write_module(
         module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
 
     init_db(tmp_path)
@@ -1034,7 +1034,7 @@ def test_ensure_index_rebuilds_when_backend_inventory_changes(
     module = tmp_path / "pkg" / "sample.py"
     _write_module(
         module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
 
     init_db(tmp_path)
@@ -1113,7 +1113,7 @@ def test_ensure_index_missing_db_writes_schema_and_commit_metadata(
     module = tmp_path / "pkg" / "sample.py"
     _write_module(
         module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
     monkeypatch.setattr(
         "repoindex.cli._get_head_commit",
@@ -1150,7 +1150,7 @@ def test_open_connection_does_not_clear_commit_metadata(
     module = tmp_path / "pkg" / "sample.py"
     _write_module(
         module,
-        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+        'def demo():\n    """Return a constant."""\n    return 1\n',
     )
     monkeypatch.setattr(
         "repoindex.cli._get_head_commit",
