@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
+import subprocess
 import sys
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from repoindex.analyzers import PythonAnalyzer
 from repoindex.cli import (
+    IndexRebuildRequest,
     _ensure_index,
     _read_index_metadata,
     _write_index_metadata,
@@ -23,10 +28,10 @@ from repoindex.semantic.embeddings import (
     EMBEDDING_DIM,
     EmbeddingBackendSpec,
 )
-from repoindex.storage import get_db_path, init_db
+from repoindex.storage import acquire_index_lock, get_db_path, init_db
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Iterator
 
     import pytest
 
@@ -1148,3 +1153,104 @@ def test_open_connection_does_not_clear_commit_metadata(
         "commit": "abc123",
         "schema_version": str(SCHEMA_VERSION),
     }
+
+
+def test_ensure_index_rechecks_after_waiting_for_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Skip a duplicate rebuild when another process refreshed the index first.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to stub the lock and rebuild inspection flow.
+
+    Returns
+    -------
+    None
+        The test asserts the locked recheck suppresses a redundant rebuild.
+    """
+    request = IndexRebuildRequest(
+        message="[repoindex] Index stale — rebuilding...",
+        reset_db=True,
+        stderr=True,
+    )
+    inspections = iter([request, None])
+
+    @contextlib.contextmanager
+    def _dummy_lock(root: Path) -> Iterator[None]:
+        del root
+        yield
+
+    monkeypatch.setattr("repoindex.cli.acquire_index_lock", _dummy_lock)
+    monkeypatch.setattr(
+        "repoindex.cli._inspect_index_rebuild_request",
+        lambda root: next(inspections),
+    )
+
+    def _unexpected_refresh(root: Path, current: IndexRebuildRequest) -> None:
+        del root, current
+        msg = "duplicate rebuild should have been skipped"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(
+        "repoindex.cli._run_locked_index_refresh",
+        _unexpected_refresh,
+    )
+
+    _ensure_index(tmp_path)
+
+
+def test_acquire_index_lock_blocks_other_processes(tmp_path: Path) -> None:
+    """
+    Serialize cross-process index mutations through the advisory lock file.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts another process cannot acquire the lock early.
+    """
+    acquired_marker = tmp_path / "acquired.txt"
+    release_marker = tmp_path / "release.txt"
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    child_source = (
+        "import sys\n"
+        "import time\n"
+        "from pathlib import Path\n"
+        f"sys.path.insert(0, {str(source_root)!r})\n"
+        "from repoindex.storage import acquire_index_lock\n"
+        f"root = Path({str(tmp_path)!r})\n"
+        f"acquired = Path({str(acquired_marker)!r})\n"
+        f"release = Path({str(release_marker)!r})\n"
+        "with acquire_index_lock(root):\n"
+        "    acquired.write_text('locked\\n', encoding='utf-8')\n"
+        "    while not release.exists():\n"
+        "        time.sleep(0.05)\n"
+    )
+
+    with acquire_index_lock(tmp_path):
+        proc = subprocess.Popen(
+            [sys.executable, "-c", child_source],
+            cwd=tmp_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            time.sleep(0.3)
+            assert not acquired_marker.exists()
+        finally:
+            release_marker.write_text("release\n", encoding="utf-8")
+
+    stdout, stderr = proc.communicate(timeout=5)
+    assert proc.returncode == 0, (stdout, stderr)
+    assert acquired_marker.exists()

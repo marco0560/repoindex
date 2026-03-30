@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from repoindex.schema import DDL, SCHEMA_VERSION
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def _read_metadata_file(path: Path) -> dict[str, str]:
@@ -60,8 +65,61 @@ def _write_metadata_file(path: Path, data: dict[str, str]) -> None:
     ) as handle:
         json.dump(data, handle, indent=2)
         handle.write("\n")
-        temp_path = Path(handle.name)
+    temp_path = Path(handle.name)
     temp_path.replace(path)
+
+
+def get_index_lock_path(root: Path) -> Path:
+    """
+    Return the advisory lock path used for index mutations.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to the ``index.lock`` file under ``.repoindex``.
+    """
+    return get_repoindex_dir(root) / "index.lock"
+
+
+@contextlib.contextmanager
+def acquire_index_lock(root: Path) -> Iterator[None]:
+    """
+    Acquire the advisory cross-process lock for index mutations.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose local index should be locked.
+
+    Returns
+    -------
+    collections.abc.Iterator[None]
+        Context manager yielding while the exclusive lock is held.
+
+    Raises
+    ------
+    RuntimeError
+        If the current platform does not provide ``fcntl.flock``.
+    """
+    try:
+        import fcntl
+    except ImportError as error:  # pragma: no cover - exercised on non-POSIX
+        msg = "Index locking requires fcntl.flock on this platform."
+        raise RuntimeError(msg) from error
+
+    lock_path = get_index_lock_path(root)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _refresh_call_edges_schema(conn: sqlite3.Connection) -> None:

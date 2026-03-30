@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
 
 from repoindex._version import version as __version__
@@ -41,6 +42,7 @@ from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import (
     _read_metadata_file,
     _write_metadata_file,
+    acquire_index_lock,
     get_db_path,
     get_metadata_path,
     init_db,
@@ -49,6 +51,26 @@ from repoindex.storage import (
 GIT_EXE = shutil.which("git") or "git"
 
 QUERY_JSON_SCHEMA_VERSION = "1.0"
+
+
+@dataclass(frozen=True)
+class IndexRebuildRequest:
+    """
+    Describe one index rebuild requested by the CLI freshness check.
+
+    Parameters
+    ----------
+    message : str
+        Human-readable status line printed before the rebuild starts.
+    reset_db : bool
+        Whether the schema should be refreshed before indexing.
+    stderr : bool
+        Whether the status line should be emitted to standard error.
+    """
+
+    message: str
+    reset_db: bool
+    stderr: bool
 
 
 def _current_analyzer_inventory() -> list[tuple[str, str, str]]:
@@ -1315,6 +1337,193 @@ def _resolve_prefix_argument(
         return None
 
 
+def _build_index_metadata(root: Path) -> dict[str, str]:
+    """
+    Build the persisted freshness metadata for the current repository head.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose current Git metadata should be recorded.
+
+    Returns
+    -------
+    dict[str, str]
+        Metadata payload containing the schema version and current commit when
+        available.
+    """
+    metadata = {"schema_version": str(SCHEMA_VERSION)}
+    commit = _get_head_commit(root)
+    if commit:
+        metadata["commit"] = commit
+    return metadata
+
+
+def _inspect_index_rebuild_request(root: Path) -> IndexRebuildRequest | None:
+    """
+    Inspect the local index and report whether a rebuild is required.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose local index should be inspected.
+
+    Returns
+    -------
+    IndexRebuildRequest | None
+        Rebuild request when the index is missing or stale, otherwise ``None``.
+
+    Raises
+    ------
+    OSError
+        If the index files cannot be opened.
+    sqlite3.Error
+        If the SQLite database cannot be queried safely.
+    RuntimeError
+        If the on-disk database is structurally invalid.
+    ValueError
+        If one of the backend validation checks raises a value error.
+    """
+    db_path = get_db_path(root)
+    if not db_path.exists():
+        return IndexRebuildRequest(
+            message="[repoindex] Index not found — building it now...",
+            reset_db=False,
+            stderr=False,
+        )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("SELECT 1")
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1"
+        )
+        if cursor.fetchone() is None:
+            msg = "empty or invalid database schema"
+            raise RuntimeError(msg)
+
+        current_commit = _get_head_commit(root)
+        metadata = _read_index_metadata(root)
+        indexed_commit = metadata.get("commit")
+        indexed_schema = metadata.get("schema_version")
+
+        if indexed_schema != str(SCHEMA_VERSION):
+            return IndexRebuildRequest(
+                message="[repoindex] Index schema changed — rebuilding...",
+                reset_db=True,
+                stderr=True,
+            )
+
+        if current_commit and indexed_commit != current_commit:
+            return IndexRebuildRequest(
+                message="[repoindex] Index outdated (git commit changed) "
+                "— rebuilding...",
+                reset_db=True,
+                stderr=True,
+            )
+
+        backend = active_index_backend()
+        runtime_inventory = backend.load_runtime_inventory(root, conn=conn)
+        current_runtime = (str(backend.name), str(backend.version))
+        if runtime_inventory is None:
+            return IndexRebuildRequest(
+                message="[repoindex] Index stale (plugin inventory missing) "
+                "— rebuilding...",
+                reset_db=True,
+                stderr=True,
+            )
+
+        if runtime_inventory[:2] != current_runtime:
+            return IndexRebuildRequest(
+                message="[repoindex] Index stale (backend plugin changed) "
+                "— rebuilding...",
+                reset_db=True,
+                stderr=True,
+            )
+
+        persisted_analyzers = backend.load_analyzer_inventory(root, conn=conn)
+        current_analyzers = _current_analyzer_inventory()
+        if persisted_analyzers != current_analyzers:
+            return IndexRebuildRequest(
+                message="[repoindex] Index stale "
+                "(analyzer plugin inventory changed) — rebuilding...",
+                reset_db=True,
+                stderr=True,
+            )
+
+        cursor = conn.execute("SELECT COUNT(DISTINCT file_id) FROM symbol_index")
+        indexed_files = cursor.fetchone()[0]
+
+        current_files = len(
+            list(iter_project_files(root, analyzers=active_language_analyzers()))
+        )
+
+        if indexed_files != current_files:
+            return IndexRebuildRequest(
+                message="[repoindex] Index stale — rebuilding...",
+                reset_db=True,
+                stderr=True,
+            )
+        return None
+    finally:
+        conn.close()
+
+
+def _run_locked_index_refresh(
+    root: Path,
+    request: IndexRebuildRequest,
+) -> None:
+    """
+    Rebuild the local index while holding the exclusive mutation lock.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root whose index should be rebuilt.
+    request : IndexRebuildRequest
+        Rebuild request describing the status line and reset mode.
+
+    Returns
+    -------
+    None
+        The index is rebuilt and freshness metadata is refreshed in place.
+    """
+    if request.stderr:
+        print(request.message, file=sys.stderr)
+    else:
+        print(request.message)
+    if request.reset_db:
+        init_db(root)
+    index_repo(root)
+    _write_index_metadata(root, _build_index_metadata(root))
+    print("[repoindex] Index ready", file=sys.stderr)
+
+
+def _fail_unreadable_index(error: Exception) -> None:
+    """
+    Terminate after reporting one corrupted or unreadable index.
+
+    Parameters
+    ----------
+    error : Exception
+        Underlying index access failure.
+
+    Returns
+    -------
+    None
+        The function does not return.
+
+    Raises
+    ------
+    SystemExit
+        Always raised with exit status ``1``.
+    """
+    print("ERROR: repository index is corrupted or unreadable")
+    print("Suggested fix: repoindex index")
+    print(f"Details: {error}")
+    raise SystemExit(1) from error
+
+
 def _ensure_index(root: Path) -> None:
     """
     Ensure that the repository index exists and is usable.
@@ -1339,171 +1548,39 @@ def _ensure_index(root: Path) -> None:
     If the on-disk index is missing or stale, the function rebuilds it
     automatically and refreshes the stored Git commit metadata.
     """
-    db_path = get_db_path(root)
-
-    # --- CASE 1: missing DB → auto-index ---
-    if not db_path.exists():
-        print("[repoindex] Index not found — building it now...")
-        try:
-            init_db(root)
-            index_repo(root)
-            commit = _get_head_commit(root)
-            metadata = {"schema_version": str(SCHEMA_VERSION)}
-            if commit:
-                metadata["commit"] = commit
-            _write_index_metadata(root, metadata)
-        except (OSError, sqlite3.Error, RuntimeError, ValueError) as e:
-            print("ERROR: failed to build index automatically")
-            print("Run manually: repoindex index")
-            print(f"Details: {e}")
-            raise SystemExit(1) from e
-
-        print("[repoindex] Index ready", file=sys.stderr)
-        return
-
-    # --- CASE 2: DB exists → canary check ---
     try:
-        conn = sqlite3.connect(db_path)
-        try:
-            # Basic canary
-            conn.execute("SELECT 1")
+        request = _inspect_index_rebuild_request(root)
+    except (OSError, sqlite3.Error, RuntimeError, ValueError):
+        request = None
 
-            # Schema canary (minimal, non-invasive)
-            # We expect at least one known table; adjust if needed
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1"
-            )
-            if cursor.fetchone() is None:
-                msg = "empty or invalid database schema"
-                raise RuntimeError(msg)
+    try:
+        with acquire_index_lock(root):
+            if request is None:
+                try:
+                    request = _inspect_index_rebuild_request(root)
+                except (OSError, sqlite3.Error, RuntimeError, ValueError) as error:
+                    _fail_unreadable_index(error)
 
-            # --- GIT STALENESS CHECK ---
-            current_commit = _get_head_commit(root)
-            metadata = _read_index_metadata(root)
-            indexed_commit = metadata.get("commit")
-            indexed_schema = metadata.get("schema_version")
-
-            if indexed_schema != str(SCHEMA_VERSION):
-                print(
-                    "[repoindex] Index schema changed — rebuilding...",
-                    file=sys.stderr,
-                )
-                conn.close()
-                init_db(root)
-                index_repo(root)
-                commit = _get_head_commit(root)
-                metadata = {"schema_version": str(SCHEMA_VERSION)}
-                if commit:
-                    metadata["commit"] = commit
-                _write_index_metadata(root, metadata)
-                print("[repoindex] Index ready", file=sys.stderr)
+            if request is None:
                 return
 
-            if current_commit and indexed_commit != current_commit:
-                print(
-                    "[repoindex] Index outdated (git commit changed) — rebuilding...",
-                    file=sys.stderr,
-                )
-                conn.close()
-                init_db(root)
-                index_repo(root)
+            try:
+                refreshed_request = _inspect_index_rebuild_request(root)
+            except (OSError, sqlite3.Error, RuntimeError, ValueError) as error:
+                _fail_unreadable_index(error)
 
-                _write_index_metadata(
-                    root,
-                    {
-                        "commit": current_commit,
-                        "schema_version": str(SCHEMA_VERSION),
-                    },
-                )
-
-                print("[repoindex] Index ready", file=sys.stderr)
+            if refreshed_request is None:
                 return
 
-            backend = active_index_backend()
-            runtime_inventory = backend.load_runtime_inventory(root, conn=conn)
-            current_runtime = (str(backend.name), str(backend.version))
-            if runtime_inventory is None:
-                print(
-                    "[repoindex] Index stale (plugin inventory missing) "
-                    "— rebuilding...",
-                    file=sys.stderr,
-                )
-                conn.close()
-                init_db(root)
-                index_repo(root)
-                commit = _get_head_commit(root)
-                metadata = {"schema_version": str(SCHEMA_VERSION)}
-                if commit:
-                    metadata["commit"] = commit
-                _write_index_metadata(root, metadata)
-                print("[repoindex] Index ready", file=sys.stderr)
-                return
-
-            if runtime_inventory[:2] != current_runtime:
-                print(
-                    "[repoindex] Index stale (backend plugin changed) "
-                    "— rebuilding...",
-                    file=sys.stderr,
-                )
-                conn.close()
-                init_db(root)
-                index_repo(root)
-                commit = _get_head_commit(root)
-                metadata = {"schema_version": str(SCHEMA_VERSION)}
-                if commit:
-                    metadata["commit"] = commit
-                _write_index_metadata(root, metadata)
-                print("[repoindex] Index ready", file=sys.stderr)
-                return
-
-            persisted_analyzers = backend.load_analyzer_inventory(root, conn=conn)
-            current_analyzers = _current_analyzer_inventory()
-            if persisted_analyzers != current_analyzers:
-                print(
-                    "[repoindex] Index stale (analyzer plugin inventory changed) "
-                    "— rebuilding...",
-                    file=sys.stderr,
-                )
-                conn.close()
-                init_db(root)
-                index_repo(root)
-                commit = _get_head_commit(root)
-                metadata = {"schema_version": str(SCHEMA_VERSION)}
-                if commit:
-                    metadata["commit"] = commit
-                _write_index_metadata(root, metadata)
-                print("[repoindex] Index ready", file=sys.stderr)
-                return
-
-            # --- STALENESS CHECK: file count mismatch ---
-            cursor = conn.execute("SELECT COUNT(DISTINCT file_id) FROM symbol_index")
-            indexed_files = cursor.fetchone()[0]
-
-            current_files = len(
-                list(iter_project_files(root, analyzers=active_language_analyzers()))
-            )
-
-            if indexed_files != current_files:
-                print("[repoindex] Index stale — rebuilding...", file=sys.stderr)
-                conn.close()
-                init_db(root)
-                index_repo(root)
-                commit = _get_head_commit(root)
-                metadata = {"schema_version": str(SCHEMA_VERSION)}
-                if commit:
-                    metadata["commit"] = commit
-                _write_index_metadata(root, metadata)
-                print("[repoindex] Index ready", file=sys.stderr)
-                return
-
-        finally:
-            conn.close()
-
-    except (OSError, sqlite3.Error, RuntimeError, ValueError) as e:
-        print("ERROR: repository index is corrupted or unreadable")
-        print("Suggested fix: repoindex index")
-        print(f"Details: {e}")
-        raise SystemExit(1) from e
+            try:
+                _run_locked_index_refresh(root, refreshed_request)
+            except (OSError, sqlite3.Error, RuntimeError, ValueError) as error:
+                print("ERROR: failed to build index automatically")
+                print("Run manually: repoindex index")
+                print(f"Details: {error}")
+                raise SystemExit(1) from error
+    except RuntimeError as error:
+        _fail_unreadable_index(error)
 
 
 def _run_plugins(*, as_json: bool = False) -> int:
