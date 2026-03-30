@@ -2549,7 +2549,8 @@ class SQLiteIndexBackend:
         sqlite3.Connection
             Open SQLite connection.
         """
-        self.initialize(root)
+        if not get_db_path(root).exists():
+            self.initialize(root)
         return sqlite3.connect(get_db_path(root))
 
     def list_symbols_in_module(

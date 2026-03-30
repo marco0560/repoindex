@@ -38,7 +38,13 @@ from repoindex.scanner import iter_project_files
 from repoindex.schema import SCHEMA_VERSION
 from repoindex.semantic.embeddings import EmbeddingBackendError, get_embedding_backend
 from repoindex.semantic.search import embedding_candidates
-from repoindex.storage import get_db_path, get_repoindex_dir, init_db
+from repoindex.storage import (
+    _read_metadata_file,
+    _write_metadata_file,
+    get_db_path,
+    get_metadata_path,
+    init_db,
+)
 
 GIT_EXE = shutil.which("git") or "git"
 
@@ -1256,13 +1262,7 @@ def _read_index_metadata(root: Path) -> dict[str, str]:
         Parsed metadata values, or an empty mapping when the metadata file
         does not exist or cannot be decoded.
     """
-    path = get_repoindex_dir(root) / "metadata.json"
-    if not path.exists():
-        return {}
-    try:
-        return dict(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return {}
+    return _read_metadata_file(get_metadata_path(root))
 
 
 def _write_index_metadata(root: Path, data: dict[str, str]) -> None:
@@ -1281,8 +1281,7 @@ def _write_index_metadata(root: Path, data: dict[str, str]) -> None:
     None
         The metadata file is written in place.
     """
-    path = get_repoindex_dir(root) / "metadata.json"
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _write_metadata_file(get_metadata_path(root), data)
 
 
 def _resolve_prefix_argument(
@@ -1349,8 +1348,10 @@ def _ensure_index(root: Path) -> None:
             init_db(root)
             index_repo(root)
             commit = _get_head_commit(root)
+            metadata = {"schema_version": str(SCHEMA_VERSION)}
             if commit:
-                _write_index_metadata(root, {"commit": commit})
+                metadata["commit"] = commit
+            _write_index_metadata(root, metadata)
         except (OSError, sqlite3.Error, RuntimeError, ValueError) as e:
             print("ERROR: failed to build index automatically")
             print("Run manually: repoindex index")

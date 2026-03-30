@@ -4,12 +4,64 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from typing import TYPE_CHECKING
+import tempfile
+from pathlib import Path
 
 from repoindex.schema import DDL, SCHEMA_VERSION
 
-if TYPE_CHECKING:
-    from pathlib import Path
+
+def _read_metadata_file(path: Path) -> dict[str, str]:
+    """
+    Load persisted index metadata from one JSON file.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Metadata JSON path to decode.
+
+    Returns
+    -------
+    dict[str, str]
+        Parsed metadata values, or an empty mapping when the file does not
+        exist or cannot be decoded.
+    """
+    if not path.exists():
+        return {}
+    try:
+        return dict(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+
+
+def _write_metadata_file(path: Path, data: dict[str, str]) -> None:
+    """
+    Persist index metadata atomically as JSON.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Metadata JSON path to replace.
+    data : dict[str, str]
+        Metadata payload to serialize.
+
+    Returns
+    -------
+    None
+        The metadata file is replaced atomically in place.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        json.dump(data, handle, indent=2)
+        handle.write("\n")
+        temp_path = Path(handle.name)
+    temp_path.replace(path)
 
 
 def _refresh_call_edges_schema(conn: sqlite3.Connection) -> None:
@@ -544,9 +596,7 @@ def init_db(root: Path) -> None:
     finally:
         conn.close()
 
-    metadata = {
-        "schema_version": str(SCHEMA_VERSION),
-    }
-
-    with get_metadata_path(root).open("w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+    metadata_path = get_metadata_path(root)
+    metadata = _read_metadata_file(metadata_path)
+    metadata["schema_version"] = str(SCHEMA_VERSION)
+    _write_metadata_file(metadata_path, metadata)

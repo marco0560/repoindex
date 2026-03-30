@@ -8,7 +8,12 @@ import sys
 from typing import TYPE_CHECKING
 
 from repoindex.analyzers import PythonAnalyzer
-from repoindex.cli import _ensure_index, _write_index_metadata, main
+from repoindex.cli import (
+    _ensure_index,
+    _read_index_metadata,
+    _write_index_metadata,
+    main,
+)
 from repoindex.indexer import SQLiteIndexBackend, audit_repo_coverage, index_repo
 from repoindex.query.exact import find_symbol
 from repoindex.scanner import file_metadata
@@ -1032,3 +1037,114 @@ def test_ensure_index_rebuilds_when_backend_inventory_changes(
 
     assert "Index stale (backend plugin changed)" in captured.err
     assert backend.load_runtime_inventory(tmp_path) == ("sqlite", "12", 1)
+
+
+def test_init_db_preserves_existing_commit_metadata(tmp_path: Path) -> None:
+    """
+    Preserve the indexed commit when refreshing the schema in place.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts ``init_db`` keeps existing freshness metadata.
+    """
+    init_db(tmp_path)
+    _write_index_metadata(
+        tmp_path,
+        {
+            "commit": "abc123",
+            "schema_version": str(SCHEMA_VERSION),
+        },
+    )
+
+    init_db(tmp_path)
+
+    assert _read_index_metadata(tmp_path) == {
+        "commit": "abc123",
+        "schema_version": str(SCHEMA_VERSION),
+    }
+
+
+def test_ensure_index_missing_db_writes_schema_and_commit_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Persist complete freshness metadata after auto-building a missing index.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch the Git commit probe.
+
+    Returns
+    -------
+    None
+        The test asserts missing-index bootstrap stores both schema and
+        commit metadata.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    _write_module(
+        module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+    monkeypatch.setattr(
+        "repoindex.cli._get_head_commit",
+        lambda root: "abc123",
+    )
+
+    _ensure_index(tmp_path)
+
+    assert _read_index_metadata(tmp_path) == {
+        "commit": "abc123",
+        "schema_version": str(SCHEMA_VERSION),
+    }
+
+
+def test_open_connection_does_not_clear_commit_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Avoid clearing freshness metadata during ordinary query connections.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch the Git commit probe.
+
+    Returns
+    -------
+    None
+        The test asserts repeated query opens leave the indexed commit intact.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    _write_module(
+        module,
+        "def demo():\n" '    """Return a constant."""\n' "    return 1\n",
+    )
+    monkeypatch.setattr(
+        "repoindex.cli._get_head_commit",
+        lambda root: "abc123",
+    )
+
+    _ensure_index(tmp_path)
+
+    first = SQLiteIndexBackend().open_connection(tmp_path)
+    first.close()
+    second = SQLiteIndexBackend().open_connection(tmp_path)
+    second.close()
+
+    assert _read_index_metadata(tmp_path) == {
+        "commit": "abc123",
+        "schema_version": str(SCHEMA_VERSION),
+    }
