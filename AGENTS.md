@@ -67,22 +67,27 @@ No summaries. No partial edits.
 2. Propose plan, ask all necessaary clarification questions
 3. Wait for approval or changes
 4. Execute plan
-5. Run:
+5. Do NOT run `git check` in a terminal for agent validation.
+6. Run the underlying checks directly from `.venv`:
 
    ```bash
-   git check
+   source .venv/bin/activate
+   black --check src scripts tests
+   ruff check src scripts tests
+   mypy src scripts tests
+   pytest -q
    ```
 
-6. Verify:
+7. Verify:
 
-   - `black .` passes
-   - `ruff check .`passes
-   - `mypy .` passes
-   - tests pass
+   - `black --check src scripts tests` passes
+   - `ruff check src scripts tests` passes
+   - `mypy src scripts tests` passes
+   - `pytest -q` passes
    - If any would fail → fix BEFORE concluding
 
-7. Manually validate behavior if needed
-8. Propose a **single commit block** that is:
+8. Manually validate behavior if needed
+9. Propose a **single commit block** that is:
 
    - 15 - 20 lines long
    - atomic
