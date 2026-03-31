@@ -1439,3 +1439,35 @@ def test_bash_analyzer_extracts_env_prefixed_command(tmp_path: Path) -> None:
     result = BashAnalyzer().analyze_file(source, tmp_path)
 
     assert tuple(call.target for call in result.functions[0].calls) == ("make",)
+
+
+def test_bash_analyzer_keeps_last_duplicate_function_definition(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "scripts" / "build.sh"
+    source.parent.mkdir()
+    source.write_text(
+        "build() {\n    echo one\n}\n\nbuild() {\n    make all\n}\n",
+        encoding="utf-8",
+    )
+
+    result = BashAnalyzer().analyze_file(source, tmp_path)
+
+    assert [(fn.name, fn.lineno) for fn in result.functions] == [("build", 5)]
+    assert tuple(call.target for call in result.functions[0].calls) == ("make",)
+
+
+def test_index_repo_handles_duplicate_bash_function_redefinitions(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "scripts" / "build.sh"
+    source.parent.mkdir()
+    source.write_text(
+        "build() {\n    echo one\n}\n\nbuild() {\n    make all\n}\n",
+        encoding="utf-8",
+    )
+
+    report = index_repo(tmp_path)
+
+    assert report.failed == 0
+    assert report.indexed == 1

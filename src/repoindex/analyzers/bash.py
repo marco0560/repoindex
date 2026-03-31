@@ -219,7 +219,7 @@ def _extract_functions(
     tuple[repoindex.models.FunctionArtifact, ...]
         Deterministic function artifacts ordered by source position.
     """
-    functions: list[FunctionArtifact] = []
+    functions_by_name: dict[str, FunctionArtifact] = {}
 
     for child in root.children:
         if child.type != "function_definition":
@@ -237,29 +237,32 @@ def _extract_functions(
         signature_end = body.start_byte if body is not None else child.end_byte
         signature = source[child.start_byte : signature_end].decode("utf-8").strip()
 
-        functions.append(
-            FunctionArtifact(
-                name=name,
-                stable_id=_function_stable_id(module_name, name),
-                lineno=child.start_point.row + 1,
-                end_lineno=body.end_point.row + 1 if body is not None else None,
-                signature=" ".join(signature.split()),
-                docstring=None,
-                has_docstring=0,
-                is_method=0,
-                is_public=1,
-                parameters=(),
-                returns_value=0,
-                yields_value=0,
-                raises=0,
-                has_asserts=0,
-                decorators=(),
-                calls=_extract_calls(body, source),
-                callable_refs=(),
-            )
+        functions_by_name[name] = FunctionArtifact(
+            name=name,
+            stable_id=_function_stable_id(module_name, name),
+            lineno=child.start_point.row + 1,
+            end_lineno=body.end_point.row + 1 if body is not None else None,
+            signature=" ".join(signature.split()),
+            docstring=None,
+            has_docstring=0,
+            is_method=0,
+            is_public=1,
+            parameters=(),
+            returns_value=0,
+            yields_value=0,
+            raises=0,
+            has_asserts=0,
+            decorators=(),
+            calls=_extract_calls(body, source),
+            callable_refs=(),
         )
 
-    return tuple(functions)
+    return tuple(
+        sorted(
+            functions_by_name.values(),
+            key=lambda artifact: artifact.lineno,
+        )
+    )
 
 
 class BashAnalyzer:
