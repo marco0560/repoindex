@@ -1752,6 +1752,12 @@ def main() -> int:
     except EmbeddingBackendError as exc:
         print(f"[repoindex] {exc}", file=sys.stderr)
         return 2
+    except (OSError, sqlite3.Error, RuntimeError, ValueError) as exc:
+        print(
+            f"[repoindex] {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return 2
 
     parser.print_help()
     return 0

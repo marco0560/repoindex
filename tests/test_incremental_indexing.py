@@ -83,6 +83,40 @@ class _SQLiteBackendV12(SQLiteIndexBackend):
     version = 12
 
 
+def test_cli_reports_unexpected_index_errors_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Collapse unexpected index failures into concise CLI stderr output.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to force one indexing failure.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts the CLI reports the failure without a traceback.
+    """
+    monkeypatch.setattr(
+        "repoindex.cli._run_index",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            sqlite3.IntegrityError("UNIQUE constraint failed: symbol_index.stable_id")
+        ),
+    )
+    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+
+    assert main() == 2
+    captured = capsys.readouterr()
+    assert "[repoindex] IntegrityError:" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
 def test_index_repo_reuses_unchanged_files(tmp_path: Path) -> None:
     """
     Ensure an unchanged repository is not reparsed on the second run.

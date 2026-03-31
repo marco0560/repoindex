@@ -695,7 +695,7 @@ def _extract_declarations(
     tuple[repoindex.models.DeclarationArtifact, ...]
         Deterministic declaration artifacts ordered by source position.
     """
-    declarations: list[DeclarationArtifact] = []
+    declarations_by_stable_id: dict[str, DeclarationArtifact] = {}
     attached_comments = _attached_comment_map(root, source)
 
     for child in root.children:
@@ -708,7 +708,7 @@ def _extract_declarations(
                 module_name=module_name,
             )
             if declaration is not None:
-                declarations.append(declaration)
+                declarations_by_stable_id[declaration.stable_id] = declaration
             continue
 
         if child.type == "enum_specifier":
@@ -720,7 +720,7 @@ def _extract_declarations(
                 module_name=module_name,
             )
             if declaration is not None:
-                declarations.append(declaration)
+                declarations_by_stable_id[declaration.stable_id] = declaration
             continue
 
         if child.type != "type_definition":
@@ -741,7 +741,7 @@ def _extract_declarations(
                     module_name=module_name,
                 )
                 if declaration is not None:
-                    declarations.append(declaration)
+                    declarations_by_stable_id[declaration.stable_id] = declaration
             elif named_child.type == "enum_specifier":
                 declaration = _declaration_artifact(
                     named_child,
@@ -755,7 +755,7 @@ def _extract_declarations(
                     module_name=module_name,
                 )
                 if declaration is not None:
-                    declarations.append(declaration)
+                    declarations_by_stable_id[declaration.stable_id] = declaration
 
         declaration = _declaration_artifact(
             child,
@@ -765,9 +765,14 @@ def _extract_declarations(
             module_name=module_name,
         )
         if declaration is not None:
-            declarations.append(declaration)
+            declarations_by_stable_id[declaration.stable_id] = declaration
 
-    return tuple(declarations)
+    return tuple(
+        sorted(
+            declarations_by_stable_id.values(),
+            key=lambda artifact: artifact.lineno,
+        )
+    )
 
 
 def _extract_imports(root: Node, source: bytes) -> tuple[ImportArtifact, ...]:

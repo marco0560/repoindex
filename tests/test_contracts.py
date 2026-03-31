@@ -605,6 +605,39 @@ def test_c_analyzer_extracts_top_level_declarations(tmp_path: Path) -> None:
     assert result.declarations[4].docstring == "Stable integer alias."
 
 
+def test_c_analyzer_keeps_last_duplicate_named_declaration(tmp_path: Path) -> None:
+    source = tmp_path / "native" / "types.h"
+    source.parent.mkdir()
+    source.write_text(
+        "struct Foo;\n" "struct Foo { int value; };\n",
+        encoding="utf-8",
+    )
+
+    result = CAnalyzer().analyze_file(source, tmp_path)
+
+    assert [
+        (declaration.kind, declaration.name, declaration.lineno)
+        for declaration in result.declarations
+    ] == [("struct", "Foo", 2)]
+    assert result.declarations[0].signature == "struct Foo { int value; }"
+
+
+def test_index_repo_handles_duplicate_c_declaration_redefinitions(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "native" / "types.h"
+    source.parent.mkdir()
+    source.write_text(
+        "struct Foo;\n" "struct Foo { int value; };\n",
+        encoding="utf-8",
+    )
+
+    report = index_repo(tmp_path)
+
+    assert report.failed == 0
+    assert report.indexed == 1
+
+
 def test_discovery_file_globs_follow_analyzer_registration_order() -> None:
     """
     Derive deterministic scanner globs from analyzer metadata.
