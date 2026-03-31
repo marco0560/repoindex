@@ -21,6 +21,7 @@ import hashlib
 import json
 import sqlite3
 import warnings
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -2128,7 +2129,7 @@ def _flush_persisted_relationship_rows(
     None
         Relationship rows are inserted in deterministic order.
     """
-    for row in sorted(call_rows):
+    for row in sorted(set(call_rows)):
         conn.execute(
             "INSERT INTO call_records"
             "(file_id, owner_module, owner_name, kind, base, target, "
@@ -2137,7 +2138,7 @@ def _flush_persisted_relationship_rows(
             row,
         )
 
-    for ref_row in sorted(ref_rows):
+    for ref_row in sorted(set(ref_rows)):
         conn.execute(
             "INSERT INTO callable_ref_records"
             "(file_id, owner_module, owner_name, kind, ref_kind, base, "
@@ -3516,13 +3517,29 @@ class SQLiteIndexBackend:
             get_embedding_backend() if embedding_backend is None else embedding_backend
         )
         try:
-            written = _store_analysis(
-                conn,
-                file_metadata,
-                analysis,
-                backend=active_backend,
-                previous_embeddings=previous_embeddings,
-            )
+            if owns_connection:
+                written = _store_analysis(
+                    conn,
+                    file_metadata,
+                    analysis,
+                    backend=active_backend,
+                    previous_embeddings=previous_embeddings,
+                )
+            else:
+                conn.execute("SAVEPOINT persist_analysis")
+                try:
+                    written = _store_analysis(
+                        conn,
+                        file_metadata,
+                        analysis,
+                        backend=active_backend,
+                        previous_embeddings=previous_embeddings,
+                    )
+                except (OSError, sqlite3.Error, RuntimeError, ValueError):
+                    conn.execute("ROLLBACK TO SAVEPOINT persist_analysis")
+                    conn.execute("RELEASE SAVEPOINT persist_analysis")
+                    raise
+                conn.execute("RELEASE SAVEPOINT persist_analysis")
             if owns_connection:
                 conn.commit()
             return written
@@ -3678,6 +3695,63 @@ def _collect_indexed_file_analyses(
     return parsed_files, failures, collected_warnings
 
 
+def _duplicate_analysis_stable_ids(analysis: AnalysisResult) -> list[str]:
+    """
+    Return duplicate symbol stable IDs emitted by one analysis result.
+
+    Parameters
+    ----------
+    analysis : repoindex.models.AnalysisResult
+        Normalized analyzer output for one file.
+
+    Returns
+    -------
+    list[str]
+        Sorted duplicate stable IDs, or an empty list when the analysis is
+        internally unique.
+    """
+    stable_ids = [analysis.module.stable_id]
+    stable_ids.extend(cls.stable_id for cls in analysis.classes)
+    for cls in analysis.classes:
+        stable_ids.extend(method.stable_id for method in cls.methods)
+    stable_ids.extend(fn.stable_id for fn in analysis.functions)
+    stable_ids.extend(decl.stable_id for decl in analysis.declarations)
+    counts = Counter(stable_ids)
+    return sorted(stable_id for stable_id, count in counts.items() if count > 1)
+
+
+def _raise_duplicate_stable_ids(path: Path, root: Path, stable_ids: list[str]) -> None:
+    """
+    Raise one duplicate-stable-id validation error for a file analysis.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        File path whose analysis emitted duplicate symbol identities.
+    root : pathlib.Path
+        Repository root used for relative diagnostic labels.
+    stable_ids : list[str]
+        Duplicate stable IDs detected in the file analysis.
+
+    Returns
+    -------
+    None
+        The function does not return.
+
+    Raises
+    ------
+    ValueError
+        Always raised with a file-scoped duplicate stable-id message.
+    """
+    try:
+        rel_label = path.relative_to(root).as_posix()
+    except ValueError:
+        rel_label = str(path)
+    duplicates_text = ", ".join(stable_ids)
+    msg = f"duplicate stable_id(s) in {rel_label}: {duplicates_text}"
+    raise ValueError(msg)
+
+
 def _persist_indexed_file_analyses(
     root: Path,
     *,
@@ -3686,7 +3760,7 @@ def _persist_indexed_file_analyses(
     parsed_files: list[ParsedFile],
     embedding_backend: EmbeddingBackendSpec,
     previous_embeddings_by_path: dict[str, dict[str, StoredEmbeddingRow]],
-) -> tuple[int, int]:
+) -> tuple[int, int, list[ParsedFile], list[IndexFailure]]:
     """
     Persist analyzed file snapshots through the selected index backend.
 
@@ -3707,28 +3781,54 @@ def _persist_indexed_file_analyses(
 
     Returns
     -------
-    tuple[int, int]
-        ``(recomputed, reused)`` embedding totals for indexed files.
+    tuple[int, int, list[ParsedFile], list[IndexFailure]]
+        ``(recomputed, reused, persisted_files, failures)`` for analyzed files.
     """
     embeddings_recomputed = 0
     embeddings_reused = 0
+    persisted_files: list[ParsedFile] = []
+    failures: list[IndexFailure] = []
 
-    for _path, file_metadata_snapshot, analysis in parsed_files:
-        recomputed, reused = sqlite_backend.persist_analysis(
-            root,
-            file_metadata=file_metadata_snapshot,
-            analysis=analysis,
-            embedding_backend=embedding_backend,
-            previous_embeddings=previous_embeddings_by_path.get(
-                str(file_metadata_snapshot.path),
-                {},
-            ),
-            conn=conn,
-        )
+    for path, file_metadata_snapshot, analysis in parsed_files:
+        try:
+            duplicate_stable_ids = _duplicate_analysis_stable_ids(analysis)
+            if duplicate_stable_ids:
+                _raise_duplicate_stable_ids(
+                    file_metadata_snapshot.path,
+                    root,
+                    duplicate_stable_ids,
+                )
+            recomputed, reused = sqlite_backend.persist_analysis(
+                root,
+                file_metadata=file_metadata_snapshot,
+                analysis=analysis,
+                embedding_backend=embedding_backend,
+                previous_embeddings=previous_embeddings_by_path.get(
+                    str(file_metadata_snapshot.path),
+                    {},
+                ),
+                conn=conn,
+            )
+        except (OSError, sqlite3.Error, RuntimeError, ValueError) as exc:
+            failures.append(
+                IndexFailure(
+                    path=str(path),
+                    analyzer_name=file_metadata_snapshot.analyzer_name,
+                    error_type=type(exc).__name__,
+                    reason=str(exc),
+                )
+            )
+            continue
         embeddings_recomputed += recomputed
         embeddings_reused += reused
+        persisted_files.append((path, file_metadata_snapshot, analysis))
 
-    return (embeddings_recomputed, embeddings_reused)
+    return (
+        embeddings_recomputed,
+        embeddings_reused,
+        persisted_files,
+        failures,
+    )
 
 
 def _collect_project_scan_state(
@@ -4081,16 +4181,20 @@ def index_repo(
             current_state.metadata_by_path,
             analyzers,
         )
-        embeddings_recomputed, changed_file_embeddings_reused = (
-            _persist_indexed_file_analyses(
-                root,
-                conn=conn,
-                sqlite_backend=sqlite_backend,
-                parsed_files=parsed_files,
-                embedding_backend=backend,
-                previous_embeddings_by_path=previous_embeddings_by_path,
-            )
+        (
+            embeddings_recomputed,
+            changed_file_embeddings_reused,
+            persisted_files,
+            persistence_failures,
+        ) = _persist_indexed_file_analyses(
+            root,
+            conn=conn,
+            sqlite_backend=sqlite_backend,
+            parsed_files=parsed_files,
+            embedding_backend=backend,
+            previous_embeddings_by_path=previous_embeddings_by_path,
         )
+        failures.extend(persistence_failures)
         embeddings_reused = unchanged_embeddings_reused + changed_file_embeddings_reused
 
         sqlite_backend.rebuild_derived_indexes(root, conn=conn)
@@ -4105,7 +4209,7 @@ def index_repo(
 
         return _finalize_index_report(
             plan=plan,
-            parsed_files=parsed_files,
+            parsed_files=persisted_files,
             failures=failures,
             warnings=collected_warnings,
             coverage_issues=coverage_issues,

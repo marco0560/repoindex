@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from repoindex.analyzers import BashAnalyzer, CAnalyzer, PythonAnalyzer
+from repoindex.analyzers.c import _disambiguate_function_stable_ids
 from repoindex.contracts import IndexBackend, LanguageAnalyzer
 from repoindex.indexer import (
     SQLiteIndexBackend,
@@ -36,6 +37,7 @@ from repoindex.models import (
     AnalysisResult,
     CallSite,
     FileMetadataSnapshot,
+    FunctionArtifact,
     ModuleArtifact,
 )
 from repoindex.normalization import analysis_result_from_parsed
@@ -622,6 +624,31 @@ def test_c_analyzer_keeps_last_duplicate_named_declaration(tmp_path: Path) -> No
     assert result.declarations[0].signature == "struct Foo { int value; }"
 
 
+def test_c_analyzer_uses_real_name_for_annotated_functions(tmp_path: Path) -> None:
+    source = tmp_path / "native" / "annotated.c"
+    source.parent.mkdir()
+    source.write_text(
+        "typedef struct cairo_xml cairo_xml_t;\n"
+        "static void CAIRO_PRINTF_FORMAT (2, 3)\n"
+        "_cairo_xml_printf(cairo_xml_t *xml, const char *fmt, ...)\n"
+        "{\n"
+        "}\n"
+        "\n"
+        "static void CAIRO_PRINTF_FORMAT (2, 3)\n"
+        "_cairo_xml_printf_start(cairo_xml_t *xml, const char *fmt, ...)\n"
+        "{\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = CAnalyzer().analyze_file(source, tmp_path)
+
+    assert [(function.name, function.lineno) for function in result.functions] == [
+        ("_cairo_xml_printf", 2),
+        ("_cairo_xml_printf_start", 7),
+    ]
+
+
 def test_index_repo_handles_duplicate_c_declaration_redefinitions(
     tmp_path: Path,
 ) -> None:
@@ -636,6 +663,257 @@ def test_index_repo_handles_duplicate_c_declaration_redefinitions(
 
     assert report.failed == 0
     assert report.indexed == 1
+
+
+def test_index_repo_handles_annotated_c_functions(tmp_path: Path) -> None:
+    source = tmp_path / "native" / "annotated.c"
+    source.parent.mkdir()
+    source.write_text(
+        "typedef struct cairo_xml cairo_xml_t;\n"
+        "static void CAIRO_PRINTF_FORMAT (2, 3)\n"
+        "_cairo_xml_printf(cairo_xml_t *xml, const char *fmt, ...)\n"
+        "{\n"
+        "}\n"
+        "\n"
+        "static void CAIRO_PRINTF_FORMAT (2, 3)\n"
+        "_cairo_xml_printf_start(cairo_xml_t *xml, const char *fmt, ...)\n"
+        "{\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    report = index_repo(tmp_path)
+
+    assert report.failed == 0
+    assert report.indexed == 1
+
+
+def test_c_analyzer_uses_real_name_for_macro_wrapped_functions(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "native" / "compat.c"
+    source.parent.mkdir()
+    source.write_text(
+        "typedef unsigned long mp_limb_t;\n"
+        "typedef unsigned long mp_size_t;\n"
+        "typedef unsigned long *mp_ptr;\n"
+        "typedef const unsigned long *mp_srcptr;\n"
+        "mp_limb_t\n"
+        "__MPN (divexact_by3) (mp_ptr dst, mp_srcptr src, mp_size_t size)\n"
+        "{\n"
+        "    return 0;\n"
+        "}\n"
+        "\n"
+        "mp_limb_t\n"
+        "__MPN (divmod_1) (mp_ptr dst, mp_srcptr src, mp_size_t size)\n"
+        "{\n"
+        "    return 0;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = CAnalyzer().analyze_file(source, tmp_path)
+
+    assert [(function.name, function.lineno) for function in result.functions] == [
+        ("divexact_by3", 5),
+        ("divmod_1", 11),
+    ]
+
+
+def test_index_repo_handles_macro_wrapped_c_functions(tmp_path: Path) -> None:
+    source = tmp_path / "native" / "compat.c"
+    source.parent.mkdir()
+    source.write_text(
+        "typedef unsigned long mp_limb_t;\n"
+        "typedef unsigned long mp_size_t;\n"
+        "typedef unsigned long *mp_ptr;\n"
+        "typedef const unsigned long *mp_srcptr;\n"
+        "mp_limb_t\n"
+        "__MPN (divexact_by3) (mp_ptr dst, mp_srcptr src, mp_size_t size)\n"
+        "{\n"
+        "    return 0;\n"
+        "}\n"
+        "\n"
+        "mp_limb_t\n"
+        "__MPN (divmod_1) (mp_ptr dst, mp_srcptr src, mp_size_t size)\n"
+        "{\n"
+        "    return 0;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    report = index_repo(tmp_path)
+
+    assert report.failed == 0
+    assert report.indexed == 1
+
+
+def test_c_analyzer_handles_latin1_encoded_source(tmp_path: Path) -> None:
+    source = tmp_path / "native" / "legacy.c"
+    source.parent.mkdir()
+    source.write_bytes(
+        (
+            "/* Cr\xe8me legacy comment. */\n"
+            "int helper(void)\n"
+            "{\n"
+            "    return 1;\n"
+            "}\n"
+        ).encode("latin-1")
+    )
+
+    result = CAnalyzer().analyze_file(source, tmp_path)
+
+    assert result.module.docstring == "Cr\xe8me legacy comment."
+    assert [(function.name, function.lineno) for function in result.functions] == [
+        ("helper", 2)
+    ]
+
+
+def test_index_repo_handles_latin1_encoded_c_source(tmp_path: Path) -> None:
+    source = tmp_path / "native" / "legacy.c"
+    source.parent.mkdir()
+    source.write_bytes(
+        (
+            "/* Cr\xe8me legacy comment. */\n"
+            "int helper(void)\n"
+            "{\n"
+            "    return 1;\n"
+            "}\n"
+        ).encode("latin-1")
+    )
+
+    report = index_repo(tmp_path)
+
+    assert report.failed == 0
+    assert report.indexed == 1
+
+
+def test_c_analyzer_uses_error_recovered_name_for_export_macros(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "native" / "exported.c"
+    source.parent.mkdir()
+    source.write_text(
+        "typedef struct TestNode TestNode;\n"
+        "void T_CTEST_EXPORT2\n"
+        "showTests (const TestNode *root)\n"
+        "{\n"
+        "}\n"
+        "\n"
+        "void T_CTEST_EXPORT2\n"
+        "runTests (const TestNode *root)\n"
+        "{\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = CAnalyzer().analyze_file(source, tmp_path)
+
+    assert [(function.name, function.lineno) for function in result.functions] == [
+        ("showTests", 2),
+        ("runTests", 7),
+    ]
+
+
+def test_c_analyzer_ignores_throw_exception_specifier_as_function_name(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "native" / "face.h"
+    source.parent.mkdir()
+    source.write_text(
+        "class Face { public: json * logger() const throw(); };\n"
+        "inline\n"
+        "json * Face::logger() const throw()\n"
+        "{\n"
+        "  return 0;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = CAnalyzer().analyze_file(source, tmp_path)
+
+    assert [(function.name, function.lineno) for function in result.functions] == [
+        ("logger", 2)
+    ]
+
+
+def test_c_analyzer_uses_error_recovered_name_for_type_like_prefix(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "native" / "float_funcs.c"
+    source.parent.mkdir()
+    source.write_text(
+        "static force_inline float\n"
+        "minf (float a, float b)\n"
+        "{\n"
+        "  return a;\n"
+        "}\n"
+        "\n"
+        "static force_inline float\n"
+        "maxf (float a, float b)\n"
+        "{\n"
+        "  return a;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = CAnalyzer().analyze_file(source, tmp_path)
+
+    assert [(function.name, function.lineno) for function in result.functions] == [
+        ("minf", 1),
+        ("maxf", 7),
+    ]
+
+
+def test_c_function_stable_ids_are_disambiguated_when_names_repeat() -> None:
+    functions = (
+        FunctionArtifact(
+            name="assign",
+            stable_id="c:function:native.sample:assign",
+            lineno=10,
+            end_lineno=12,
+            signature="assign(size_t n, const T& u)",
+            docstring=None,
+            has_docstring=0,
+            is_method=0,
+            is_public=1,
+            parameters=(),
+            returns_value=0,
+            yields_value=0,
+            raises=0,
+            has_asserts=0,
+            decorators=(),
+            calls=(),
+            callable_refs=(),
+        ),
+        FunctionArtifact(
+            name="assign",
+            stable_id="c:function:native.sample:assign",
+            lineno=13,
+            end_lineno=15,
+            signature="assign(const_iterator first, const_iterator last)",
+            docstring=None,
+            has_docstring=0,
+            is_method=0,
+            is_public=1,
+            parameters=(),
+            returns_value=0,
+            yields_value=0,
+            raises=0,
+            has_asserts=0,
+            decorators=(),
+            calls=(),
+            callable_refs=(),
+        ),
+    )
+
+    disambiguated = _disambiguate_function_stable_ids(functions)
+
+    assert len({function.stable_id for function in disambiguated}) == 2
+    assert all(
+        function.stable_id.startswith("c:function:native.sample:assign")
+        for function in disambiguated
+    )
 
 
 def test_discovery_file_globs_follow_analyzer_registration_order() -> None:

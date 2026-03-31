@@ -17,6 +17,8 @@ This module belongs to the **language analyzer layer** and implements the C-fami
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -38,6 +40,25 @@ from repoindex.models import (
 
 _C_SUFFIXES = {".c", ".h"}
 _LANGUAGE = Language(language())
+_TYPE_LIKE_NAMES = {
+    "bool",
+    "char",
+    "double",
+    "float",
+    "int",
+    "long",
+    "short",
+    "size_t",
+    "uint8_t",
+    "uint16_t",
+    "uint32_t",
+    "uint64_t",
+    "int8_t",
+    "int16_t",
+    "int32_t",
+    "int64_t",
+    "void",
+}
 
 
 def _new_parser() -> Parser:
@@ -54,6 +75,26 @@ def _new_parser() -> Parser:
         Parser configured for ``tree-sitter-c``.
     """
     return Parser(_LANGUAGE)
+
+
+def _decode_source_text(source: bytes) -> str:
+    """
+    Decode one source fragment with a deterministic legacy fallback.
+
+    Parameters
+    ----------
+    source : bytes
+        Raw source bytes to decode.
+
+    Returns
+    -------
+    str
+        Text decoded as UTF-8 when possible, otherwise Latin-1.
+    """
+    try:
+        return source.decode("utf-8")
+    except UnicodeDecodeError:
+        return source.decode("latin-1")
 
 
 def _module_name_for_path(path: Path, root: Path) -> str:
@@ -153,9 +194,9 @@ def _node_text(node: Node, source: bytes) -> str:
     Returns
     -------
     str
-        Decoded UTF-8 node text.
+        Decoded node text with a deterministic legacy fallback.
     """
-    return source[node.start_byte : node.end_byte].decode("utf-8")
+    return _decode_source_text(source[node.start_byte : node.end_byte])
 
 
 def _comment_to_summary(text: str) -> str | None:
@@ -287,6 +328,11 @@ def _unwrap_declarator_name(node: Node, source: bytes) -> str | None:
     str | None
         Identifier text when resolvable.
     """
+    if node.type == "function_declarator":
+        function_name = _function_declarator_name(node, source)
+        if function_name is not None:
+            return function_name
+
     if node.type in {"identifier", "field_identifier"}:
         return _node_text(node, source)
 
@@ -298,6 +344,179 @@ def _unwrap_declarator_name(node: Node, source: bytes) -> str | None:
         name = _unwrap_declarator_name(named_child, source)
         if name is not None:
             return name
+    return None
+
+
+def _function_declarator_name(node: Node, source: bytes) -> str | None:
+    """
+    Resolve the callable identifier owned by one function declarator.
+
+    Parameters
+    ----------
+    node : tree_sitter.Node
+        Function declarator that may include annotations or parse errors.
+    source : bytes
+        Full source buffer.
+
+    Returns
+    -------
+    str | None
+        Callable identifier text when resolvable.
+    """
+    direct_declarator = node.child_by_field_name("declarator")
+    if direct_declarator is not None and direct_declarator.type == "identifier":
+        direct_name = _node_text(direct_declarator, source)
+        error_name = _error_identifier_name(node, source)
+        if error_name is not None and _looks_like_macro_or_type_name(direct_name):
+            return error_name
+
+    macro_wrapped_name = _function_macro_wrapper_name(node, source)
+    if macro_wrapped_name is not None:
+        return macro_wrapped_name
+
+    if direct_declarator is None or direct_declarator.type != "identifier":
+        return None
+    if not _looks_like_annotation_macro_name(_node_text(direct_declarator, source)):
+        return None
+    return _annotated_function_call_name(node, source)
+
+
+def _annotated_function_call_name(node: Node, source: bytes) -> str | None:
+    """
+    Resolve a callable name from a macro-annotated call-like declarator.
+
+    Parameters
+    ----------
+    node : tree_sitter.Node
+        Function declarator whose real callable name may appear in a nested
+        call expression.
+    source : bytes
+        Full source buffer.
+
+    Returns
+    -------
+    str | None
+        Callable identifier text when the annotation pattern is present.
+    """
+    for named_child in reversed(node.named_children):
+        if named_child.type != "call_expression":
+            continue
+        arguments = named_child.child_by_field_name("arguments")
+        if arguments is None or not arguments.named_children:
+            continue
+        function_node = named_child.child_by_field_name("function")
+        if function_node is None:
+            continue
+        name = _unwrap_declarator_name(function_node, source)
+        if name is not None:
+            return name
+    return None
+
+
+def _looks_like_macro_or_type_name(name: str) -> bool:
+    """
+    Decide whether one declarator token looks like a macro or a type name.
+
+    Parameters
+    ----------
+    name : str
+        Candidate declarator token.
+
+    Returns
+    -------
+    bool
+        ``True`` when the token is unlikely to be the real callable name.
+    """
+    if name in _TYPE_LIKE_NAMES or name.endswith("_t"):
+        return True
+    return _looks_like_annotation_macro_name(name)
+
+
+def _looks_like_annotation_macro_name(name: str) -> bool:
+    """
+    Decide whether one declarator token looks like an annotation macro.
+
+    Parameters
+    ----------
+    name : str
+        Candidate declarator token.
+
+    Returns
+    -------
+    bool
+        ``True`` when the token is all-uppercase or underscore-style text.
+    """
+    has_alpha = any(char.isalpha() for char in name)
+    if not has_alpha:
+        return False
+    return all(not char.isalpha() or char.isupper() for char in name)
+
+
+def _error_identifier_name(node: Node, source: bytes) -> str | None:
+    """
+    Extract one identifier-like token from an ``ERROR`` child when present.
+
+    Parameters
+    ----------
+    node : tree_sitter.Node
+        Declarator node that may include a parse-error placeholder.
+    source : bytes
+        Full source buffer.
+
+    Returns
+    -------
+    str | None
+        Recovered identifier text when the ``ERROR`` child looks usable.
+    """
+    for named_child in node.named_children:
+        if named_child.type != "ERROR":
+            continue
+        text = _node_text(named_child, source).strip()
+        if not text:
+            continue
+        if "::" in text or "(" in text or ")" in text or "[" in text or "]" in text:
+            continue
+        if not (text[0].isalpha() or text[0] == "_"):
+            continue
+        if any(not (char.isalnum() or char == "_") for char in text):
+            continue
+        return text
+    return None
+
+
+def _function_macro_wrapper_name(node: Node, source: bytes) -> str | None:
+    """
+    Resolve a function name wrapped by a macro-style declarator.
+
+    Parameters
+    ----------
+    node : tree_sitter.Node
+        Function declarator that may wrap the real name in a macro call.
+    source : bytes
+        Full source buffer.
+
+    Returns
+    -------
+    str | None
+        Wrapped function name when the declarator matches the macro pattern.
+    """
+    nested = node.child_by_field_name("declarator")
+    if nested is None or nested.type != "function_declarator":
+        return None
+
+    parameter_list = nested.child_by_field_name("parameters")
+    if parameter_list is None or len(parameter_list.named_children) != 1:
+        return None
+
+    parameter = parameter_list.named_children[0]
+    if parameter.type != "parameter_declaration":
+        return None
+    if parameter.child_by_field_name("declarator") is not None:
+        return None
+
+    for named_child in parameter.named_children:
+        if named_child.type in {"identifier", "type_identifier", "field_identifier"}:
+            return _node_text(named_child, source)
     return None
 
 
@@ -538,7 +757,9 @@ def _extract_functions(
         parameter_list = _find_parameter_list(declarator)
         parameters = _extract_parameter_names(parameter_list, source)
         signature_end = body.start_byte if body is not None else declarator.end_byte
-        signature = source[child.start_byte : signature_end].decode("utf-8").strip()
+        signature = _decode_source_text(
+            source[child.start_byte : signature_end]
+        ).strip()
         is_public = int(
             not any(
                 sub.type == "storage_class_specifier"
@@ -569,7 +790,45 @@ def _extract_functions(
             )
         )
 
-    return tuple(functions)
+    return _disambiguate_function_stable_ids(tuple(functions))
+
+
+def _disambiguate_function_stable_ids(
+    functions: tuple[FunctionArtifact, ...],
+) -> tuple[FunctionArtifact, ...]:
+    """
+    Disambiguate duplicate C function stable IDs within one file analysis.
+
+    Parameters
+    ----------
+    functions : tuple[repoindex.models.FunctionArtifact, ...]
+        Extracted function artifacts in source order.
+
+    Returns
+    -------
+    tuple[repoindex.models.FunctionArtifact, ...]
+        Function artifacts with duplicate stable IDs rewritten deterministically.
+    """
+    counts: dict[str, int] = {}
+    for function in functions:
+        counts[function.stable_id] = counts.get(function.stable_id, 0) + 1
+
+    if all(count == 1 for count in counts.values()):
+        return functions
+
+    used_ids: set[str] = set()
+    disambiguated: list[FunctionArtifact] = []
+    for function in functions:
+        stable_id = function.stable_id
+        if counts[stable_id] > 1:
+            digest = hashlib.sha1(function.signature.encode("utf-8")).hexdigest()[:12]
+            stable_id = f"{stable_id}:{digest}"
+            if stable_id in used_ids:
+                stable_id = f"{stable_id}:{function.lineno}"
+            function = replace(function, stable_id=stable_id)
+        used_ids.add(stable_id)
+        disambiguated.append(function)
+    return tuple(disambiguated)
 
 
 def _declaration_name(node: Node, source: bytes) -> str | None:

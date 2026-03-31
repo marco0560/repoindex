@@ -24,7 +24,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from repoindex.analyzers import PythonAnalyzer
 from repoindex.cli import (
@@ -35,6 +35,14 @@ from repoindex.cli import (
     main,
 )
 from repoindex.indexer import SQLiteIndexBackend, audit_repo_coverage, index_repo
+from repoindex.models import (
+    AnalysisResult,
+    CallableReference,
+    CallSite,
+    FileMetadataSnapshot,
+    FunctionArtifact,
+    ModuleArtifact,
+)
 from repoindex.query.exact import find_symbol
 from repoindex.scanner import file_metadata
 from repoindex.schema import SCHEMA_VERSION
@@ -105,14 +113,17 @@ def test_cli_reports_unexpected_index_errors_without_traceback(
     monkeypatch.setattr(
         "repoindex.cli._run_index",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            sqlite3.IntegrityError("UNIQUE constraint failed: symbol_index.stable_id")
+            ValueError(
+                "duplicate stable_id(s) in native/annotated.c: "
+                "c:function:native.annotated:PRINTF_FORMAT"
+            )
         ),
     )
     monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
 
     assert main() == 2
     captured = capsys.readouterr()
-    assert "[repoindex] IntegrityError:" in captured.err
+    assert "native/annotated.c" in captured.err
     assert "Traceback" not in captured.err
     assert captured.out == ""
 
@@ -155,6 +166,145 @@ def test_index_repo_reuses_unchanged_files(tmp_path: Path) -> None:
     assert second.deleted == 0
     assert second.embeddings_recomputed == 0
     assert second.embeddings_reused == first.embeddings_recomputed
+
+
+def test_index_repo_reports_duplicate_stable_ids_as_file_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Report duplicate stable IDs as file-scoped failures instead of aborting.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to force one duplicate-stable-id diagnostic.
+
+    Returns
+    -------
+    None
+        The test asserts the run completes and records one failed file.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    _write_module(
+        module,
+        '"""Module doc."""\n'
+        "\n"
+        "def demo():\n"
+        '    """Return a constant."""\n'
+        "    return 1\n",
+    )
+
+    monkeypatch.setattr(
+        "repoindex.indexer._duplicate_analysis_stable_ids",
+        lambda analysis: ["python:function:pkg.sample:demo"],
+    )
+
+    report = index_repo(tmp_path)
+
+    assert report.indexed == 0
+    assert report.failed == 1
+    assert report.failures[0].path == str(module)
+    assert "duplicate stable_id(s)" in report.failures[0].reason
+
+
+def test_persist_analysis_deduplicates_identical_call_and_ref_rows(
+    tmp_path: Path,
+) -> None:
+    """
+    Deduplicate identical normalized call and callable-reference rows.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts persistence stores one row for each duplicate record.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    _write_module(module, "def demo():\n    return 1\n")
+
+    duplicate_call = CallSite(
+        kind="name",
+        target="helper",
+        lineno=1,
+        col_offset=4,
+    )
+    duplicate_ref = CallableReference(
+        kind="name",
+        target="helper",
+        lineno=1,
+        col_offset=6,
+        ref_kind="return_value",
+    )
+    analysis = AnalysisResult(
+        source_path=module,
+        module=ModuleArtifact(
+            name="pkg.sample",
+            stable_id="python:module:pkg.sample",
+            docstring=None,
+            has_docstring=0,
+        ),
+        classes=(),
+        functions=(
+            FunctionArtifact(
+                name="demo",
+                stable_id="python:function:pkg.sample:demo",
+                lineno=1,
+                end_lineno=2,
+                signature="def demo()",
+                docstring=None,
+                has_docstring=0,
+                is_method=0,
+                is_public=1,
+                parameters=(),
+                returns_value=1,
+                yields_value=0,
+                raises=0,
+                has_asserts=0,
+                decorators=(),
+                calls=(duplicate_call, duplicate_call),
+                callable_refs=(duplicate_ref, duplicate_ref),
+            ),
+        ),
+        declarations=(),
+        imports=(),
+    )
+    metadata = file_metadata(module)
+
+    init_db(tmp_path)
+    backend = SQLiteIndexBackend()
+    backend.persist_analysis(
+        tmp_path,
+        file_metadata=FileMetadataSnapshot(
+            path=module,
+            sha256=cast("str", metadata["hash"]),
+            mtime=cast("float", metadata["mtime"]),
+            size=cast("int", metadata["size"]),
+            analyzer_name="python",
+            analyzer_version="1",
+        ),
+        analysis=analysis,
+    )
+
+    conn = sqlite3.connect(get_db_path(tmp_path))
+    try:
+        call_count = conn.execute(
+            "SELECT COUNT(*) FROM call_records WHERE owner_name = 'demo'"
+        ).fetchone()[0]
+        ref_count = conn.execute(
+            "SELECT COUNT(*) FROM callable_ref_records WHERE owner_name = 'demo'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert call_count == 1
+    assert ref_count == 1
 
 
 def test_index_repo_reindexes_changed_files(tmp_path: Path) -> None:
