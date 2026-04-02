@@ -66,6 +66,7 @@ REQUIRED_BACKEND_METHODS: tuple[str, ...] = (
 PluginFamily = Literal["analyzer", "backend"]
 PluginSource = Literal["builtin", "entry_point"]
 PluginStatus = Literal["loaded", "skipped", "duplicate"]
+PluginOrigin = Literal["core", "first_party", "third_party"]
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,8 @@ class PluginRegistration:
         Entry-point name for third-party plugins.
     detail : str | None, optional
         Deterministic explanation for skipped or duplicate records.
+    origin : {"core", "first_party", "third_party"}
+        Ownership classification for operator-facing reporting.
     """
 
     family: PluginFamily
@@ -101,6 +104,7 @@ class PluginRegistration:
     version: str
     entry_point: str | None = None
     detail: str | None = None
+    origin: PluginOrigin = "third_party"
 
 
 @dataclass(frozen=True)
@@ -151,6 +155,29 @@ def _registered_index_backends() -> dict[str, type[SQLiteIndexBackend]]:
     from repoindex.indexer import SQLiteIndexBackend
 
     return {"sqlite": SQLiteIndexBackend}
+
+
+def _plugin_origin(*, provider: str, source: PluginSource) -> PluginOrigin:
+    """
+    Classify plugin ownership for diagnostics and operator reporting.
+
+    Parameters
+    ----------
+    provider : str
+        Distribution or built-in provider label.
+    source : {"builtin", "entry_point"}
+        Registration source.
+
+    Returns
+    -------
+    {"core", "first_party", "third_party"}
+        Ownership classification for the plugin.
+    """
+    if source == "builtin" and provider == "repoindex":
+        return "core"
+    if provider == "repoindex" or provider.startswith("repoindex-"):
+        return "first_party"
+    return "third_party"
 
 
 def _builtin_backend_plugins() -> list[_LoadedPlugin]:
@@ -301,6 +328,7 @@ def _load_entry_point_plugin(
             version="unknown",
             entry_point=entry_point.name,
             detail=f"load failed: {exc.__class__.__name__}: {exc}",
+            origin=_plugin_origin(provider=provider, source="entry_point"),
         )
 
     if not callable(loaded_object):
@@ -313,6 +341,7 @@ def _load_entry_point_plugin(
             version="unknown",
             entry_point=entry_point.name,
             detail="entry point is not callable",
+            origin=_plugin_origin(provider=provider, source="entry_point"),
         )
 
     factory = cast("Callable[[], object]", loaded_object)
@@ -329,6 +358,7 @@ def _load_entry_point_plugin(
             version="unknown",
             entry_point=entry_point.name,
             detail=f"factory failed: {exc.__class__.__name__}: {exc}",
+            origin=_plugin_origin(provider=provider, source="entry_point"),
         )
 
     if family == "analyzer":
@@ -342,6 +372,7 @@ def _load_entry_point_plugin(
                 version="unknown",
                 entry_point=entry_point.name,
                 detail="factory returned a non-LanguageAnalyzer object",
+                origin=_plugin_origin(provider=provider, source="entry_point"),
             )
         discovery_globs = getattr(instance, "discovery_globs", None)
         invalid_discovery_globs = (
@@ -362,6 +393,7 @@ def _load_entry_point_plugin(
                 version="unknown",
                 entry_point=entry_point.name,
                 detail="analyzer discovery_globs must be a non-empty tuple[str, ...]",
+                origin=_plugin_origin(provider=provider, source="entry_point"),
             )
     else:
         if not isinstance(instance, IndexBackend):
@@ -374,6 +406,7 @@ def _load_entry_point_plugin(
                 version="unknown",
                 entry_point=entry_point.name,
                 detail="factory returned a non-IndexBackend object",
+                origin=_plugin_origin(provider=provider, source="entry_point"),
             )
         missing_methods = [
             method
@@ -391,6 +424,7 @@ def _load_entry_point_plugin(
                 version="unknown",
                 entry_point=entry_point.name,
                 detail=f"backend is missing required methods: {joined}",
+                origin=_plugin_origin(provider=provider, source="entry_point"),
             )
 
     name = getattr(instance, "name", None)
@@ -405,6 +439,7 @@ def _load_entry_point_plugin(
             version="unknown",
             entry_point=entry_point.name,
             detail="plugin name must be a non-empty string",
+            origin=_plugin_origin(provider=provider, source="entry_point"),
         )
     version = None if raw_version is None else str(raw_version).strip()
     if not version:
@@ -417,6 +452,7 @@ def _load_entry_point_plugin(
             version="unknown",
             entry_point=entry_point.name,
             detail="plugin version must be a non-empty string",
+            origin=_plugin_origin(provider=provider, source="entry_point"),
         )
 
     return (
@@ -437,6 +473,7 @@ def _load_entry_point_plugin(
             status="loaded",
             version=version,
             entry_point=entry_point.name,
+            origin=_plugin_origin(provider=provider, source="entry_point"),
         ),
     )
 
@@ -511,6 +548,7 @@ def _resolve_plugins(
             status="loaded",
             version=plugin.version,
             entry_point=plugin.entry_point,
+            origin=_plugin_origin(provider=plugin.provider, source=plugin.source),
         )
         for plugin in builtins
     ]
@@ -548,6 +586,10 @@ def _resolve_plugins(
                     version=plugin.version,
                     entry_point=plugin.entry_point,
                     detail="duplicate plugin name rejected",
+                    origin=_plugin_origin(
+                        provider=plugin.provider,
+                        source=plugin.source,
+                    ),
                 )
             )
             continue
@@ -643,7 +685,7 @@ def missing_language_analyzer_hint(path: Path) -> str | None:
         return (
             "C-family indexing support is optional. "
             f"Install `{package_name}` to enable `*.c` and `*.h` files, or use "
-            "`repoindex-bundle-official` when the curated bundle is available."
+            "`repoindex[bundle-official]` when the curated bundle is available."
         )
 
     if suffix in {".sh", ".bash"} and "bash" not in analyzer_names:
@@ -651,7 +693,7 @@ def missing_language_analyzer_hint(path: Path) -> str | None:
         return (
             "Shell indexing support is optional. "
             f"Install `{package_name}` to enable `*.sh` and `*.bash` files, or "
-            "use `repoindex-bundle-official` when the curated bundle is available."
+            "use `repoindex[bundle-official]` when the curated bundle is available."
         )
 
     return None

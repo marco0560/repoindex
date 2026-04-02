@@ -16,6 +16,12 @@ The plugin system currently supports two extension families:
 - analyzers through the `repoindex.analyzers` entry-point group
 - backends through the `repoindex.backends` entry-point group
 
+The `repoindex plugins` surface also classifies each discovered plugin as:
+
+- `origin=core`
+- `origin=first_party`
+- `origin=third_party`
+
 Copyable example packages live under:
 
 - `examples/plugins/repoindex_demo_analyzer`

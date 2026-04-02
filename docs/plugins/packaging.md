@@ -13,6 +13,8 @@ Install model:
 - third-party plugins are separate distributions
 - official first-party plugins also use separate distributions under `packages/`
 - plugins are discovered from the current Python environment
+- `repoindex plugins` reports `origin=core`, `origin=first_party`, or
+  `origin=third_party` to clarify ownership
 
 Typical local workflow:
 
@@ -35,6 +37,10 @@ Repository-owned first-party distributions now live under:
 - `packages/repoindex-analyzer-c`
 - `packages/repoindex-analyzer-bash`
 - `packages/repoindex-bundle-official`
+
+The accepted published umbrella install name for the curated official set is
+`repoindex[bundle-official]`. During the current monorepo phase, repository
+contributors still install the extracted packages from `packages/`.
 
 For optional dependencies inside a plugin package, declare them in the plugin's
 own `pyproject.toml`. The core package should not need to know about them.

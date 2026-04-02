@@ -67,6 +67,13 @@ pip install -e ../repoindex/packages/repoindex-analyzer-c
 pip install -e ../repoindex/packages/repoindex-analyzer-bash
 ```
 
+The accepted published bundle name is `repoindex[bundle-official]`. Inside the
+current source tree, repository-local development still installs the extracted
+first-party packages explicitly from `packages/`.
+
+Use `repoindex plugins` to inspect discovery. The report marks each plugin as
+`origin=core`, `origin=first_party`, or `origin=third_party`.
+
 ## Architecture Status
 
 The current architecture after completed `ADR-004` migration work is:

@@ -263,6 +263,7 @@ def test_plugin_registrations_report_loaded_skipped_and_duplicate_plugins(
         and record.name == "python"
         and record.source == "builtin"
         and record.status == "loaded"
+        and record.origin == "core"
         for record in registrations
     )
     assert any(
@@ -270,6 +271,7 @@ def test_plugin_registrations_report_loaded_skipped_and_duplicate_plugins(
         and record.name == "demo"
         and record.provider == "demo-analyzer"
         and record.status == "loaded"
+        and record.origin == "third_party"
         for record in registrations
     )
     assert any(
@@ -384,6 +386,7 @@ def test_plugins_cli_emits_json_registration_diagnostics(
         row["family"] == "analyzer"
         and row["name"] == "demo"
         and row["provider"] == "demo-analyzer"
+        and row["origin"] == "third_party"
         and row["status"] == "loaded"
         for row in payload["results"]
     )

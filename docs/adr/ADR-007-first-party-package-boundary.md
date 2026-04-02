@@ -70,13 +70,14 @@ only in packaging metadata.
 
 ### `bundle-official` is the accepted umbrella name
 
-The accepted umbrella distribution name for the curated first-party plugin set
-is `repoindex-bundle-official`.
+The accepted umbrella install name for the curated first-party plugin set is
+`repoindex[bundle-official]`.
 
-In Phase 1 it acts as the future-facing meta-package name that groups the
-official plugin set. Repository-local development may still need explicit
-editable installs for the component packages until the distributions are
-published in a normal package index.
+In Phase 1 the repository may still keep a monorepo scaffold such as
+`packages/repoindex-bundle-official/`, but the user-facing bundle contract is
+the `bundle-official` install target on `repoindex`. Repository-local
+development may still need explicit editable installs for the component
+packages until the distributions are published in a normal package index.
 
 ### Compatibility remains explicit during the transition
 
@@ -106,8 +107,8 @@ replaceable through external distributions.
 * optional analyzer support is validated through real package installs rather
   than only through extras
 * future extraction of Python and backend implementations has a clear precedent
-* `repoindex-bundle-official` becomes the stable umbrella name for curated
-  first-party capabilities
+* `repoindex[bundle-official]` becomes the stable umbrella install contract for
+  curated first-party capabilities
 
 ### Negative
 
@@ -129,7 +130,7 @@ replaceable through external distributions.
 ## Phase 1 Ledger
 
 * [x] Accept `packages/` as the first-party plugin area
-* [x] Accept `repoindex-bundle-official` as the umbrella package name
+* [x] Accept `repoindex[bundle-official]` as the umbrella install name
 * [x] Select `CAnalyzer` and `BashAnalyzer` as the first extraction targets
 * [ ] Reconcile repository-local bootstrap, CI, and user docs with the new
   package boundary

@@ -34,8 +34,13 @@ the live source tree from this repository.
 
 The current source-tree install keeps the embedding stack in the core package
 while the extracted first-party analyzers are installed from `packages/`.
-`repoindex-bundle-official` is the accepted umbrella package name for the
-curated bundle once the distributions are published normally.
+The accepted published bundle name is `repoindex[bundle-official]`. Inside the
+current source tree, the extracted first-party packages are still installed
+explicitly from `packages/`.
+
+Use `repoindex plugins` after installation if you want to verify whether a
+capability came from the core package, an official extracted package, or a
+third-party plugin.
 
 On first indexing run, `repoindex` provisions the configured local model
 artifact automatically if it is missing. If automatic provisioning cannot

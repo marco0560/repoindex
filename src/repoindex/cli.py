@@ -1625,6 +1625,7 @@ def _run_plugins(*, as_json: bool = False) -> int:
                         "family": registration.family,
                         "name": registration.name,
                         "provider": registration.provider,
+                        "origin": registration.origin,
                         "source": registration.source,
                         "status": registration.status,
                         "version": registration.version,
@@ -1642,6 +1643,7 @@ def _run_plugins(*, as_json: bool = False) -> int:
             f"{registration.family}: {registration.name} "
             f"[{registration.status}] "
             f"provider={registration.provider} "
+            f"origin={registration.origin} "
             f"source={registration.source} "
             f"version={registration.version}"
         )
