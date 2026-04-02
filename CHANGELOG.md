@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/marco0560/repoindex/compare/v1.3.0...v1.4.0) (2026-04-02)
+
+
+### Features
+
+* **core:** add capability-driven retrieval signal layer ([d78b6bb](https://github.com/marco0560/repoindex/commit/d78b6bb8070e6dcea67994541951cfcd79b4274c)), closes [#9](https://github.com/marco0560/repoindex/issues/9)
+
 # [1.3.0](https://github.com/marco0560/repoindex/compare/v1.2.1...v1.3.0) (2026-04-02)
 
 
