@@ -35,6 +35,8 @@ if TYPE_CHECKING:
     class _EmbeddingArray(Protocol):
         def __getitem__(self, index: int) -> _EmbeddingVector: ...
 
+        def __len__(self) -> int: ...
+
     class _EmbeddingModel(Protocol):
         def get_sentence_embedding_dimension(self) -> int: ...
 
@@ -42,6 +44,7 @@ if TYPE_CHECKING:
             self,
             sentences: Sequence[str],
             *,
+            batch_size: int,
             convert_to_numpy: bool,
             normalize_embeddings: bool,
             show_progress_bar: bool,
@@ -60,6 +63,11 @@ if TYPE_CHECKING:
 EMBEDDING_BACKEND = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_VERSION = "1"
 EMBEDDING_DIM = 384
+DEFAULT_EMBEDDING_BATCH_SIZE = 32
+EMBEDDING_BATCH_SIZE_ENV_VAR = "REPOINDEX_EMBED_BATCH_SIZE"
+EMBEDDING_DEVICE_ENV_VAR = "REPOINDEX_EMBED_DEVICE"
+TORCH_NUM_THREADS_ENV_VAR = "REPOINDEX_TORCH_NUM_THREADS"
+TORCH_NUM_INTEROP_THREADS_ENV_VAR = "REPOINDEX_TORCH_NUM_INTEROP_THREADS"
 _DEPENDENCY_INSTALL_HINT = (
     "Install repoindex with the 'semantic' extra. "
     "For editable installs from another repository, use "
@@ -182,6 +190,125 @@ def _configure_embedding_environment(*, offline: bool) -> None:
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
 
+def _environment_int(name: str, *, minimum: int) -> int | None:
+    """
+    Read one positive integer environment variable deterministically.
+
+    Parameters
+    ----------
+    name : str
+        Environment variable name to inspect.
+    minimum : int
+        Lowest accepted integer value.
+
+    Returns
+    -------
+    int | None
+        Parsed integer value, or ``None`` when the variable is unset.
+
+    Raises
+    ------
+    EmbeddingBackendError
+        If the configured value is not a valid integer within range.
+    """
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return None
+
+    stripped = raw_value.strip()
+    if not stripped:
+        return None
+
+    try:
+        parsed = int(stripped)
+    except ValueError as exc:
+        msg = f"{name} must be an integer greater than or equal to {minimum}."
+        raise EmbeddingBackendError(msg) from exc
+
+    if parsed < minimum:
+        msg = f"{name} must be an integer greater than or equal to {minimum}."
+        raise EmbeddingBackendError(msg)
+
+    return parsed
+
+
+def _configured_embedding_batch_size() -> int:
+    """
+    Return the configured batch size for embedding generation.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    int
+        Batch size used for sentence-transformers encode calls.
+    """
+    configured = _environment_int(EMBEDDING_BATCH_SIZE_ENV_VAR, minimum=1)
+    if configured is None:
+        return DEFAULT_EMBEDDING_BATCH_SIZE
+    return configured
+
+
+def _configured_embedding_device() -> str:
+    """
+    Return the configured sentence-transformers device string.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    str
+        Device string passed to the model loader.
+    """
+    configured = os.getenv(EMBEDDING_DEVICE_ENV_VAR, "").strip()
+    if configured:
+        return configured
+    return "cpu"
+
+
+def _configure_torch_runtime() -> None:
+    """
+    Apply optional Torch thread overrides before model inference begins.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        Torch runtime settings are updated in place when configured.
+
+    Raises
+    ------
+    EmbeddingBackendError
+        If Torch rejects the configured threading values.
+    """
+    try:
+        import torch
+    except ImportError:
+        return
+
+    num_threads = _environment_int(TORCH_NUM_THREADS_ENV_VAR, minimum=1)
+    num_interop_threads = _environment_int(
+        TORCH_NUM_INTEROP_THREADS_ENV_VAR,
+        minimum=1,
+    )
+
+    try:
+        if num_threads is not None:
+            torch.set_num_threads(num_threads)
+        if num_interop_threads is not None:
+            torch.set_num_interop_threads(num_interop_threads)
+    except RuntimeError as exc:
+        msg = "Failed to apply configured Torch runtime settings. " f"Details: {exc}"
+        raise EmbeddingBackendError(msg) from exc
+
+
 def _load_sentence_transformer(
     sentence_transformer: object,
     *,
@@ -210,7 +337,7 @@ def _load_sentence_transformer(
     ):
         return factory(
             EMBEDDING_BACKEND,
-            device="cpu",
+            device=_configured_embedding_device(),
             local_files_only=offline,
         )
 
@@ -283,6 +410,8 @@ def _load_model() -> _EmbeddingModel:
     else:
         transformers_logging.set_verbosity_error()  # type: ignore[no-untyped-call]
 
+    _configure_torch_runtime()
+
     try:
         model = _load_sentence_transformer(SentenceTransformer, offline=True)
     except OSError:
@@ -305,6 +434,63 @@ def _load_model() -> _EmbeddingModel:
     return model
 
 
+def embed_texts(texts: Sequence[str]) -> list[list[float]]:
+    """
+    Embed text payloads in deterministic batches.
+
+    Parameters
+    ----------
+    texts : collections.abc.Sequence[str]
+        Text payloads to embed.
+
+    Returns
+    -------
+    list[list[float]]
+        One L2-normalized embedding vector per input payload.
+
+    Raises
+    ------
+    EmbeddingBackendError
+        Raised when the local semantic backend cannot be loaded.
+    """
+    texts_list = list(texts)
+    if not texts_list:
+        return []
+
+    vectors: list[list[float]] = [[0.0] * EMBEDDING_DIM for _ in texts_list]
+    non_blank_positions: list[int] = []
+    non_blank_texts: list[str] = []
+
+    for index, text in enumerate(texts_list):
+        if not text.strip():
+            continue
+        non_blank_positions.append(index)
+        non_blank_texts.append(text)
+
+    if not non_blank_texts:
+        return vectors
+
+    model = _load_model()
+    encoded = model.encode(
+        non_blank_texts,
+        batch_size=_configured_embedding_batch_size(),
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
+    if len(encoded) != len(non_blank_positions):
+        msg = (
+            "Embedding backend returned an unexpected vector count. "
+            f"Expected {len(non_blank_positions)}, received {len(encoded)}."
+        )
+        raise EmbeddingBackendError(msg)
+
+    for output_index, position in enumerate(non_blank_positions):
+        vectors[position] = [float(value) for value in encoded[output_index].tolist()]
+
+    return vectors
+
+
 def embed_text(text: str) -> list[float]:
     """
     Embed text using the deterministic local sentence-transformers backend.
@@ -324,17 +510,7 @@ def embed_text(text: str) -> list[float]:
     EmbeddingBackendError
         Raised when the local semantic backend cannot be loaded.
     """
-    if not text.strip():
-        return [0.0] * EMBEDDING_DIM
-
-    model = _load_model()
-    vector = model.encode(
-        [text],
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-        show_progress_bar=False,
-    )[0]
-    return [float(value) for value in vector.tolist()]
+    return embed_texts([text])[0]
 
 
 def serialize_vector(vector: list[float]) -> bytes:

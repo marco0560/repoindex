@@ -51,6 +51,7 @@ from repoindex.semantic.embeddings import (
     EmbeddingBackendSpec,
     deserialize_vector,
     embed_text,
+    embed_texts,
     get_embedding_backend,
     serialize_vector,
 )
@@ -2177,6 +2178,8 @@ def _flush_embedding_rows(
     """
     recomputed = 0
     reused = 0
+    prepared_rows: list[tuple[PendingEmbeddingRow, str, bytes | None]] = []
+    texts_to_encode: dict[str, str] = {}
 
     for row in sorted(
         embedding_rows,
@@ -2187,17 +2190,35 @@ def _flush_embedding_rows(
         if previous_embeddings is not None:
             reusable_row = previous_embeddings.get(row.stable_id)
 
-        vector = None
         if (
             reusable_row is not None
             and reusable_row.content_hash == content_hash
             and reusable_row.dim == backend.dim
         ):
-            vector = reusable_row.vector
+            prepared_rows.append((row, content_hash, reusable_row.vector))
             reused += 1
         else:
-            vector = serialize_vector(embed_text(row.text))
+            prepared_rows.append((row, content_hash, None))
+            texts_to_encode.setdefault(content_hash, row.text)
             recomputed += 1
+
+    encoded_vectors: dict[str, bytes] = {}
+    if texts_to_encode:
+        ordered_content_hashes = list(texts_to_encode)
+        encoded_rows = embed_texts(
+            [texts_to_encode[content_hash] for content_hash in ordered_content_hashes]
+        )
+        for content_hash, vector in zip(
+            ordered_content_hashes,
+            encoded_rows,
+            strict=True,
+        ):
+            encoded_vectors[content_hash] = serialize_vector(vector)
+
+    for row, content_hash, stored_vector in prepared_rows:
+        resolved_blob = stored_vector
+        if resolved_blob is None:
+            resolved_blob = encoded_vectors[content_hash]
 
         conn.execute(
             "INSERT INTO embeddings"
@@ -2210,7 +2231,7 @@ def _flush_embedding_rows(
                 backend.version,
                 content_hash,
                 backend.dim,
-                vector,
+                resolved_blob,
             ),
         )
 

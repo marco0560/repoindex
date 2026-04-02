@@ -22,7 +22,12 @@ import types
 from typing import TYPE_CHECKING
 
 from repoindex.cli import main
-from repoindex.indexer import index_repo
+from repoindex.indexer import (
+    PendingEmbeddingRow,
+    StoredEmbeddingRow,
+    _flush_embedding_rows,
+    index_repo,
+)
 from repoindex.query.exact import find_symbol
 from repoindex.semantic import embeddings as embeddings_module
 from repoindex.semantic.embeddings import (
@@ -31,6 +36,7 @@ from repoindex.semantic.embeddings import (
     EMBEDDING_VERSION,
     EmbeddingBackendError,
     embed_text,
+    embed_texts,
 )
 from repoindex.semantic.search import embedding_candidates
 from repoindex.storage import get_db_path, init_db
@@ -92,6 +98,151 @@ def test_embed_text_is_deterministic_and_normalized() -> None:
     assert first == second
     assert len(first) == EMBEDDING_DIM
     assert round(sum(value * value for value in first), 6) == 1.0
+
+
+def test_embed_texts_batches_inputs_and_preserves_blank_vectors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Batch non-blank texts while preserving deterministic zero vectors for blanks.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control the embedding model loader.
+
+    Returns
+    -------
+    None
+        The test asserts batching, argument forwarding, and blank-text handling.
+    """
+
+    class _FakeVector:
+        def __init__(self, values: list[float]) -> None:
+            self._values = values
+
+        def tolist(self) -> list[float]:
+            return list(self._values)
+
+    class _FakeModel:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[str], int, bool, bool]] = []
+
+        def encode(
+            self,
+            sentences: list[str],
+            *,
+            batch_size: int,
+            convert_to_numpy: bool,
+            normalize_embeddings: bool,
+            show_progress_bar: bool,
+        ) -> list[_FakeVector]:
+            assert show_progress_bar is False
+            self.calls.append(
+                (
+                    list(sentences),
+                    batch_size,
+                    convert_to_numpy,
+                    normalize_embeddings,
+                )
+            )
+            return [
+                _FakeVector([float(index + 1)] * EMBEDDING_DIM)
+                for index, _sentence in enumerate(sentences)
+            ]
+
+        def get_sentence_embedding_dimension(self) -> int:
+            return EMBEDDING_DIM
+
+    fake_model = _FakeModel()
+    embeddings_module._load_model.cache_clear()
+    monkeypatch.setenv("REPOINDEX_EMBED_BATCH_SIZE", "7")
+    monkeypatch.setattr(embeddings_module, "_load_model", lambda: fake_model)
+
+    vectors = embed_texts(["schema migration", "   ", "docstring audit"])
+
+    assert fake_model.calls == [
+        (
+            ["schema migration", "docstring audit"],
+            7,
+            True,
+            True,
+        )
+    ]
+    assert vectors[0] == [1.0] * EMBEDDING_DIM
+    assert vectors[1] == [0.0] * EMBEDDING_DIM
+    assert vectors[2] == [2.0] * EMBEDDING_DIM
+
+
+def test_flush_embedding_rows_batches_and_reuses_identical_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Batch recomputed rows and reuse same-run vectors for identical payloads.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control the embedding backend.
+
+    Returns
+    -------
+    None
+        The test asserts duplicate payloads are encoded once and inserted twice.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE embeddings (
+            id INTEGER PRIMARY KEY,
+            object_type TEXT NOT NULL,
+            object_id INTEGER NOT NULL,
+            backend TEXT NOT NULL,
+            version TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            dim INTEGER NOT NULL,
+            vector BLOB NOT NULL
+        )
+        """)
+
+    calls: list[list[str]] = []
+
+    def fake_embed_texts(texts: list[str]) -> list[list[float]]:
+        calls.append(list(texts))
+        return [[float(index + 1)] * EMBEDDING_DIM for index, _text in enumerate(texts)]
+
+    monkeypatch.setattr("repoindex.indexer.embed_texts", fake_embed_texts)
+    backend = embeddings_module.get_embedding_backend()
+    rows = [
+        PendingEmbeddingRow("symbol", 1, "stable-a", "shared payload"),
+        PendingEmbeddingRow("symbol", 2, "stable-b", "shared payload"),
+        PendingEmbeddingRow("symbol", 3, "stable-c", "unique payload"),
+    ]
+
+    recomputed, reused = _flush_embedding_rows(
+        conn,
+        embedding_rows=rows,
+        backend=backend,
+        previous_embeddings={
+            "stable-c": StoredEmbeddingRow(
+                stable_id="stable-c",
+                content_hash="mismatch",
+                dim=backend.dim,
+                vector=b"",
+            )
+        },
+    )
+
+    stored = conn.execute(
+        "SELECT object_id, content_hash, vector FROM embeddings ORDER BY object_id"
+    ).fetchall()
+
+    assert recomputed == 3
+    assert reused == 0
+    assert calls == [["shared payload", "unique payload"]]
+    assert len(stored) == 3
+    assert stored[0][2] == stored[1][2]
+    assert stored[0][2] != stored[2][2]
+    conn.close()
 
 
 def test_index_repo_persists_symbol_embeddings(tmp_path: Path) -> None:

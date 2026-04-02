@@ -40,6 +40,14 @@ the real semantic embedding backend.
 Normal CLI indexing now provisions the model automatically on first use. This
 script remains available when operators want to pre-warm the cache explicitly.
 
+## `scripts/benchmark_index.py`
+
+Run one instrumented index pass and emit structured JSON with phase timings,
+embedding batch sizes, and index summary counters.
+
+Use this script when evaluating indexing regressions or tuning embedding batch
+and Torch runtime settings.
+
 ## `scripts/release_audit.sh`
 
 Run conservative release-readiness checks for the current branch and repository
