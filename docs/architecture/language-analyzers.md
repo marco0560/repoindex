@@ -4,7 +4,7 @@ The current repository now has two active analyzers:
 
 - Python for the existing AST-driven index surface
 - C for the first non-Python proof required by `ADR-004`, installed through
-  the optional `repoindex[c]` extra
+  the extracted `repoindex-analyzer-c` first-party package
 
 ## Current Analyzer Responsibilities
 
@@ -80,10 +80,10 @@ That module owns:
 
 Phase 8 moves analyzer registration into `src/repoindex/registry.py`.
 
-- analyzers are instantiated from a code-level registry
+- analyzers are instantiated from built-ins plus entry-point plugin discovery
 - registry order defines deterministic first-match routing order
 - an empty analyzer registry raises `ValueError`
-- optional analyzers may be omitted when their declared extras are not
+- extracted analyzers may be omitted when their plugin packages are not
   installed
 
 ## Phase-9 Second Analyzer Proof
@@ -118,11 +118,12 @@ The packaging surface now distinguishes core `repoindex` dependencies from
 analyzer-specific dependencies.
 
 - core install keeps Python analysis available
-- the C analyzer loads only when `tree-sitter` and `tree-sitter-c` are present
-- the supported install form for C-family indexing is `repoindex[c]`
+- the C analyzer loads when `repoindex-analyzer-c` is installed
+- the Bash analyzer loads when `repoindex-analyzer-bash` is installed
+- the supported package form for C-family indexing is `repoindex-analyzer-c`
 - third-party analyzers must declare their own discovery globs so indexing can
   see their files without core changes
 
-When those optional dependencies are absent, registry activation skips the C
-analyzer deterministically and indexing a `*.c` or `*.h` path fails with an
-explicit installation hint instead of an import-time crash.
+When those plugin packages are absent, registry activation skips the matching
+analyzer deterministically and indexing a matching path fails with an explicit
+installation hint instead of an import-time crash.

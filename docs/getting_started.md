@@ -9,10 +9,11 @@ configuration:
 python3 scripts/bootstrap_dev_environment.py
 ```
 
-The bootstrap script installs the `firstparty` extra and provisions the local
-embedding model artifact used by the real local embedding backend, so
-`repoindex index` can build persisted embeddings without ad hoc first-run
-downloads inside this repository.
+The bootstrap script installs the core package, the extracted first-party
+analyzer packages, and the local embedding dependencies. It also provisions the
+local model artifact used by the real embedding backend, so `repoindex index`
+can build persisted embeddings without ad hoc first-run downloads inside this
+repository.
 
 ## Install into another repository
 
@@ -23,15 +24,18 @@ Example:
 
 ```bash
 source .venv/bin/activate
-pip install -e ../repoindex[firstparty]
+pip install -e ../repoindex[semantic]
+pip install -e ../repoindex/packages/repoindex-analyzer-c
+pip install -e ../repoindex/packages/repoindex-analyzer-bash
 ```
 
 This keeps the `repoindex` CLI available in the target repository while using
 the live source tree from this repository.
 
-The `firstparty` extra installs both the built-in analyzers and the local
-embedding backend. The narrower `semantic` extra is still available when you
-only want the embedding stack.
+The current source-tree install keeps the embedding stack in the core package
+while the extracted first-party analyzers are installed from `packages/`.
+`repoindex-bundle-official` is the accepted umbrella package name for the
+curated bundle once the distributions are published normally.
 
 On first indexing run, `repoindex` provisions the configured local model
 artifact automatically if it is missing. If automatic provisioning cannot

@@ -57,9 +57,9 @@ The current packaging boundary is also now explicit:
 
 - core `repoindex` dependencies cover the default Python analyzer and shared
   query/index infrastructure
-- analyzer-specific dependencies can live behind optional extras
-- the current C analyzer is enabled by the `repoindex[c]` extra rather than
-  the core install
+- analyzer-specific dependencies can live in separate plugin distributions
+- the current C and Bash analyzers are now extracted into first-party packages
+  rather than remaining optional built-ins in the core install
 - third-party plugins live in separate distributions and are discovered from
   `repoindex.analyzers` and `repoindex.backends` entry-point groups
 

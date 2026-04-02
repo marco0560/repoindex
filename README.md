@@ -15,7 +15,8 @@ The current branch now indexes mixed-language repositories through registered
 language analyzers:
 
 - Python via `PythonAnalyzer`
-- C-family `*.c` and `*.h` files via `CAnalyzer` backed by `tree-sitter-c`
+- C-family `*.c` and `*.h` files via the first-party
+  `repoindex-analyzer-c` plugin backed by `tree-sitter-c`
 
 Storage and query persistence remain SQLite-backed through the active backend
 registry.
@@ -53,11 +54,17 @@ The editable install keeps the `repoindex` CLI available in the target
 repository's virtual environment while still using the live source tree from
 this repository.
 
-Install optional analyzer dependencies only when needed. For C-family support:
+Install optional analyzer packages only when needed. For repository-local
+development inside this repo, the bootstrap flow installs the official
+first-party packages automatically.
+
+For an editable install into another repository with the current source tree:
 
 ```bash
 source .venv/bin/activate
-pip install -e ../repoindex[c]
+pip install -e ../repoindex[semantic]
+pip install -e ../repoindex/packages/repoindex-analyzer-c
+pip install -e ../repoindex/packages/repoindex-analyzer-bash
 ```
 
 ## Architecture Status

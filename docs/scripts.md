@@ -3,7 +3,8 @@
 ## `scripts/bootstrap_dev_environment.py`
 
 Create `.venv`, install development and documentation dependencies, install
-repo-local Git configuration, and optionally run the validation surface.
+repo-local Git configuration, install the extracted first-party analyzer
+packages, and optionally run the validation surface.
 
 ## `scripts/install_repo_git_config.py`
 
