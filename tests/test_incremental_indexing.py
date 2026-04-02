@@ -722,9 +722,9 @@ def test_index_cli_reports_failures_without_aborting(
     assert "failure: pkg/legacy.py (python, SyntaxError," in captured.out
 
 
-def test_index_repo_captures_parse_warnings_per_file(tmp_path: Path) -> None:
+def test_index_repo_suppresses_python_syntax_warnings(tmp_path: Path) -> None:
     """
-    Record parse-time warnings without turning them into raw process output.
+    Ignore non-fatal Python syntax warnings during indexing.
 
     Parameters
     ----------
@@ -734,7 +734,7 @@ def test_index_repo_captures_parse_warnings_per_file(tmp_path: Path) -> None:
     Returns
     -------
     None
-        The test asserts warning metadata is attached to the indexed file.
+        The test asserts invalid escape warnings do not clutter index output.
     """
     warned_module = tmp_path / "pkg" / "warned.py"
     _write_module(warned_module, 'value = "\\$"\n')
@@ -744,21 +744,16 @@ def test_index_repo_captures_parse_warnings_per_file(tmp_path: Path) -> None:
 
     assert report.indexed == 1
     assert report.failed == 0
-    assert len(report.warnings) == 1
-    assert report.warnings[0].path == str(warned_module)
-    assert report.warnings[0].analyzer_name == "python"
-    assert report.warnings[0].warning_type == "SyntaxWarning"
-    assert report.warnings[0].line == 1
-    assert report.warnings[0].reason == "invalid escape sequence '\\$'"
+    assert report.warnings == []
 
 
-def test_index_cli_reports_warnings_with_file_paths(
+def test_index_cli_omits_python_syntax_warnings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """
-    Render structured warnings instead of raw parser warnings on stdout.
+    Omit non-fatal Python syntax warnings from CLI output.
 
     Parameters
     ----------
@@ -772,7 +767,7 @@ def test_index_cli_reports_warnings_with_file_paths(
     Returns
     -------
     None
-        The test asserts the CLI prints file-scoped warning diagnostics.
+        The test asserts invalid escape warnings are suppressed.
     """
     warned_module = tmp_path / "pkg" / "warned.py"
     _write_module(warned_module, 'value = "\\$"\n')
@@ -783,10 +778,7 @@ def test_index_cli_reports_warnings_with_file_paths(
     assert main() == 0
     captured = capsys.readouterr()
     assert "<unknown>:" not in captured.out
-    assert (
-        "warning: pkg/warned.py (python, SyntaxWarning, line 1, "
-        "invalid escape sequence '\\$')"
-    ) in captured.out
+    assert "warning: pkg/warned.py" not in captured.out
 
 
 def test_index_repo_indexes_mixed_python_and_c_sources(tmp_path: Path) -> None:

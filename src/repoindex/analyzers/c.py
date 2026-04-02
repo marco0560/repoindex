@@ -136,14 +136,33 @@ def _module_stable_id(path: Path, root: Path) -> str:
     return f"c:module:{path.relative_to(root).as_posix()}"
 
 
-def _function_stable_id(module_name: str, function_name: str) -> str:
+def _symbol_owner_id(path: Path, root: Path) -> str:
+    """
+    Build the file-scoped owner identity for C symbols.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Source path being analyzed.
+    root : pathlib.Path
+        Repository root used for relative identity derivation.
+
+    Returns
+    -------
+    str
+        Repo-relative owner identity that preserves the file suffix.
+    """
+    return path.relative_to(root).as_posix()
+
+
+def _function_stable_id(owner_id: str, function_name: str) -> str:
     """
     Build the durable identity for one C function.
 
     Parameters
     ----------
-    module_name : str
-        Dotted owner module name.
+    owner_id : str
+        File-scoped owner identity preserving the source suffix.
     function_name : str
         Unqualified function name.
 
@@ -152,11 +171,11 @@ def _function_stable_id(module_name: str, function_name: str) -> str:
     str
         Durable C function identity.
     """
-    return f"c:function:{module_name}:{function_name}"
+    return f"c:function:{owner_id}:{function_name}"
 
 
 def _declaration_stable_id(
-    module_name: str,
+    owner_id: str,
     kind: DeclarationKind,
     declaration_name: str,
 ) -> str:
@@ -165,8 +184,8 @@ def _declaration_stable_id(
 
     Parameters
     ----------
-    module_name : str
-        Dotted owner module name.
+    owner_id : str
+        File-scoped owner identity preserving the source suffix.
     kind : {"struct", "enum", "typedef"}
         Stable declaration classifier.
     declaration_name : str
@@ -177,7 +196,7 @@ def _declaration_stable_id(
     str
         Durable C declaration identity.
     """
-    return f"c:{kind}:{module_name}:{declaration_name}"
+    return f"c:{kind}:{owner_id}:{declaration_name}"
 
 
 def _node_text(node: Node, source: bytes) -> str:
@@ -719,6 +738,7 @@ def _extract_functions(
     source: bytes,
     *,
     module_name: str,
+    owner_id: str,
 ) -> tuple[FunctionArtifact, ...]:
     """
     Extract top-level C function definitions from one translation unit.
@@ -731,6 +751,8 @@ def _extract_functions(
         Full source buffer.
     module_name : str
         Dotted owner module name.
+    owner_id : str
+        File-scoped owner identity preserving the source suffix.
 
     Returns
     -------
@@ -771,7 +793,7 @@ def _extract_functions(
         functions.append(
             FunctionArtifact(
                 name=name,
-                stable_id=_function_stable_id(module_name, name),
+                stable_id=_function_stable_id(owner_id, name),
                 lineno=child.start_point.row + 1,
                 end_lineno=body.end_point.row + 1 if body is not None else None,
                 signature=" ".join(signature.split()),
@@ -893,7 +915,7 @@ def _declaration_artifact(
     *,
     docstring: str | None,
     kind: DeclarationKind,
-    module_name: str,
+    owner_id: str,
 ) -> DeclarationArtifact | None:
     """
     Build one normalized declaration artifact when the node is named.
@@ -908,8 +930,8 @@ def _declaration_artifact(
         Docstring to attach to the declaration.
     kind : str
         Stable declaration classifier.
-    module_name : str
-        Dotted owner module name.
+    owner_id : str
+        File-scoped owner identity preserving the source suffix.
 
     Returns
     -------
@@ -923,7 +945,7 @@ def _declaration_artifact(
 
     return DeclarationArtifact(
         name=name,
-        stable_id=_declaration_stable_id(module_name, kind, name),
+        stable_id=_declaration_stable_id(owner_id, kind, name),
         kind=kind,
         lineno=node.start_point.row + 1,
         signature=" ".join(_node_text(node, source).split()),
@@ -935,7 +957,7 @@ def _extract_declarations(
     root: Node,
     source: bytes,
     *,
-    module_name: str,
+    owner_id: str,
 ) -> tuple[DeclarationArtifact, ...]:
     """
     Extract top-level C declarations useful for exact and semantic lookup.
@@ -946,8 +968,8 @@ def _extract_declarations(
         Translation-unit root node.
     source : bytes
         Full source buffer.
-    module_name : str
-        Dotted owner module name.
+    owner_id : str
+        File-scoped owner identity preserving the source suffix.
 
     Returns
     -------
@@ -964,7 +986,7 @@ def _extract_declarations(
                 source,
                 docstring=_resolve_declaration_docstring(attached_comments, child),
                 kind="struct",
-                module_name=module_name,
+                owner_id=owner_id,
             )
             if declaration is not None:
                 declarations_by_stable_id[declaration.stable_id] = declaration
@@ -976,7 +998,7 @@ def _extract_declarations(
                 source,
                 docstring=_resolve_declaration_docstring(attached_comments, child),
                 kind="enum",
-                module_name=module_name,
+                owner_id=owner_id,
             )
             if declaration is not None:
                 declarations_by_stable_id[declaration.stable_id] = declaration
@@ -997,7 +1019,7 @@ def _extract_declarations(
                         inherited_comment=child_comment,
                     ),
                     kind="struct",
-                    module_name=module_name,
+                    owner_id=owner_id,
                 )
                 if declaration is not None:
                     declarations_by_stable_id[declaration.stable_id] = declaration
@@ -1011,7 +1033,7 @@ def _extract_declarations(
                         inherited_comment=child_comment,
                     ),
                     kind="enum",
-                    module_name=module_name,
+                    owner_id=owner_id,
                 )
                 if declaration is not None:
                     declarations_by_stable_id[declaration.stable_id] = declaration
@@ -1021,7 +1043,7 @@ def _extract_declarations(
             source,
             docstring=_resolve_declaration_docstring(attached_comments, child),
             kind="typedef",
-            module_name=module_name,
+            owner_id=owner_id,
         )
         if declaration is not None:
             declarations_by_stable_id[declaration.stable_id] = declaration
@@ -1134,6 +1156,7 @@ class CAnalyzer:
         root_node = _new_parser().parse(source).root_node
         module_comment = _leading_module_comment(root_node, source)
         module_name = _module_name_for_path(path, root)
+        owner_id = _symbol_owner_id(path, root)
         return AnalysisResult(
             source_path=path,
             module=ModuleArtifact(
@@ -1147,11 +1170,12 @@ class CAnalyzer:
                 root_node,
                 source,
                 module_name=module_name,
+                owner_id=owner_id,
             ),
             declarations=_extract_declarations(
                 root_node,
                 source,
-                module_name=module_name,
+                owner_id=owner_id,
             ),
             imports=_extract_imports(root_node, source),
         )

@@ -78,6 +78,7 @@ def _python_function_stable_id(
     function_name: str,
     *,
     class_name: str | None = None,
+    decorators: Sequence[object] = (),
 ) -> str:
     """
     Build the stable identity for one Python callable.
@@ -90,6 +91,8 @@ def _python_function_stable_id(
         Unqualified callable name.
     class_name : str | None, optional
         Owning class name for a method.
+    decorators : collections.abc.Sequence[object], optional
+        Callable decorators used to disambiguate accessor helpers.
 
     Returns
     -------
@@ -98,7 +101,13 @@ def _python_function_stable_id(
     """
     if class_name is None:
         return f"python:function:{module_name}:{function_name}"
-    return f"python:method:{module_name}:{class_name}.{function_name}"
+    stable_id = f"python:method:{module_name}:{class_name}.{function_name}"
+    decorator_names = tuple(str(value) for value in decorators)
+    if any(name.endswith(".setter") for name in decorator_names):
+        return f"{stable_id}:setter"
+    if any(name.endswith(".deleter") for name in decorator_names):
+        return f"{stable_id}:deleter"
+    return stable_id
 
 
 def _int_value(value: object, *, default: int = 0) -> int:
@@ -304,6 +313,7 @@ def _function_from_mapping(
             module_name,
             str(raw["name"]),
             class_name=class_name,
+            decorators=cast("Sequence[object]", raw.get("decorators", ())),
         ),
         lineno=_int_value(raw["lineno"]),
         end_lineno=_optional_int_value(raw.get("end_lineno")),

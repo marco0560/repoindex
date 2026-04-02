@@ -18,6 +18,7 @@ This module belongs to the **scanner/indexing layer** and keeps AST-specific heu
 from __future__ import annotations
 
 import ast
+import warnings
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -594,7 +595,9 @@ def parse_file(path: Path, root: Path) -> dict[str, Any]:
         Parsed module, class, function, and import metadata ready for indexing.
     """
     source = path.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(path))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        tree = ast.parse(source, filename=str(path))
 
     module_doc = ast.get_docstring(tree)
 

@@ -324,6 +324,47 @@ def test_analysis_result_from_parsed_normalizes_python_artifacts(
     )
 
 
+def test_analysis_result_from_parsed_disambiguates_property_accessors(
+    tmp_path: Path,
+) -> None:
+    """
+    Assign distinct stable IDs to Python property accessors.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts getter and setter methods do not collide.
+    """
+    module = tmp_path / "pkg" / "sample.py"
+    module.parent.mkdir()
+    module.write_text(
+        "class Demo:\n"
+        "    @property\n"
+        "    def value(self):\n"
+        "        return 1\n"
+        "\n"
+        "    @value.setter\n"
+        "    def value(self, new_value):\n"
+        "        self._value = new_value\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_file(module, tmp_path)
+    result = analysis_result_from_parsed(module, parsed)
+
+    methods = result.classes[0].methods
+    assert tuple(method.name for method in methods) == ("value", "value")
+    assert tuple(method.stable_id for method in methods) == (
+        "python:method:pkg.sample:Demo.value",
+        "python:method:pkg.sample:Demo.value:setter",
+    )
+
+
 def test_parse_file_excludes_nested_helper_control_flow_from_outer_metadata(
     tmp_path: Path,
 ) -> None:
@@ -605,6 +646,38 @@ def test_c_analyzer_extracts_top_level_declarations(tmp_path: Path) -> None:
     assert result.declarations[2].docstring == "Available palette values."
     assert result.declarations[3].docstring is None
     assert result.declarations[4].docstring == "Stable integer alias."
+
+
+def test_c_analyzer_preserves_suffix_in_declaration_stable_ids(
+    tmp_path: Path,
+) -> None:
+    """
+    Keep declaration stable IDs distinct across sibling source suffixes.
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts `.c` and `.h` siblings do not collide.
+    """
+    include = tmp_path / "native" / "common.h"
+    implementation = tmp_path / "native" / "common.c"
+    include.parent.mkdir()
+    include.write_text("struct name_info { int value; };\n", encoding="utf-8")
+    implementation.write_text("struct name_info { int value; };\n", encoding="utf-8")
+
+    include_result = CAnalyzer().analyze_file(include, tmp_path)
+    implementation_result = CAnalyzer().analyze_file(implementation, tmp_path)
+
+    assert include_result.declarations[0].stable_id == (
+        "c:struct:native/common.h:name_info"
+    )
+    assert implementation_result.declarations[0].stable_id == (
+        "c:struct:native/common.c:name_info"
+    )
 
 
 def test_c_analyzer_keeps_last_duplicate_named_declaration(tmp_path: Path) -> None:
