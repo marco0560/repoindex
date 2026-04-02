@@ -61,6 +61,25 @@ No summaries. No partial edits.
 
 ## Development Workflow
 
+### Required Shared Skills
+
+When a shared skill exists and is applicable to the current task, agents MUST
+use it and follow its instructions.
+
+This requirement applies generally, not only to the examples below.
+
+Use at least the following shared skills for the corresponding task classes:
+
+- `deterministic-change-workflow` for non-trivial code changes, bug fixes, and
+  feature work
+- `numpy-docstring-enforcer` whenever modifying modules, classes, public
+  functions, or non-trivial private functions
+- `repoindex-workflow` before broad code exploration or patching
+- `commit-block-generator` when proposing the final commit block
+
+If a required shared skill is unavailable, state that explicitly and apply the
+same rules manually.
+
 ### Standard Loop
 
 1. Analyze request
@@ -87,11 +106,10 @@ No summaries. No partial edits.
    - If any would fail → fix BEFORE concluding
 
 8. Manually validate behavior if needed
-9. Propose a **single commit block** that is:
+9. If a commit block is requested or appropriate, propose a **single** commit
+   block using the applicable shared skill.
 
-   - 15 - 20 lines long
-   - atomic
-   - CI-compliant
+   The commit block must remain atomic and CI-compliant.
 
 ### repoindex Workflow
 
