@@ -1,3 +1,19 @@
+# [1.3.0](https://github.com/marco0560/repoindex/compare/v1.2.1...v1.3.0) (2026-04-02)
+
+
+### Bug Fixes
+
+* **bash:** deduplicate redefined shell functions before indexing ([878dcb1](https://github.com/marco0560/repoindex/commit/878dcb1904c3ab74c1f86f38ad098a52fea147da))
+* **index:** deduplicate C declarations and collapse index tracebacks ([55cafe1](https://github.com/marco0560/repoindex/commit/55cafe19a1ba284dbd29d33c95b947d3546aa2c0))
+* **index:** disambiguate duplicate C function stable IDs with a deterministic suffix ([d6661a7](https://github.com/marco0560/repoindex/commit/d6661a7d0ee6ccc2532f168a1031a069f6269772))
+* **index:** preserve stable ids across C and Python edge cases ([3d66264](https://github.com/marco0560/repoindex/commit/3d6626421efca2b0b566003eaf02b8d1deb46a9a))
+
+
+### Features
+
+* **analyzer:** add call site extraction to bash analyzer ([d38d1cf](https://github.com/marco0560/repoindex/commit/d38d1cf9412e05c9e47b5c950ba95b9dd680d4eb))
+* **analyzers:** add BashAnalyzer for shell function extraction ([fb76aea](https://github.com/marco0560/repoindex/commit/fb76aeaa9ed362c3a1c56798e4036e56f5b505d3))
+
 ## [1.2.1](https://github.com/marco0560/repoindex/compare/v1.2.0...v1.2.1) (2026-03-30)
 
 
