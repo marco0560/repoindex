@@ -29,6 +29,7 @@ The current branch centers on these modules:
   language-specific analysis
 - `src/repoindex/storage.py` for SQLite initialization and schema refresh
 - `src/repoindex/query/exact.py` for exact lookup helpers
+- `src/repoindex/query/producers.py` for shared retrieval producer metadata
 - `src/repoindex/query/context.py` and `src/repoindex/semantic/search.py` for
   context retrieval and embedding-backed ranking
 
@@ -42,3 +43,11 @@ The current branch centers on these modules:
 
 The remaining future work is no longer about introducing these boundaries. It
 is about extending them without breaking the current contracts.
+
+For retrieval specifically, the current accepted split is:
+
+- analyzers provide indexing-time language knowledge
+- shared query producer descriptors provide retrieval-facing capability
+  metadata
+- the query layer consumes those descriptors without depending on analyzer
+  internals

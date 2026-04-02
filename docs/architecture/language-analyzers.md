@@ -43,6 +43,19 @@ Phase 19 adds a second scanner path for canonical coverage auditing:
 Tracked files under those directories are inspected for coverage even if no
 active analyzer claims them yet.
 
+The retrieval-capability migration does not currently widen analyzer
+responsibilities.
+
+Built-in analyzers still own:
+
+- language-specific parsing
+- normalized artifact extraction
+- durable symbol identity for indexed artifacts
+
+They do not yet need to implement `RetrievalProducer`. Retrieval-facing
+capability metadata currently lives in shared query producer descriptors
+instead.
+
 ## Accepted Migration Direction
 
 `ADR-004` expands this boundary by accepting:

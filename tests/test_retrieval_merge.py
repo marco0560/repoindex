@@ -18,16 +18,26 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from repoindex.query.classifier import classify_query
+from repoindex.query.classifier import build_retrieval_plan, classify_query
 from repoindex.query.context import (
     MERGE_RESULT_LIMIT,
+    _channel_retrieval_producers,
+    _collect_retrieval_signals,
     _dedupe_channel_results,
     _diversify_merged_symbols,
     _diversify_merged_symbols_explain,
     _merge_ranked_channel_bundles_explain,
+    _rank_signals_with_provenance,
+    _signals_from_channel_bundles,
+)
+from repoindex.query.producers import (
+    CHANNEL_PRODUCER_SPECS,
+    EMBEDDING_RETRIEVAL_PRODUCER,
+    selected_enrichment_producers,
 )
 
 if TYPE_CHECKING:
+    from repoindex.query.producers import QueryProducerSpec
     from repoindex.types import ChannelResults, SymbolRow
 
 
@@ -39,6 +49,21 @@ def _symbol(
     lineno: int,
 ) -> SymbolRow:
     return (symbol_type, module_name, name, file_path, lineno)
+
+
+def _query_producers(
+    query: str, bundles: list[tuple[str, ChannelResults]]
+) -> list[QueryProducerSpec]:
+    """Compose query producer specs for retrieval-merge fixtures."""
+    plan = build_retrieval_plan(classify_query(query))
+    ordered_channels = [name for name, _channel in bundles]
+    return _channel_retrieval_producers(
+        ordered_channels
+    ) + selected_enrichment_producers(
+        include_issue_annotations="issue" in query.lower() or plan.include_doc_issues,
+        include_references=plan.include_references,
+        include_include_graph=plan.include_include_graph,
+    )
 
 
 def test_dedupe_channel_results_keeps_first_ranked_occurrence() -> None:
@@ -68,6 +93,23 @@ def test_dedupe_channel_results_keeps_first_ranked_occurrence() -> None:
         (9.0, symbol),
         (7.0, other),
     ]
+
+
+def test_embedding_channel_uses_native_retrieval_producer() -> None:
+    """
+    Keep the embedding channel bound to the native retrieval producer.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the shared producer surface exposes the native
+        embedding producer instance directly.
+    """
+    assert CHANNEL_PRODUCER_SPECS["embedding"] is EMBEDDING_RETRIEVAL_PRODUCER
 
 
 def test_merge_ranked_channel_bundles_explain_dedupes_and_orders_ties() -> None:
@@ -268,6 +310,190 @@ def test_merge_ranked_channel_bundles_explain_caps_output() -> None:
     merged, _ = _merge_ranked_channel_bundles_explain(bundles)
 
     assert len(merged) == MERGE_RESULT_LIMIT
+
+
+def test_signals_from_channel_bundles_preserve_channel_evidence_deterministically() -> (
+    None
+):
+    """
+    Normalize current channel evidence into ordered retrieval signals.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts signal adapters preserve producer attribution,
+        capability names, deduped channel rank, and deterministic order.
+    """
+    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
+    beta = _symbol("function", "repoindex.beta", "run", "src/b.py", 20)
+    bundles = [
+        (
+            "semantic",
+            [
+                (5.0, beta),
+                (4.0, beta),
+            ],
+        ),
+        (
+            "symbol",
+            [
+                (9.0, alpha),
+                (8.0, alpha),
+            ],
+        ),
+    ]
+    producers = _query_producers("cache invalidation", bundles)
+
+    signals = _signals_from_channel_bundles(bundles, producers=producers)
+
+    assert [(signal.target, signal.kind) for signal in signals] == [
+        (alpha, "exact_symbol"),
+        (beta, "text_match"),
+    ]
+    assert signals[0].producer_name == "query-channel-symbol"
+    assert signals[0].capability_name == "symbol_lookup"
+    assert signals[0].rank == 1
+    assert signals[0].strength == 9.0
+    assert signals[1].producer_name == "query-channel-semantic"
+    assert signals[1].capability_name == "semantic_text"
+    assert signals[1].rank == 1
+    assert signals[1].strength == 5.0
+
+
+def test_signals_from_channel_bundles_map_embedding_and_task_capabilities() -> None:
+    """
+    Preserve capability attribution for embedding and task-specialized channels.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts embedding and test channels normalize to the expected
+        signal families and capability names.
+    """
+    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
+    beta = _symbol("function", "tests.alpha", "run_test", "tests/test_a.py", 20)
+    bundles = [
+        ("test", [(7.0, beta)]),
+        ("embedding", [(6.5, alpha)]),
+    ]
+    producers = _query_producers("cache invalidation tests", bundles)
+
+    signals = _signals_from_channel_bundles(bundles, producers=producers)
+
+    assert [(signal.family, signal.capability_name) for signal in signals] == [
+        ("semantic", "embedding_similarity"),
+        ("task", "task_specialization"),
+    ]
+    assert signals[0].kind == "embedding_similarity"
+    assert signals[0].channel_name == "embedding"
+    assert signals[1].kind == "text_match"
+    assert signals[1].channel_name == "test"
+
+
+def test_collect_retrieval_signals_uses_known_channel_producers_only() -> None:
+    """
+    Collect signals generically through capability-aware producer inspection.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts channel producers contribute signals while
+        enrichment-only producers remain diagnostics-only during Phase 5.
+    """
+    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
+    beta = _symbol("function", "tests.alpha", "run_test", "tests/test_a.py", 20)
+    bundles = [
+        ("symbol", [(9.0, alpha)]),
+        ("test", [(7.0, beta)]),
+    ]
+    producers = _query_producers("cache invalidation tests", bundles)
+
+    signals, diagnostics = _collect_retrieval_signals(bundles, producers=producers)
+
+    assert [(signal.channel_name, signal.capability_name) for signal in signals] == [
+        ("symbol", "symbol_lookup"),
+        ("test", "task_specialization"),
+    ]
+    assert diagnostics == {
+        "total_signals": 2,
+        "families": {"lexical": 1, "task": 1},
+        "capabilities": {"symbol_lookup": 1, "task_specialization": 1},
+        "used_producers": ["query-channel-symbol", "query-channel-test"],
+        "ignored_producers": [
+            "query-enrichment-call-graph",
+            "query-enrichment-references",
+        ],
+    }
+
+
+def test_rank_signals_with_provenance_matches_channel_merge_contract() -> None:
+    """
+    Preserve current merge behavior when ranking from normalized signals.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the signal aggregator reproduces the existing merge
+        ordering and provenance for one mixed lexical/semantic fixture.
+    """
+    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
+    beta = _symbol("function", "repoindex.beta", "run", "src/b.py", 20)
+    bundles = [
+        (
+            "semantic",
+            [
+                (5.0, beta),
+                (4.0, beta),
+            ],
+        ),
+        (
+            "symbol",
+            [
+                (9.0, alpha),
+                (8.0, alpha),
+            ],
+        ),
+    ]
+    producers = _query_producers("cache invalidation", bundles)
+    signals, _diagnostics = _collect_retrieval_signals(bundles, producers=producers)
+
+    ranked, provenance = _rank_signals_with_provenance(signals)
+
+    assert ranked == [(alpha, 1.75), (beta, 1.75)]
+    assert provenance[alpha] == {
+        "channels": {"symbol": 9.0},
+        "families": {"lexical": 9.0},
+        "rrf_score": 1.0,
+        "evidence_bonus": 0.0,
+        "role_bonus": 0.75,
+        "merge_score": 1.75,
+        "winner": "symbol",
+    }
+    assert provenance[beta] == {
+        "channels": {"semantic": 5.0},
+        "families": {"semantic": 5.0},
+        "rrf_score": 1.0,
+        "evidence_bonus": 0.0,
+        "role_bonus": 0.75,
+        "merge_score": 1.75,
+        "winner": "semantic",
+    }
 
 
 def test_diversify_merged_symbols_caps_one_symbol_per_file() -> None:

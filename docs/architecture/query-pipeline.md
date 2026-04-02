@@ -54,6 +54,19 @@ The resulting retrieval plan now owns:
 - whether include-graph expansion should run
 - whether cross-reference collection should run
 
+The current capability-driven retrieval path also owns shared retrieval
+producer metadata in `src/repoindex/query/producers.py`.
+
+That layer now declares:
+
+- stable producer identity
+- producer and capability versions
+- retrieval capability sets for channel and enrichment producers
+
+The query core consumes those descriptors generically. It does not require
+built-in analyzers to implement retrieval capabilities directly, and it must
+not depend on analyzer internals to rank evidence.
+
 Phase 7 also moves the embedding channel behind backend methods. The semantic
 wrapper in `src/repoindex/semantic/search.py` now delegates to the active
 backend instead of owning direct SQL access to the embedding tables.

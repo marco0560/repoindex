@@ -25,6 +25,25 @@ Invariants:
 - emitted embedding-bearing artifacts now carry durable analyzer-owned symbol
   identities used for cross-run reuse
 
+## `RetrievalProducer`
+
+`ADR-006` adds a retrieval-facing contract beside `LanguageAnalyzer`.
+
+Responsibilities:
+
+- expose versioned producer identity for retrieval diagnostics
+- declare retrieval capabilities through explicit metadata
+- let the query core reason about score-bearing evidence generically
+
+Invariants:
+
+- retrieval producers do not own final score policy
+- the core must consume declared producer metadata rather than analyzer
+  internals
+- the accepted first migration path keeps producer metadata in shared
+  query-side descriptors instead of requiring all analyzers to implement
+  `RetrievalProducer`
+
 ## `AnalysisResult` and Normalized Artifacts
 
 The normalized artifact model currently includes:
@@ -73,3 +92,10 @@ The Phase 3 contract layer is now active in the live indexing path:
 - the SQLite backend persists and serves current query needs
 
 The remaining extension work is additive rather than foundational.
+
+The current split is therefore explicit:
+
+- analyzers own extraction and normalized indexing artifacts
+- retrieval producers own retrieval-facing capability metadata
+- the query layer bridges those through shared producer descriptors rather than
+  analyzer-specific branching

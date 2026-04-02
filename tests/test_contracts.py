@@ -26,7 +26,14 @@ from typing import TYPE_CHECKING
 
 from repoindex.analyzers import BashAnalyzer, CAnalyzer, PythonAnalyzer
 from repoindex.analyzers.c import _disambiguate_function_stable_ids
-from repoindex.contracts import IndexBackend, LanguageAnalyzer
+from repoindex.contracts import (
+    KNOWN_RETRIEVAL_CAPABILITIES,
+    IndexBackend,
+    LanguageAnalyzer,
+    RetrievalProducer,
+    RetrievalProducerInfo,
+    split_declared_retrieval_capabilities,
+)
 from repoindex.indexer import (
     SQLiteIndexBackend,
     _collect_indexed_file_analyses,
@@ -42,6 +49,7 @@ from repoindex.models import (
 )
 from repoindex.normalization import analysis_result_from_parsed
 from repoindex.parser_ast import parse_file
+from repoindex.query.producers import EMBEDDING_RETRIEVAL_PRODUCER
 from repoindex.registry import (
     _instantiate_language_analyzers,
     active_index_backend,
@@ -261,6 +269,44 @@ class _FakeBackend:
         return []
 
 
+class _FakeRetrievalProducer:
+    """Small retrieval-producer stub used to validate the protocol surface."""
+
+    def retrieval_producer_info(self) -> RetrievalProducerInfo:
+        """
+        Return deterministic producer identity metadata.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        repoindex.contracts.RetrievalProducerInfo
+            Producer and capability-version metadata.
+        """
+        return RetrievalProducerInfo(
+            producer_name="fake-producer",
+            producer_version="1",
+            capability_version="1",
+        )
+
+    def retrieval_capabilities(self) -> tuple[str, ...]:
+        """
+        Return deterministic capability declarations.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[str, ...]
+            Declared capability names.
+        """
+        return ("symbol_lookup", "graph_relations", "future_extension")
+
+
 def test_analysis_result_from_parsed_normalizes_python_artifacts(
     tmp_path: Path,
 ) -> None:
@@ -413,7 +459,9 @@ def test_parse_file_excludes_nested_helper_control_flow_from_outer_metadata(
     assert function["raises"] == 0
 
 
-def test_language_analyzer_and_index_backend_protocols_are_runtime_checkable() -> None:
+def test_language_analyzer_index_backend_and_retrieval_protocols_are_runtime_checkable() -> (
+    None
+):
     """
     Ensure the Phase 3 protocol types accept conforming implementations.
 
@@ -424,13 +472,49 @@ def test_language_analyzer_and_index_backend_protocols_are_runtime_checkable() -
     Returns
     -------
     None
-        The test asserts runtime protocol compatibility for analyzer and
-        backend stubs.
+        The test asserts runtime protocol compatibility for analyzer, backend,
+        and retrieval-producer stubs.
     """
     assert isinstance(PythonAnalyzer(), LanguageAnalyzer)
     assert isinstance(CAnalyzer(), LanguageAnalyzer)
     assert isinstance(_FakeAnalyzer(), LanguageAnalyzer)
     assert isinstance(_FakeBackend(), IndexBackend)
+    assert isinstance(_FakeRetrievalProducer(), RetrievalProducer)
+    assert isinstance(EMBEDDING_RETRIEVAL_PRODUCER, RetrievalProducer)
+
+
+def test_split_declared_retrieval_capabilities_partitions_known_and_unknown() -> None:
+    """
+    Partition declared retrieval capabilities deterministically.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts known capabilities remain ordered and unknown
+        extensions are retained for diagnostics.
+    """
+    known, unknown = split_declared_retrieval_capabilities(
+        (
+            "symbol_lookup",
+            "graph_relations",
+            "symbol_lookup",
+            "future_extension",
+            " ",
+            "embedding_similarity",
+        )
+    )
+
+    assert known == (
+        "symbol_lookup",
+        "graph_relations",
+        "embedding_similarity",
+    )
+    assert unknown == ("future_extension",)
+    assert "symbol_lookup" in KNOWN_RETRIEVAL_CAPABILITIES
 
 
 def test_active_phase_8_registries_expose_default_backend_and_analyzers() -> None:

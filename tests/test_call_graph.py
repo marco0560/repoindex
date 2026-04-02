@@ -604,6 +604,7 @@ def test_c_include_graph_explain_reports_expansion_entries(tmp_path: Path) -> No
     explain = payload["explain"]
     expansion = explain["expansion"]
     include_graph = expansion["include_graph"]
+    signal_collection = explain["signal_collection"]
 
     assert {
         "seed_module": "native.sample",
@@ -614,6 +615,9 @@ def test_c_include_graph_explain_reports_expansion_entries(tmp_path: Path) -> No
         "expanded_module": "native.sample",
         "expanded_name": "Node",
     } in include_graph
+    assert "graph" in signal_collection["families"]
+    assert "graph_relations" in signal_collection["capabilities"]
+    assert "query-enrichment-include-graph" in signal_collection["used_producers"]
 
 
 def test_context_for_help_shows_incompatibility_and_examples(

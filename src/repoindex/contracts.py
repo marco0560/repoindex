@@ -17,7 +17,8 @@ This module belongs to the **contract definition layer** that governs pluggable 
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -71,6 +72,120 @@ class LanguageAnalyzer(Protocol):
         repoindex.models.AnalysisResult
             Normalized artifacts for the file.
         """
+
+
+RetrievalCapabilityName = Literal[
+    "symbol_lookup",
+    "semantic_text",
+    "embedding_similarity",
+    "task_specialization",
+    "graph_relations",
+    "issue_annotations",
+    "diagnostics_metadata",
+]
+
+KNOWN_RETRIEVAL_CAPABILITIES: tuple[RetrievalCapabilityName, ...] = (
+    "symbol_lookup",
+    "semantic_text",
+    "embedding_similarity",
+    "task_specialization",
+    "graph_relations",
+    "issue_annotations",
+    "diagnostics_metadata",
+)
+
+
+@dataclass(frozen=True)
+class RetrievalProducerInfo:
+    """
+    Versioned identity for one retrieval-facing producer.
+
+    Parameters
+    ----------
+    producer_name : str
+        Stable producer identifier used in diagnostics and explain output.
+    producer_version : str
+        Producer implementation version.
+    capability_version : str
+        Version of the capability contract understood by the producer.
+    """
+
+    producer_name: str
+    producer_version: str
+    capability_version: str
+
+
+@runtime_checkable
+class RetrievalProducer(Protocol):
+    """
+    Contract for retrieval-facing producers that declare scoring capabilities.
+
+    This protocol is layered beside ``LanguageAnalyzer`` so retrieval
+    participation can evolve without overloading file-analysis contracts.
+    """
+
+    def retrieval_producer_info(self) -> RetrievalProducerInfo:
+        """
+        Return versioned identity metadata for one retrieval producer.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        repoindex.contracts.RetrievalProducerInfo
+            Producer identity and capability-version metadata.
+        """
+
+    def retrieval_capabilities(self) -> tuple[str, ...]:
+        """
+        Return declared retrieval capabilities for one producer.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[str, ...]
+            Declared capability names in deterministic order.
+        """
+
+
+def split_declared_retrieval_capabilities(
+    capabilities: Sequence[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """
+    Partition declared retrieval capabilities into known and unknown values.
+
+    Parameters
+    ----------
+    capabilities : collections.abc.Sequence[str]
+        Raw capability names declared by a retrieval producer.
+
+    Returns
+    -------
+    tuple[tuple[str, ...], tuple[str, ...]]
+        Known and unknown capability names in deterministic declaration order
+        with duplicates removed.
+    """
+    known_set = set(KNOWN_RETRIEVAL_CAPABILITIES)
+    seen: set[str] = set()
+    known: list[str] = []
+    unknown: list[str] = []
+
+    for capability in capabilities:
+        normalized = str(capability).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        if normalized in known_set:
+            known.append(normalized)
+        else:
+            unknown.append(normalized)
+
+    return tuple(known), tuple(unknown)
 
 
 @runtime_checkable

@@ -83,6 +83,19 @@
           "additionalProperties": { "type": "integer" }
         },
         "ordered_channels": { "type": "array", "items": { "type": "string" } },
+        "retrieval_producers": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/retrieval_producer" }
+        },
+        "signal_collection": { "$ref": "#/definitions/signal_collection" },
+        "signals": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/retrieval_signal_preview" }
+        },
+        "signal_merge": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/signal_merge_entry" }
+        },
         "channel_results": {
           "type": "object",
           "additionalProperties": {
@@ -141,6 +154,145 @@
         "name": { "type": "string" },
         "lineno": { "type": "integer" },
         "score": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "retrieval_producer": {
+      "type": "object",
+      "required": [
+        "producer_name",
+        "producer_version",
+        "capability_version",
+        "source_kind",
+        "source_name",
+        "declared_capabilities",
+        "known_capabilities",
+        "unknown_capabilities"
+      ],
+      "properties": {
+        "producer_name": { "type": "string" },
+        "producer_version": { "type": "string" },
+        "capability_version": { "type": "string" },
+        "source_kind": {
+          "type": "string",
+          "enum": ["channel", "enrichment"]
+        },
+        "source_name": { "type": "string" },
+        "declared_capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "known_capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "unknown_capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "signal_collection": {
+      "type": "object",
+      "required": [
+        "total_signals",
+        "families",
+        "capabilities",
+        "used_producers",
+        "ignored_producers"
+      ],
+      "properties": {
+        "total_signals": { "type": "integer" },
+        "families": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "used_producers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "ignored_producers": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "signal_source": {
+      "type": "object",
+      "required": ["type", "module", "name", "lineno"],
+      "properties": {
+        "type": { "type": "string" },
+        "module": { "type": "string" },
+        "name": { "type": "string" },
+        "lineno": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "retrieval_signal_preview": {
+      "type": "object",
+      "required": [
+        "kind",
+        "family",
+        "producer_name",
+        "capability_name",
+        "type",
+        "module",
+        "name",
+        "lineno"
+      ],
+      "properties": {
+        "kind": { "type": "string" },
+        "family": { "type": "string" },
+        "producer_name": { "type": "string" },
+        "capability_name": { "type": "string" },
+        "type": { "type": "string" },
+        "module": { "type": "string" },
+        "name": { "type": "string" },
+        "lineno": { "type": "integer" },
+        "channel_name": { "type": "string" },
+        "rank": { "type": "integer" },
+        "strength": { "type": "number" },
+        "distance": { "type": "integer" },
+        "source": { "$ref": "#/definitions/signal_source" }
+      },
+      "additionalProperties": false
+    },
+    "signal_merge_entry": {
+      "type": "object",
+      "required": [
+        "type",
+        "module",
+        "name",
+        "lineno",
+        "signal_count",
+        "families",
+        "capabilities",
+        "producers"
+      ],
+      "properties": {
+        "type": { "type": "string" },
+        "module": { "type": "string" },
+        "name": { "type": "string" },
+        "lineno": { "type": "integer" },
+        "signal_count": { "type": "integer" },
+        "families": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "producers": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       },
       "additionalProperties": false
     },

@@ -278,3 +278,199 @@ def test_context_for_explain_reports_phase_17_retrieval_plan(tmp_path: Path) -> 
         "embedding",
     ]
     assert architecture_explain["planner"]["include_include_graph"] is True
+    assert test_explain["retrieval_producers"] == [
+        {
+            "producer_name": "query-channel-test",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "channel",
+            "source_name": "test",
+            "declared_capabilities": ["symbol_lookup", "task_specialization"],
+            "known_capabilities": ["symbol_lookup", "task_specialization"],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-channel-symbol",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "channel",
+            "source_name": "symbol",
+            "declared_capabilities": ["symbol_lookup"],
+            "known_capabilities": ["symbol_lookup"],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-channel-embedding",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "channel",
+            "source_name": "embedding",
+            "declared_capabilities": [
+                "embedding_similarity",
+                "diagnostics_metadata",
+            ],
+            "known_capabilities": [
+                "embedding_similarity",
+                "diagnostics_metadata",
+            ],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-channel-semantic",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "channel",
+            "source_name": "semantic",
+            "declared_capabilities": ["semantic_text"],
+            "known_capabilities": ["semantic_text"],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-enrichment-call-graph",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "enrichment",
+            "source_name": "call_graph",
+            "declared_capabilities": ["graph_relations"],
+            "known_capabilities": ["graph_relations"],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-enrichment-references",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "enrichment",
+            "source_name": "references",
+            "declared_capabilities": ["graph_relations"],
+            "known_capabilities": ["graph_relations"],
+            "unknown_capabilities": [],
+        },
+    ]
+    test_signal_collection = test_explain["signal_collection"]
+    test_signal_preview = test_explain["signals"]
+    test_signal_merge = test_explain["signal_merge"]
+    assert test_signal_collection["total_signals"] > 0
+    assert set(test_signal_collection["families"]) <= {"lexical", "semantic", "task"}
+    assert "symbol_lookup" in test_signal_collection["capabilities"]
+    assert "semantic_text" in test_signal_collection["capabilities"]
+    assert "query-channel-symbol" in test_signal_collection["used_producers"]
+    assert "query-channel-semantic" in test_signal_collection["used_producers"]
+    assert "query-enrichment-call-graph" in test_signal_collection["ignored_producers"]
+    assert "query-enrichment-references" in test_signal_collection["ignored_producers"]
+    assert test_signal_preview
+    assert {
+        "kind",
+        "family",
+        "producer_name",
+        "capability_name",
+        "type",
+        "module",
+        "name",
+        "lineno",
+    } <= set(test_signal_preview[0])
+    assert test_signal_merge
+    assert {
+        "type",
+        "module",
+        "name",
+        "lineno",
+        "signal_count",
+        "families",
+        "capabilities",
+        "producers",
+    } <= set(test_signal_merge[0])
+    assert architecture_explain["retrieval_producers"] == [
+        {
+            "producer_name": "query-channel-symbol",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "channel",
+            "source_name": "symbol",
+            "declared_capabilities": ["symbol_lookup"],
+            "known_capabilities": ["symbol_lookup"],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-channel-semantic",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "channel",
+            "source_name": "semantic",
+            "declared_capabilities": ["semantic_text"],
+            "known_capabilities": ["semantic_text"],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-channel-embedding",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "channel",
+            "source_name": "embedding",
+            "declared_capabilities": [
+                "embedding_similarity",
+                "diagnostics_metadata",
+            ],
+            "known_capabilities": [
+                "embedding_similarity",
+                "diagnostics_metadata",
+            ],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-enrichment-call-graph",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "enrichment",
+            "source_name": "call_graph",
+            "declared_capabilities": ["graph_relations"],
+            "known_capabilities": ["graph_relations"],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-enrichment-references",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "enrichment",
+            "source_name": "references",
+            "declared_capabilities": ["graph_relations"],
+            "known_capabilities": ["graph_relations"],
+            "unknown_capabilities": [],
+        },
+        {
+            "producer_name": "query-enrichment-include-graph",
+            "producer_version": "1",
+            "capability_version": "1",
+            "source_kind": "enrichment",
+            "source_name": "include_graph",
+            "declared_capabilities": ["graph_relations"],
+            "known_capabilities": ["graph_relations"],
+            "unknown_capabilities": [],
+        },
+    ]
+    architecture_signal_collection = architecture_explain["signal_collection"]
+    architecture_signal_preview = architecture_explain["signals"]
+    architecture_signal_merge = architecture_explain["signal_merge"]
+    assert architecture_signal_collection["total_signals"] > 0
+    assert set(architecture_signal_collection["families"]) <= {
+        "lexical",
+        "semantic",
+        "task",
+    }
+    assert "symbol_lookup" in architecture_signal_collection["capabilities"]
+    assert "semantic_text" in architecture_signal_collection["capabilities"]
+    assert "query-channel-symbol" in architecture_signal_collection["used_producers"]
+    assert "query-channel-semantic" in architecture_signal_collection["used_producers"]
+    assert (
+        "query-enrichment-call-graph"
+        in architecture_signal_collection["ignored_producers"]
+    )
+    assert (
+        "query-enrichment-references"
+        in architecture_signal_collection["ignored_producers"]
+    )
+    assert (
+        "query-enrichment-include-graph"
+        in architecture_signal_collection["ignored_producers"]
+    )
+    assert architecture_signal_preview
+    assert architecture_signal_merge

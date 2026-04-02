@@ -27,6 +27,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 from repoindex._version import version as __version__
+from repoindex.contracts import (
+    split_declared_retrieval_capabilities,
+)
 from repoindex.prefix import normalize_prefix, path_has_prefix, prefix_clause
 from repoindex.prompts.default import build_prompt
 from repoindex.query.classifier import (
@@ -44,10 +47,18 @@ from repoindex.query.exact import (
     find_symbol,
     logical_symbol_name,
 )
+from repoindex.query.producers import (
+    CHANNEL_PRODUCER_SPECS,
+    EMBEDDING_RETRIEVAL_PRODUCER,
+    QueryChannelSpec,
+    QueryProducerSpec,
+    channel_producer_specs,
+    selected_enrichment_producers,
+)
+from repoindex.query.signals import RetrievalSignal, signal_sort_key
 from repoindex.registry import active_index_backend, active_language_analyzers
 from repoindex.scanner import iter_project_files
 from repoindex.semantic.embeddings import get_embedding_backend
-from repoindex.semantic.search import embedding_candidates
 from repoindex.types import (
     ChannelBundle,
     ChannelName,
@@ -122,6 +133,8 @@ DiversityDiagnostics = dict[str, list[DiversityEntry]]
 MergeDiagnosticsEntry = dict[str, object]
 MergeDiagnostics = dict[SymbolRow, MergeDiagnosticsEntry]
 ExpansionDiagnostics = dict[str, list[dict[str, object]]]
+ProducerDiagnosticsEntry = dict[str, object]
+SignalCollectionDiagnostics = dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -1470,39 +1483,76 @@ def _rank_merged_symbols_with_provenance(
     ]
         Ranked merged symbols with their aggregate score and channel provenance.
     """
+    channel_names = [channel_name for channel_name, _channel in bundles]
+    producers = _channel_retrieval_producers(channel_names)
+    signals, _diagnostics = _collect_retrieval_signals(bundles, producers=producers)
+    return _rank_signals_with_provenance(signals, intent=intent)
+
+
+def _rank_signals_with_provenance(
+    signals: list[RetrievalSignal],
+    *,
+    intent: QueryIntent | None = None,
+) -> tuple[list[tuple[SymbolRow, float]], MergeDiagnostics]:
+    """
+    Rank merged symbols from normalized retrieval signals.
+
+    Parameters
+    ----------
+    signals : list[repoindex.query.signals.RetrievalSignal]
+        Normalized retrieval signals contributing to ranking.
+    intent : repoindex.query.classifier.QueryIntent | None, optional
+        Query intent used to bias merged ranking decisions.
+
+    Returns
+    -------
+    tuple[
+        list[tuple[repoindex.types.SymbolRow, float]],
+        repoindex.query.context.MergeDiagnostics,
+    ]
+        Ranked merged symbols with their aggregate score and signal-derived
+        provenance.
+    """
     weights = _channel_weights()
     merged_rrf: dict[SymbolRow, float] = {}
     channel_scores: dict[SymbolRow, dict[str, float]] = {}
+    family_scores_by_symbol: dict[SymbolRow, dict[str, float]] = {}
 
-    for channel_name, channel in sorted(bundles, key=lambda item: item[0]):
+    for signal in sorted(signals, key=signal_sort_key):
+        symbol = signal.target
+        channel_name = signal.channel_name
+        if channel_name is None:
+            continue
+
         weight = weights.get(channel_name, 1.0)
-        deduped_channel = _dedupe_channel_results(channel)
+        strength = signal.strength if signal.strength is not None else 0.0
+        weighted_score = strength * weight
+        symbol_channel_scores = channel_scores.setdefault(symbol, {})
+        symbol_channel_scores[channel_name] = weighted_score
 
-        for rank, (score, symbol) in enumerate(deduped_channel):
-            weighted_score = score * weight
-            if symbol not in channel_scores:
-                channel_scores[symbol] = {}
-            channel_scores[symbol][channel_name] = weighted_score
+        symbol_family_scores = family_scores_by_symbol.setdefault(symbol, {})
+        symbol_family_scores[signal.family] = (
+            symbol_family_scores.get(signal.family, 0.0) + weighted_score
+        )
 
-            rrf = weight * (1.0 / (rank + 1))
-            merged_rrf[symbol] = merged_rrf.get(symbol, 0.0) + rrf
+        if signal.rank is None:
+            continue
+
+        merged_rrf[symbol] = merged_rrf.get(symbol, 0.0) + (
+            weight * (1.0 / float(signal.rank))
+        )
+
     diagnostics: MergeDiagnostics = {}
     ranked_with_scores: list[tuple[SymbolRow, float]] = []
 
     for symbol, rrf_score in merged_rrf.items():
         symbol_channel_scores = channel_scores.get(symbol, {})
-        family_scores: dict[str, float] = {}
+        family_scores = family_scores_by_symbol.get(symbol, {})
         role = _classify_file_role(symbol[3], symbol[1])
         role_bias = _file_role_bias(role, intent)
-
-        for channel_name, score in symbol_channel_scores.items():
-            family = _channel_evidence_family(channel_name)
-            family_scores[family] = family_scores.get(family, 0.0) + score
-
         evidence_bonus = _merge_evidence_bonus(family_scores)
         role_bonus = float(role_bias) / 4.0
         merge_score = rrf_score + evidence_bonus + role_bonus
-
         winner = max(
             sorted(symbol_channel_scores.items()),
             key=lambda item: item[1],
@@ -1832,6 +1882,450 @@ def _build_channel_bundles(
     return [(name, fn(root, query, conn, intent, prefix)) for name, fn in channel_fns]
 
 
+def _channel_retrieval_producers(
+    ordered_channels: list[ChannelName],
+) -> list[QueryProducerSpec]:
+    """
+    Build query producer specs for channel-only aggregation paths.
+
+    Parameters
+    ----------
+    ordered_channels : list[repoindex.types.ChannelName]
+        Channel order active for the query.
+
+    Returns
+    -------
+    list[repoindex.query.producers.QueryProducerSpec]
+        Channel producers without enrichment-specific entries.
+    """
+    return channel_producer_specs(ordered_channels)
+
+
+def _producer_diagnostics(
+    producers: list[QueryProducerSpec],
+) -> list[ProducerDiagnosticsEntry]:
+    """
+    Render explain diagnostics for one list of retrieval producers.
+
+    Parameters
+    ----------
+    producers : list[repoindex.query.producers.QueryProducerSpec]
+        Query-layer retrieval producers for the current runtime.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Deterministic diagnostics for explain JSON and text rendering.
+    """
+    diagnostics: list[ProducerDiagnosticsEntry] = []
+
+    for producer in producers:
+        declared = producer.capabilities
+        known, unknown = split_declared_retrieval_capabilities(declared)
+        diagnostics.append(
+            {
+                "producer_name": producer.producer_name,
+                "producer_version": producer.producer_version,
+                "capability_version": producer.capability_version,
+                "source_kind": producer.source_kind,
+                "source_name": producer.source_name,
+                "declared_capabilities": list(declared),
+                "known_capabilities": list(known),
+                "unknown_capabilities": list(unknown),
+            }
+        )
+
+    return diagnostics
+
+
+def _signal_kind_for_channel(channel_name: ChannelName) -> str:
+    """
+    Return the normalized signal kind for one legacy retrieval channel.
+
+    Parameters
+    ----------
+    channel_name : repoindex.types.ChannelName
+        Legacy retrieval channel name.
+
+    Returns
+    -------
+    str
+        Stable signal kind derived from the query channel.
+    """
+    if channel_name == "symbol":
+        return "exact_symbol"
+    if channel_name == "embedding":
+        return "embedding_similarity"
+    return "text_match"
+
+
+def _signal_family_for_channel(channel_name: ChannelName) -> str:
+    """
+    Return the normalized signal family for one legacy retrieval channel.
+
+    Parameters
+    ----------
+    channel_name : repoindex.types.ChannelName
+        Legacy retrieval channel name.
+
+    Returns
+    -------
+    str
+        Stable signal family derived from the query channel.
+    """
+    if channel_name == "symbol":
+        return "lexical"
+    if channel_name in {"embedding", "semantic"}:
+        return "semantic"
+    return "task"
+
+
+def _signal_capability_for_channel(channel_name: ChannelName) -> str:
+    """
+    Return the primary capability that explains one query channel signal.
+
+    Parameters
+    ----------
+    channel_name : repoindex.types.ChannelName
+        Legacy retrieval channel name.
+
+    Returns
+    -------
+    str
+        Capability name attributed to signals emitted by the channel.
+    """
+    if channel_name == "symbol":
+        return "symbol_lookup"
+    if channel_name == "embedding":
+        return "embedding_similarity"
+    if channel_name == "semantic":
+        return "semantic_text"
+    return "task_specialization"
+
+
+def _signals_from_channel_bundles(
+    bundles: list[ChannelBundle],
+    *,
+    producers: list[QueryProducerSpec],
+) -> list[RetrievalSignal]:
+    """
+    Convert current channel results into normalized retrieval signals.
+
+    Parameters
+    ----------
+    bundles : list[repoindex.types.ChannelBundle]
+        Ranked channel bundles for the current query.
+    producers : list[repoindex.query.producers.QueryProducerSpec]
+        Query-layer retrieval producers synthesized for the same query.
+
+    Returns
+    -------
+    list[repoindex.query.signals.RetrievalSignal]
+        Deterministically ordered signals representing the current channel
+        evidence without changing merge behavior.
+    """
+    producer_by_channel = {
+        producer.source_name: producer
+        for producer in producers
+        if producer.source_kind == "channel"
+    }
+    signals: list[RetrievalSignal] = []
+
+    for channel_name, channel in sorted(bundles, key=lambda item: item[0]):
+        producer = producer_by_channel.get(channel_name)
+        if producer is None:
+            continue
+
+        capability_name = _signal_capability_for_channel(channel_name)
+
+        for rank, (strength, symbol) in enumerate(
+            _dedupe_channel_results(channel), start=1
+        ):
+            signals.append(
+                RetrievalSignal(
+                    kind=cast(
+                        "Literal['exact_symbol', 'text_match', 'embedding_similarity', 'relation', 'proximity', 'repeated_evidence']",
+                        _signal_kind_for_channel(channel_name),
+                    ),
+                    family=cast(
+                        "Literal['lexical', 'semantic', 'task', 'graph', 'issue']",
+                        _signal_family_for_channel(channel_name),
+                    ),
+                    target=symbol,
+                    producer_name=producer.producer_name,
+                    producer_version=producer.producer_version,
+                    capability_name=capability_name,
+                    capability_version=producer.capability_version,
+                    channel_name=channel_name,
+                    rank=rank,
+                    strength=strength,
+                )
+            )
+
+    return sorted(signals, key=signal_sort_key)
+
+
+def _signals_from_channel_producer(
+    producer: QueryProducerSpec,
+    *,
+    channel: ChannelResults,
+) -> list[RetrievalSignal]:
+    """
+    Convert one query channel producer into normalized retrieval signals.
+
+    Parameters
+    ----------
+    producer : repoindex.query.producers.QueryProducerSpec
+        Query-layer producer for one retrieval channel.
+    channel : repoindex.types.ChannelResults
+        Ranked results emitted by the producer's channel.
+
+    Returns
+    -------
+    list[repoindex.query.signals.RetrievalSignal]
+        Deterministically ordered signals contributed by the producer.
+    """
+    channel_name = producer.source_name
+    capability_name = _signal_capability_for_channel(channel_name)
+    signals: list[RetrievalSignal] = []
+
+    for rank, (strength, symbol) in enumerate(
+        _dedupe_channel_results(channel), start=1
+    ):
+        signals.append(
+            RetrievalSignal(
+                kind=cast(
+                    "Literal['exact_symbol', 'text_match', 'embedding_similarity', 'relation', 'proximity', 'repeated_evidence']",
+                    _signal_kind_for_channel(channel_name),
+                ),
+                family=cast(
+                    "Literal['lexical', 'semantic', 'task', 'graph', 'issue']",
+                    _signal_family_for_channel(channel_name),
+                ),
+                target=symbol,
+                producer_name=producer.producer_name,
+                producer_version=producer.producer_version,
+                capability_name=capability_name,
+                capability_version=producer.capability_version,
+                channel_name=channel_name,
+                rank=rank,
+                strength=strength,
+            )
+        )
+
+    return signals
+
+
+def _collect_retrieval_signals(
+    bundles: list[ChannelBundle],
+    *,
+    producers: list[QueryProducerSpec],
+) -> tuple[list[RetrievalSignal], SignalCollectionDiagnostics]:
+    """
+    Collect normalized retrieval signals through capability-aware producers.
+
+    Parameters
+    ----------
+    bundles : list[repoindex.types.ChannelBundle]
+        Ranked channel bundles for the current query.
+    producers : list[repoindex.query.producers.QueryProducerSpec]
+        Query-layer retrieval producers synthesized for the same query.
+
+    Returns
+    -------
+    tuple[list[repoindex.query.signals.RetrievalSignal], dict[str, object]]
+        Deterministically ordered signals plus compact collection diagnostics.
+    """
+    bundles_by_channel = {channel_name: channel for channel_name, channel in bundles}
+    signals: list[RetrievalSignal] = []
+    used_producers: list[str] = []
+    ignored_producers: list[str] = []
+
+    for producer in producers:
+        known_capabilities, _unknown_capabilities = (
+            split_declared_retrieval_capabilities(producer.capabilities)
+        )
+
+        if producer.source_kind != "channel":
+            ignored_producers.append(producer.producer_name)
+            continue
+
+        channel = bundles_by_channel.get(producer.source_name)
+        if channel is None:
+            ignored_producers.append(producer.producer_name)
+            continue
+
+        if not known_capabilities:
+            ignored_producers.append(producer.producer_name)
+            continue
+
+        used_producers.append(producer.producer_name)
+        signals.extend(_signals_from_channel_producer(producer, channel=channel))
+
+    ordered_signals = sorted(signals, key=signal_sort_key)
+    diagnostics = _signal_collection_diagnostics(
+        ordered_signals,
+        used_producers=used_producers,
+        ignored_producers=ignored_producers,
+    )
+    return ordered_signals, diagnostics
+
+
+def _signal_collection_diagnostics(
+    signals: list[RetrievalSignal],
+    *,
+    used_producers: list[str],
+    ignored_producers: list[str],
+) -> SignalCollectionDiagnostics:
+    """
+    Summarize one normalized signal set for explain diagnostics.
+
+    Parameters
+    ----------
+    signals : list[repoindex.query.signals.RetrievalSignal]
+        Normalized signals to summarize.
+    used_producers : list[str]
+        Producer identifiers that contributed at least one signal.
+    ignored_producers : list[str]
+        Producer identifiers that were available but did not contribute.
+
+    Returns
+    -------
+    dict[str, object]
+        Compact deterministic signal-collection diagnostics.
+    """
+    families: dict[str, int] = {}
+    capabilities: dict[str, int] = {}
+
+    for signal in signals:
+        families[signal.family] = families.get(signal.family, 0) + 1
+        capabilities[signal.capability_name] = (
+            capabilities.get(signal.capability_name, 0) + 1
+        )
+
+    diagnostics: SignalCollectionDiagnostics = {
+        "total_signals": len(signals),
+        "families": dict(sorted(families.items())),
+        "capabilities": dict(sorted(capabilities.items())),
+        "used_producers": sorted(used_producers),
+        "ignored_producers": sorted(ignored_producers),
+    }
+    return diagnostics
+
+
+def _signal_preview(
+    signals: list[RetrievalSignal],
+    *,
+    limit: int = 12,
+) -> list[dict[str, object]]:
+    """
+    Build a compact explain preview for normalized retrieval signals.
+
+    Parameters
+    ----------
+    signals : list[repoindex.query.signals.RetrievalSignal]
+        Normalized signals collected for the current query.
+    limit : int, optional
+        Maximum number of preview entries to emit.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Compact deterministic signal preview entries.
+    """
+    preview: list[dict[str, object]] = []
+
+    for signal in sorted(signals, key=signal_sort_key)[:limit]:
+        symbol_type, module_name, name, _file_path, lineno = signal.target
+        entry: dict[str, object] = {
+            "kind": signal.kind,
+            "family": signal.family,
+            "producer_name": signal.producer_name,
+            "capability_name": signal.capability_name,
+            "type": symbol_type,
+            "module": module_name,
+            "name": name,
+            "lineno": lineno,
+        }
+        if signal.channel_name is not None:
+            entry["channel_name"] = signal.channel_name
+        if signal.rank is not None:
+            entry["rank"] = signal.rank
+        if signal.strength is not None:
+            entry["strength"] = round(signal.strength, 4)
+        if signal.distance is not None:
+            entry["distance"] = signal.distance
+        if signal.source_symbol is not None:
+            source_type, source_module, source_name, _source_file, source_lineno = (
+                signal.source_symbol
+            )
+            entry["source"] = {
+                "type": source_type,
+                "module": source_module,
+                "name": source_name,
+                "lineno": source_lineno,
+            }
+        preview.append(entry)
+
+    return preview
+
+
+def _signal_summary_by_symbol(
+    signals: list[RetrievalSignal],
+    top_matches: list[SymbolRow],
+) -> list[dict[str, object]]:
+    """
+    Summarize signal support for the current top matches.
+
+    Parameters
+    ----------
+    signals : list[repoindex.query.signals.RetrievalSignal]
+        Normalized signals collected for the current query.
+    top_matches : list[repoindex.types.SymbolRow]
+        Ranked top matches for the query.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Per-symbol signal summaries for explain output.
+    """
+    by_symbol: dict[SymbolRow, list[RetrievalSignal]] = {}
+    for signal in signals:
+        by_symbol.setdefault(signal.target, []).append(signal)
+
+    entries: list[dict[str, object]] = []
+    for symbol in top_matches:
+        symbol_signals = sorted(by_symbol.get(symbol, []), key=signal_sort_key)
+        if not symbol_signals:
+            continue
+        symbol_type, module_name, name, _file_path, lineno = symbol
+        families: dict[str, int] = {}
+        capabilities: dict[str, int] = {}
+        producers: set[str] = set()
+
+        for signal in symbol_signals:
+            families[signal.family] = families.get(signal.family, 0) + 1
+            capabilities[signal.capability_name] = (
+                capabilities.get(signal.capability_name, 0) + 1
+            )
+            producers.add(signal.producer_name)
+
+        entries.append(
+            {
+                "type": symbol_type,
+                "module": module_name,
+                "name": name,
+                "lineno": lineno,
+                "signal_count": len(symbol_signals),
+                "families": dict(sorted(families.items())),
+                "capabilities": dict(sorted(capabilities.items())),
+                "producers": sorted(producers),
+            }
+        )
+
+    return entries
+
+
 def _get_channel_functions(
     plan: RetrievalPlan,
 ) -> list[
@@ -1871,7 +2365,9 @@ def _get_channel_functions(
         Ordered channel names and their retrieval callables.
     """
     registry = _channel_registry()
-    return [(name, registry[name]) for name in plan.channels if name in registry]
+    return [
+        (name, registry[name].retrieve) for name in plan.channels if name in registry
+    ]
 
 
 def _retrieve_semantic_candidates(
@@ -2015,7 +2511,7 @@ def _retrieve_embedding_candidates(
     repoindex.types.ChannelResults
         Ranked embedding-channel candidates for the query.
     """
-    results = embedding_candidates(
+    results = EMBEDDING_RETRIEVAL_PRODUCER.retrieve_candidates(
         root,
         query,
         limit=EMBEDDING_RESULT_LIMIT,
@@ -2028,15 +2524,9 @@ def _retrieve_embedding_candidates(
     return sorted_results
 
 
-def _channel_registry() -> dict[
-    ChannelName,
-    Callable[
-        [Path, str, sqlite3.Connection, QueryIntent, str | None],
-        ChannelResults,
-    ],
-]:
+def _channel_registry() -> dict[ChannelName, QueryChannelSpec]:
     """
-    Return the retrieval function registry keyed by channel name.
+    Return query-channel specs keyed by channel name.
 
     Parameters
     ----------
@@ -2044,27 +2534,35 @@ def _channel_registry() -> dict[
 
     Returns
     -------
-    dict[
-        repoindex.types.ChannelName,
-        collections.abc.Callable[
-            [
-                pathlib.Path,
-                str,
-                sqlite3.Connection,
-                repoindex.query.classifier.QueryIntent,
-                str | None,
-            ],
-            repoindex.types.ChannelResults,
-        ],
-    ]
-        Mapping from channel names to retrieval functions.
+    dict[repoindex.types.ChannelName, repoindex.query.producers.QueryChannelSpec]
+        Mapping from channel names to retrieval functions and producer metadata.
     """
     return {
-        "symbol": _retrieve_symbol_candidates,
-        "embedding": _retrieve_embedding_candidates,
-        "test": _retrieve_test_candidates,
-        "script": _retrieve_script_candidates,
-        "semantic": _retrieve_semantic_candidates,
+        "symbol": QueryChannelSpec(
+            name="symbol",
+            retrieve=_retrieve_symbol_candidates,
+            producer=CHANNEL_PRODUCER_SPECS["symbol"],
+        ),
+        "embedding": QueryChannelSpec(
+            name="embedding",
+            retrieve=_retrieve_embedding_candidates,
+            producer=CHANNEL_PRODUCER_SPECS["embedding"],
+        ),
+        "test": QueryChannelSpec(
+            name="test",
+            retrieve=_retrieve_test_candidates,
+            producer=CHANNEL_PRODUCER_SPECS["test"],
+        ),
+        "script": QueryChannelSpec(
+            name="script",
+            retrieve=_retrieve_script_candidates,
+            producer=CHANNEL_PRODUCER_SPECS["script"],
+        ),
+        "semantic": QueryChannelSpec(
+            name="semantic",
+            retrieve=_retrieve_semantic_candidates,
+            producer=CHANNEL_PRODUCER_SPECS["semantic"],
+        ),
     }
 
 
@@ -2356,6 +2854,7 @@ def _expand_include_graph_neighbors(
     conn: sqlite3.Connection,
     *,
     prefix: str | None,
+    graph_signals: list[RetrievalSignal] | None = None,
 ) -> tuple[list[SymbolRow], list[dict[str, object]]]:
     """
     Expand one symbol through direct local C include relationships.
@@ -2370,6 +2869,9 @@ def _expand_include_graph_neighbors(
         Open database connection reused for exact graph lookups.
     prefix : str | None
         Absolute normalized prefix used to restrict owner files and symbols.
+    graph_signals : list[repoindex.query.signals.RetrievalSignal] | None, optional
+        Mutable signal buffer that receives normalized include-proximity
+        evidence when supplied.
 
     Returns
     -------
@@ -2411,6 +2913,20 @@ def _expand_include_graph_neighbors(
                     "expanded_name": candidate[2],
                 }
             )
+            if graph_signals is not None:
+                graph_signals.append(
+                    RetrievalSignal(
+                        kind="proximity",
+                        family="graph",
+                        target=candidate,
+                        producer_name="query-enrichment-include-graph",
+                        producer_version="1",
+                        capability_name="graph_relations",
+                        capability_version="1",
+                        source_symbol=symbol,
+                        distance=1,
+                    )
+                )
 
     pending_modules: list[str] = [module_name]
     visited_modules: set[str] = set()
@@ -2513,6 +3029,7 @@ def _expand_graph_related_symbols(
     prefix: str | None,
     expanded: list[SymbolRow],
     seen_symbols: set[SymbolRow],
+    graph_signals: list[RetrievalSignal] | None = None,
 ) -> list[dict[str, object]]:
     """
     Expand top matches through include, call, and callable-reference graphs.
@@ -2535,6 +3052,9 @@ def _expand_graph_related_symbols(
         Pending expanded symbols collected for the query.
     seen_symbols : set[repoindex.types.SymbolRow]
         Symbols already admitted to the expanded result set.
+    graph_signals : list[repoindex.query.signals.RetrievalSignal] | None, optional
+        Mutable signal buffer that receives normalized graph evidence when
+        supplied.
 
     Returns
     -------
@@ -2550,6 +3070,7 @@ def _expand_graph_related_symbols(
                 symbol,
                 conn,
                 prefix=prefix,
+                graph_signals=graph_signals,
             )
             for related in include_related:
                 _add_related_symbol(expanded, seen_symbols, related)
@@ -2616,6 +3137,20 @@ def _expand_graph_related_symbols(
                 conn=conn,
             ):
                 _add_related_symbol(expanded, seen_symbols, related)
+                if graph_signals is not None:
+                    graph_signals.append(
+                        RetrievalSignal(
+                            kind="relation",
+                            family="graph",
+                            target=related,
+                            producer_name="query-enrichment-call-graph",
+                            producer_version="1",
+                            capability_name="graph_relations",
+                            capability_version="1",
+                            source_symbol=symbol,
+                            distance=1,
+                        )
+                    )
 
         for (
             caller_module,
@@ -2634,6 +3169,20 @@ def _expand_graph_related_symbols(
                 conn=conn,
             ):
                 _add_related_symbol(expanded, seen_symbols, related)
+                if graph_signals is not None:
+                    graph_signals.append(
+                        RetrievalSignal(
+                            kind="relation",
+                            family="graph",
+                            target=related,
+                            producer_name="query-enrichment-call-graph",
+                            producer_version="1",
+                            capability_name="graph_relations",
+                            capability_version="1",
+                            source_symbol=symbol,
+                            distance=1,
+                        )
+                    )
 
         for (
             _owner_module,
@@ -2652,6 +3201,20 @@ def _expand_graph_related_symbols(
                 conn=conn,
             ):
                 _add_related_symbol(expanded, seen_symbols, related)
+                if graph_signals is not None:
+                    graph_signals.append(
+                        RetrievalSignal(
+                            kind="relation",
+                            family="graph",
+                            target=related,
+                            producer_name="query-enrichment-references",
+                            producer_version="1",
+                            capability_name="graph_relations",
+                            capability_version="1",
+                            source_symbol=symbol,
+                            distance=1,
+                        )
+                    )
 
         for (
             owner_module,
@@ -2670,6 +3233,20 @@ def _expand_graph_related_symbols(
                 conn=conn,
             ):
                 _add_related_symbol(expanded, seen_symbols, related)
+                if graph_signals is not None:
+                    graph_signals.append(
+                        RetrievalSignal(
+                            kind="relation",
+                            family="graph",
+                            target=related,
+                            producer_name="query-enrichment-references",
+                            producer_version="1",
+                            capability_name="graph_relations",
+                            capability_version="1",
+                            source_symbol=symbol,
+                            distance=1,
+                        )
+                    )
 
     return include_expansion
 
@@ -2819,6 +3396,7 @@ def _expand_and_collect_references(
     include_include_graph: bool,
     include_references: bool,
     prefix: str | None = None,
+    graph_signals: list[RetrievalSignal] | None = None,
 ) -> tuple[list[SymbolRow], list[ReferenceRow], ExpansionDiagnostics]:
     """
     Perform module expansion and collect cross-module references.
@@ -2840,6 +3418,9 @@ def _expand_and_collect_references(
     prefix : str | None, optional
         Absolute normalized prefix used to restrict owner files, expanded
         symbols, and scanned references.
+    graph_signals : list[repoindex.query.signals.RetrievalSignal] | None, optional
+        Mutable signal buffer that receives normalized graph evidence when
+        supplied.
 
     Returns
     -------
@@ -2869,6 +3450,7 @@ def _expand_and_collect_references(
         prefix=prefix,
         expanded=expanded,
         seen_symbols=seen_symbols,
+        graph_signals=graph_signals,
     )
     _expand_module_related_symbols(
         root,
@@ -2991,6 +3573,10 @@ def _render_context_json(
     enabled_channels: set[ChannelName] | None = None,
     channel_priority: dict[ChannelName, int] | None = None,
     ordered_channels: list[ChannelName] | None = None,
+    producers: list[ProducerDiagnosticsEntry] | None = None,
+    signal_collection: SignalCollectionDiagnostics | None = None,
+    signal_preview: list[dict[str, object]] | None = None,
+    signal_merge: list[dict[str, object]] | None = None,
     bundles: list[ChannelBundle] | None = None,
     provenance: MergeDiagnostics | None = None,
     diversity: DiversityDiagnostics | None = None,
@@ -3025,6 +3611,14 @@ def _render_context_json(
         Channel priority mapping.
     ordered_channels : list[repoindex.types.ChannelName] | None, optional
         Ordered channel names.
+    producers : list[dict[str, object]] | None, optional
+        Retrieval-producer diagnostics synthesized from query producer specs.
+    signal_collection : dict[str, object] | None, optional
+        Compact diagnostics describing capability-gated signal collection.
+    signal_preview : list[dict[str, object]] | None, optional
+        Compact preview of normalized retrieval signals.
+    signal_merge : list[dict[str, object]] | None, optional
+        Per-top-match signal attribution summaries.
     bundles : list[repoindex.types.ChannelBundle] | None, optional
         Raw channel results.
     provenance : repoindex.query.context.MergeDiagnostics | None, optional
@@ -3127,6 +3721,18 @@ def _render_context_json(
 
         if ordered_channels is not None:
             explain_block["ordered_channels"] = ordered_channels
+
+        if producers is not None:
+            explain_block["retrieval_producers"] = producers
+
+        if signal_collection is not None:
+            explain_block["signal_collection"] = signal_collection
+
+        if signal_preview is not None:
+            explain_block["signals"] = signal_preview
+
+        if signal_merge is not None:
+            explain_block["signal_merge"] = signal_merge
 
         if bundles is not None:
             channel_results: dict[str, list[dict[str, object]]] = {}
@@ -3259,6 +3865,10 @@ def _render_context(
     enabled_channels: set[ChannelName] | None = None,
     channel_priority: dict[ChannelName, int] | None = None,
     ordered_channels: list[ChannelName] | None = None,
+    producers: list[ProducerDiagnosticsEntry] | None = None,
+    signal_collection: SignalCollectionDiagnostics | None = None,
+    signal_preview: list[dict[str, object]] | None = None,
+    signal_merge: list[dict[str, object]] | None = None,
     bundles: list[ChannelBundle] | None = None,
     provenance: MergeDiagnostics | None = None,
     diversity: DiversityDiagnostics | None = None,
@@ -3299,6 +3909,14 @@ def _render_context(
         Channel priority mapping.
     ordered_channels : list[repoindex.types.ChannelName] | None, optional
         Ordered channel names.
+    producers : list[dict[str, object]] | None, optional
+        Retrieval-producer diagnostics synthesized from query producer specs.
+    signal_collection : dict[str, object] | None, optional
+        Compact diagnostics describing capability-gated signal collection.
+    signal_preview : list[dict[str, object]] | None, optional
+        Compact preview of normalized retrieval signals.
+    signal_merge : list[dict[str, object]] | None, optional
+        Per-top-match signal attribution summaries.
     bundles : list[repoindex.types.ChannelBundle] | None, optional
         Raw channel results.
     provenance : repoindex.query.context.MergeDiagnostics | None, optional
@@ -3327,6 +3945,10 @@ def _render_context(
             enabled_channels=enabled_channels,
             channel_priority=channel_priority,
             ordered_channels=ordered_channels,
+            producers=producers,
+            signal_collection=signal_collection,
+            signal_preview=signal_preview,
+            signal_merge=signal_merge,
             bundles=bundles,
             provenance=provenance,
             diversity=diversity,
@@ -3354,6 +3976,10 @@ def _render_context(
             enabled_channels=enabled_channels,
             channel_priority=channel_priority,
             ordered_channels=ordered_channels,
+            producers=producers,
+            signal_collection=signal_collection,
+            signal_preview=signal_preview,
+            signal_merge=signal_merge,
             bundles=bundles,
             provenance=provenance,
             diversity=diversity,
@@ -3382,6 +4008,10 @@ def _append_explain_sections(
     enabled_channels: set[ChannelName] | None,
     channel_priority: dict[ChannelName, int] | None,
     ordered_channels: list[ChannelName] | None,
+    producers: list[ProducerDiagnosticsEntry] | None,
+    signal_collection: SignalCollectionDiagnostics | None,
+    signal_preview: list[dict[str, object]] | None,
+    signal_merge: list[dict[str, object]] | None,
     bundles: list[ChannelBundle] | None,
     provenance: MergeDiagnostics | None,
     diversity: DiversityDiagnostics | None,
@@ -3407,6 +4037,14 @@ def _append_explain_sections(
         Channel priority mapping.
     ordered_channels : list[repoindex.types.ChannelName] | None
         Ordered channel names.
+    producers : list[dict[str, object]] | None
+        Retrieval-producer diagnostics synthesized from query producer specs.
+    signal_collection : dict[str, object] | None
+        Compact diagnostics describing capability-gated signal collection.
+    signal_preview : list[dict[str, object]] | None
+        Compact preview of normalized retrieval signals.
+    signal_merge : list[dict[str, object]] | None
+        Per-top-match signal attribution summaries.
     bundles : list[repoindex.types.ChannelBundle] | None
         Raw channel results.
     provenance : repoindex.query.context.MergeDiagnostics | None
@@ -3462,6 +4100,63 @@ def _append_explain_sections(
             lines.append(f"channel_priority: {channel_priority}")
         if ordered_channels is not None:
             lines.append(f"ordered_channels: {ordered_channels}")
+        if producers is not None:
+            lines.append("retrieval_producers:")
+            for producer in producers:
+                lines.append(
+                    "  "
+                    f"{producer['producer_name']}"
+                    f" v{producer['producer_version']}"
+                    f" capability_version={producer['capability_version']}"
+                    f" source={producer['source_kind']}:{producer['source_name']}"
+                )
+                lines.append(
+                    "    " f"known_capabilities={producer['known_capabilities']}"
+                )
+                lines.append(
+                    "    " f"unknown_capabilities={producer['unknown_capabilities']}"
+                )
+        if signal_collection is not None:
+            lines.append(
+                "signal_collection: "
+                f"total_signals={signal_collection['total_signals']}"
+            )
+            lines.append("  " f"families={signal_collection['families']}")
+            lines.append("  " f"capabilities={signal_collection['capabilities']}")
+            lines.append("  " f"used_producers={signal_collection['used_producers']}")
+            lines.append(
+                "  " f"ignored_producers={signal_collection['ignored_producers']}"
+            )
+
+        lines.append("")
+
+    if explain and signal_preview is not None:
+        lines.append("=== EXPLAIN: SIGNALS ===")
+        for entry in signal_preview:
+            label = (
+                f"{entry['kind']} {entry['module']}.{entry['name']}:{entry['lineno']}"
+            )
+            lines.append(
+                "  "
+                f"{label} family={entry['family']}"
+                f" producer={entry['producer_name']}"
+                f" capability={entry['capability_name']}"
+            )
+            if "channel_name" in entry:
+                lines.append(
+                    "    "
+                    f"channel={entry['channel_name']}"
+                    f" rank={entry.get('rank')}"
+                    f" strength={entry.get('strength')}"
+                )
+            if "distance" in entry:
+                lines.append("    " f"distance={entry['distance']}")
+            if "source" in entry:
+                source = cast("dict[str, object]", entry["source"])
+                lines.append(
+                    "    "
+                    f"source={source['module']}.{source['name']}:{source['lineno']}"
+                )
 
         lines.append("")
 
@@ -3484,6 +4179,20 @@ def _append_explain_sections(
                     label = f"{module_name}.{name}:{lineno}"
 
                 lines.append(f"  {score:.2f} -> {label}")
+
+        lines.append("")
+
+    if explain and signal_merge is not None:
+        lines.append("=== EXPLAIN: SIGNAL MERGE ===")
+        for entry in signal_merge:
+            lines.append(
+                "  "
+                f"{entry['module']}.{entry['name']}:{entry['lineno']}"
+                f" signal_count={entry['signal_count']}"
+            )
+            lines.append("    " f"families={entry['families']}")
+            lines.append("    " f"capabilities={entry['capabilities']}")
+            lines.append("    " f"producers={entry['producers']}")
 
         lines.append("")
 
@@ -3727,6 +4436,11 @@ def context_for(
     plan = build_retrieval_plan(intent)
     diversity: DiversityDiagnostics | None = None
     expansion: ExpansionDiagnostics | None = None
+    producer_diagnostics: list[ProducerDiagnosticsEntry] | None = None
+    signal_collection: SignalCollectionDiagnostics | None = None
+    retrieval_signals: list[RetrievalSignal] = []
+    signal_preview: list[dict[str, object]] | None = None
+    signal_merge: list[dict[str, object]] | None = None
 
     # --- PHASE 1+2: candidate retrieval + scoring ---
     bundles = _build_channel_bundles(
@@ -3749,6 +4463,18 @@ def context_for(
         enabled = _enabled_channels(plan)
         priority = _channel_priority(plan)
         ordered_channels = [name for name, _ in _get_channel_functions(plan)]
+        retrieval_producers = _channel_retrieval_producers(
+            ordered_channels
+        ) + selected_enrichment_producers(
+            include_issue_annotations=_is_issue_query(query) or plan.include_doc_issues,
+            include_references=plan.include_references,
+            include_include_graph=plan.include_include_graph,
+        )
+        producer_diagnostics = _producer_diagnostics(retrieval_producers)
+        retrieval_signals, signal_collection = _collect_retrieval_signals(
+            bundles,
+            producers=retrieval_producers,
+        )
     else:
         top_matches = _merge_ranked_channels(bundles, intent=intent)
         enabled = None
@@ -3814,6 +4540,10 @@ def context_for(
                 diversity=diversity,
                 expansion=expansion,
                 plan=plan,
+                producers=producer_diagnostics,
+                signal_collection=signal_collection,
+                signal_preview=signal_preview,
+                signal_merge=signal_merge,
             )
             conn.close()
             return result
@@ -3831,6 +4561,10 @@ def context_for(
                 diversity=diversity,
                 expansion=expansion,
                 plan=plan,
+                producers=producer_diagnostics,
+                signal_collection=signal_collection,
+                signal_preview=signal_preview,
+                signal_merge=signal_merge,
             )
             conn.close()
             return result
@@ -3866,7 +4600,33 @@ def context_for(
         include_include_graph=plan.include_include_graph,
         include_references=plan.include_references,
         prefix=normalized_prefix,
+        graph_signals=retrieval_signals if explain else None,
     )
+
+    if explain and signal_collection is not None:
+        used_producers = list(cast("list[str]", signal_collection["used_producers"]))
+        ignored_producers = list(
+            cast("list[str]", signal_collection["ignored_producers"])
+        )
+        graph_producers = sorted(
+            {
+                signal.producer_name
+                for signal in retrieval_signals
+                if signal.family == "graph"
+            }
+        )
+        used_set = set(used_producers)
+        ignored_set = set(ignored_producers)
+        for producer_name in graph_producers:
+            used_set.add(producer_name)
+            ignored_set.discard(producer_name)
+        signal_collection = _signal_collection_diagnostics(
+            sorted(retrieval_signals, key=signal_sort_key),
+            used_producers=sorted(used_set),
+            ignored_producers=sorted(ignored_set),
+        )
+        signal_preview = _signal_preview(retrieval_signals)
+        signal_merge = _signal_summary_by_symbol(retrieval_signals, top_matches)
 
     # --- PHASE 6: rendering ---
     result = _render_context(
@@ -3885,6 +4645,10 @@ def context_for(
         enabled_channels=enabled,
         channel_priority=priority,
         ordered_channels=ordered_channels,
+        producers=producer_diagnostics,
+        signal_collection=signal_collection,
+        signal_preview=signal_preview,
+        signal_merge=signal_merge,
         bundles=bundles if explain else None,
         provenance=provenance if explain else None,
         diversity=diversity if explain else None,
