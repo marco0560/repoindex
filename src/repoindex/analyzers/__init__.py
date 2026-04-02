@@ -1,14 +1,16 @@
-"""Language analyzer implementations for repoindex.
+"""Language analyzer exports for repoindex.
 
 Responsibilities
 ----------------
-- Re-export analyzer classes and helpers such as Python and C analyzer implementations.
-- Provide aggregator utilities used by the indexer and registry layers to enumerate analyzers.
-- Surface analyzer metadata so the registry can compute discovery globs and optional dependencies.
+- Re-export the built-in Python analyzer.
+- Preserve transitional imports for extracted first-party analyzers when their
+  packages are installed.
+- Keep analyzer imports lightweight for registry and test callers.
 
 Design principles
 -----------------
-The package stays lightweight and only re-exports language-specific analyzer classes.
+The package stays lightweight and avoids owning optional first-party analyzer
+implementations directly.
 
 Architectural role
 ------------------
@@ -22,17 +24,19 @@ from repoindex.analyzers.python import PythonAnalyzer
 __all__ = ["PythonAnalyzer"]
 
 try:
-    CAnalyzer = importlib.import_module("repoindex.analyzers.c").CAnalyzer
+    c_module = importlib.import_module("repoindex.analyzers.c")
 except ModuleNotFoundError as exc:
-    if exc.name not in {"tree_sitter", "tree_sitter_c"}:
+    if exc.name != "repoindex_analyzer_c":
         raise
 else:
+    CAnalyzer = c_module.CAnalyzer
     __all__.append("CAnalyzer")
 
 try:
-    BashAnalyzer = importlib.import_module("repoindex.analyzers.bash").BashAnalyzer
+    bash_module = importlib.import_module("repoindex.analyzers.bash")
 except ModuleNotFoundError as exc:
-    if exc.name not in {"tree_sitter", "tree_sitter_bash"}:
+    if exc.name != "repoindex_analyzer_bash":
         raise
 else:
+    BashAnalyzer = bash_module.BashAnalyzer
     __all__.append("BashAnalyzer")

@@ -17,7 +17,6 @@ This module belongs to the **plugin registration layer** powering ADR-004 analyz
 
 from __future__ import annotations
 
-import importlib
 import os
 from dataclasses import dataclass
 from importlib import metadata
@@ -35,13 +34,13 @@ DEFAULT_INDEX_BACKEND = "sqlite"
 INDEX_BACKEND_ENV_VAR = "REPOINDEX_INDEX_BACKEND"
 ANALYZER_ENTRY_POINT_GROUP = "repoindex.analyzers"
 BACKEND_ENTRY_POINT_GROUP = "repoindex.backends"
-OPTIONAL_ANALYZER_EXTRA_BY_NAME: dict[str, str] = {
-    "c": "repoindex[c]",
-    "bash": "repoindex[bash]",
+OPTIONAL_ANALYZER_PACKAGE_BY_NAME: dict[str, str] = {
+    "c": "repoindex-analyzer-c",
+    "bash": "repoindex-analyzer-bash",
 }
-OPTIONAL_ANALYZER_DEPENDENCY_NAMES: dict[str, set[str]] = {
-    "c": {"tree_sitter", "tree_sitter_c"},
-    "bash": {"tree_sitter", "tree_sitter_bash"},
+PREFERRED_ANALYZER_ORDER: dict[str, int] = {
+    "c": 10,
+    "bash": 20,
 }
 REQUIRED_BACKEND_METHODS: tuple[str, ...] = (
     "open_connection",
@@ -204,25 +203,7 @@ def _registered_language_analyzer_factories() -> (
     """
     from repoindex.analyzers.python import PythonAnalyzer
 
-    factories: list[Callable[[], LanguageAnalyzer]] = [
-        cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer)
-    ]
-    c_factory = _optional_language_analyzer_factory(
-        "repoindex.analyzers.c",
-        "CAnalyzer",
-        analyzer_name="c",
-    )
-    if c_factory is not None:
-        factories.append(c_factory)
-
-    bash_factory = _optional_language_analyzer_factory(
-        "repoindex.analyzers.bash",
-        "BashAnalyzer",
-        analyzer_name="bash",
-    )
-    if bash_factory is not None:
-        factories.append(bash_factory)
-    return tuple(factories)
+    return (cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),)
 
 
 def _builtin_analyzer_plugins() -> list[_LoadedPlugin]:
@@ -257,50 +238,6 @@ def _builtin_analyzer_plugins() -> list[_LoadedPlugin]:
     return loaded
 
 
-def _optional_language_analyzer_factory(
-    module_name: str,
-    class_name: str,
-    *,
-    analyzer_name: str,
-) -> Callable[[], LanguageAnalyzer] | None:
-    """
-    Load one optional analyzer factory when its dependencies are installed.
-
-    Parameters
-    ----------
-    module_name : str
-        Fully qualified analyzer module path.
-    class_name : str
-        Analyzer class name exported by the module.
-    analyzer_name : str
-        Stable analyzer registry name.
-
-    Returns
-    -------
-    collections.abc.Callable[[], repoindex.contracts.LanguageAnalyzer] | None
-        Analyzer factory when optional dependencies are available, otherwise
-        ``None``.
-
-    Raises
-    ------
-    ModuleNotFoundError
-        If the analyzer module fails for reasons unrelated to its documented
-        optional dependencies.
-    """
-    try:
-        module = importlib.import_module(module_name)
-    except ModuleNotFoundError as exc:
-        optional_dependencies = OPTIONAL_ANALYZER_DEPENDENCY_NAMES.get(
-            analyzer_name,
-            set(),
-        )
-        if exc.name in optional_dependencies:
-            return None
-        raise
-
-    return cast("Callable[[], LanguageAnalyzer]", getattr(module, class_name))
-
-
 def _entry_points_for_group(group: str) -> list[metadata.EntryPoint]:
     """
     Return entry points for one plugin group in deterministic order.
@@ -318,8 +255,8 @@ def _entry_points_for_group(group: str) -> list[metadata.EntryPoint]:
     discovered = list(metadata.entry_points(group=group))
     discovered.sort(
         key=lambda entry: (
-            getattr(getattr(entry, "dist", None), "name", "") or "",
             entry.name,
+            getattr(getattr(entry, "dist", None), "name", "") or "",
             entry.value,
         )
     )
@@ -581,7 +518,18 @@ def _resolve_plugins(
 
     duplicate_keys: set[tuple[str, str, str]] = set()
 
-    for plugin in externals:
+    ordered_externals = list(externals)
+    if externals and externals[0].family == "analyzer":
+        ordered_externals.sort(
+            key=lambda plugin: (
+                PREFERRED_ANALYZER_ORDER.get(plugin.name, 1000),
+                plugin.name,
+                plugin.provider,
+                plugin.entry_point or "",
+            )
+        )
+
+    for plugin in ordered_externals:
         if plugin.name in seen_names:
             duplicate_keys.add(
                 (
@@ -688,35 +636,22 @@ def missing_language_analyzer_hint(path: Path) -> str | None:
         applies.
     """
     suffix = path.suffix.lower()
+    analyzer_names = {plugin.name for plugin in _plugin_snapshot("analyzer")[0]}
 
-    if (
-        suffix in {".c", ".h"}
-        and _optional_language_analyzer_factory(
-            "repoindex.analyzers.c",
-            "CAnalyzer",
-            analyzer_name="c",
-        )
-        is None
-    ):
-        extra = OPTIONAL_ANALYZER_EXTRA_BY_NAME["c"]
+    if suffix in {".c", ".h"} and "c" not in analyzer_names:
+        package_name = OPTIONAL_ANALYZER_PACKAGE_BY_NAME["c"]
         return (
             "C-family indexing support is optional. "
-            f"Install the extra with `{extra}` to enable `*.c` and `*.h` files."
+            f"Install `{package_name}` to enable `*.c` and `*.h` files, or use "
+            "`repoindex-bundle-official` when the curated bundle is available."
         )
 
-    if (
-        suffix in {".sh", ".bash"}
-        and _optional_language_analyzer_factory(
-            "repoindex.analyzers.bash",
-            "BashAnalyzer",
-            analyzer_name="bash",
-        )
-        is None
-    ):
-        extra = OPTIONAL_ANALYZER_EXTRA_BY_NAME["bash"]
+    if suffix in {".sh", ".bash"} and "bash" not in analyzer_names:
+        package_name = OPTIONAL_ANALYZER_PACKAGE_BY_NAME["bash"]
         return (
             "Shell indexing support is optional. "
-            f"Install the extra with `{extra}` to enable `*.sh` and `*.bash` files."
+            f"Install `{package_name}` to enable `*.sh` and `*.bash` files, or "
+            "use `repoindex-bundle-official` when the curated bundle is available."
         )
 
     return None

@@ -17,13 +17,13 @@ This module belongs to the **contract verification layer** and enforces the ADR-
 
 from __future__ import annotations
 
-import importlib
 import json
 import sqlite3
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+import repoindex.registry as registry_module
 from repoindex.analyzers import BashAnalyzer, CAnalyzer, PythonAnalyzer
 from repoindex.analyzers.c import _disambiguate_function_stable_ids
 from repoindex.contracts import (
@@ -542,36 +542,28 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """
-    Skip the optional C analyzer when its extra dependencies are unavailable.
+    Skip the optional C analyzer when its plugin package is unavailable.
 
     Parameters
     ----------
     monkeypatch : pytest.MonkeyPatch
-        Pytest fixture used to intercept module imports.
+        Pytest fixture used to patch entry-point discovery.
 
     Returns
     -------
     None
         The test asserts the registry keeps Python active and omits C.
-
-    Raises
-    ------
-    ModuleNotFoundError
-        Raised by the patched import hook to emulate a missing optional C
-        dependency.
     """
-    real_import_module = importlib.import_module
+    real_entry_points = registry_module._entry_points_for_group
 
-    def fake_import_module(name: str, package: str | None = None) -> object:
-        if name == "repoindex.analyzers.c":
-            msg = "No module named 'tree_sitter_c'"
-            raise ModuleNotFoundError(
-                msg,
-                name="tree_sitter_c",
-            )
-        return real_import_module(name, package)
+    def fake_entry_points(group: str) -> list[object]:
+        entries = real_entry_points(group)
+        if group != registry_module.ANALYZER_ENTRY_POINT_GROUP:
+            return cast("list[object]", entries)
+        filtered = [entry for entry in entries if entry.name != "c"]
+        return cast("list[object]", filtered)
 
-    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+    monkeypatch.setattr(registry_module, "_entry_points_for_group", fake_entry_points)
 
     analyzers = active_language_analyzers()
 
@@ -582,36 +574,28 @@ def test_select_language_analyzer_reports_optional_extra_hint(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """
-    Report the optional extra when a C-family file has no available analyzer.
+    Report the package install hint when a C-family file has no available analyzer.
 
     Parameters
     ----------
     monkeypatch : pytest.MonkeyPatch
-        Pytest fixture used to intercept module imports.
+        Pytest fixture used to patch entry-point discovery.
 
     Returns
     -------
     None
-        The test asserts the failure message includes the C extra hint.
-
-    Raises
-    ------
-    ModuleNotFoundError
-        Raised by the patched import hook to emulate a missing optional C
-        dependency.
+        The test asserts the failure message includes the C package hint.
     """
-    real_import_module = importlib.import_module
+    real_entry_points = registry_module._entry_points_for_group
 
-    def fake_import_module(name: str, package: str | None = None) -> object:
-        if name == "repoindex.analyzers.c":
-            msg = "No module named 'tree_sitter_c'"
-            raise ModuleNotFoundError(
-                msg,
-                name="tree_sitter_c",
-            )
-        return real_import_module(name, package)
+    def fake_entry_points(group: str) -> list[object]:
+        entries = real_entry_points(group)
+        if group != registry_module.ANALYZER_ENTRY_POINT_GROUP:
+            return cast("list[object]", entries)
+        filtered = [entry for entry in entries if entry.name != "c"]
+        return cast("list[object]", filtered)
 
-    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+    monkeypatch.setattr(registry_module, "_entry_points_for_group", fake_entry_points)
 
     analyzers = active_language_analyzers()
 
@@ -624,7 +608,7 @@ def test_select_language_analyzer_reports_optional_extra_hint(
         raise AssertionError(msg)
 
     assert "No language analyzer registered for path: native/sample.c" in message
-    assert "repoindex[c]" in message
+    assert "repoindex-analyzer-c" in message
     assert missing_language_analyzer_hint(Path("native/sample.c")) is not None
 
 

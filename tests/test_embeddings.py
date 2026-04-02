@@ -485,14 +485,14 @@ def test_cli_reports_embedding_errors_without_traceback(
     monkeypatch.setattr(
         "repoindex.cli._run_index",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            EmbeddingBackendError("Install repoindex[firstparty].")
+            EmbeddingBackendError("Install repoindex[semantic].")
         ),
     )
     monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
 
     assert main() == 2
     captured = capsys.readouterr()
-    assert "[repoindex] Install repoindex[firstparty]." in captured.err
+    assert "[repoindex] Install repoindex[semantic]." in captured.err
     assert captured.out == ""
 
 

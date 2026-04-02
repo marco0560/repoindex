@@ -61,9 +61,9 @@ EMBEDDING_BACKEND = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_VERSION = "1"
 EMBEDDING_DIM = 384
 _DEPENDENCY_INSTALL_HINT = (
-    "Install repoindex with the 'semantic' or 'firstparty' extra. "
+    "Install repoindex with the 'semantic' extra. "
     "For editable installs from another repository, use "
-    "'pip install -e ../repoindex[firstparty]'."
+    "'pip install -e ../repoindex[semantic]'."
 )
 
 
