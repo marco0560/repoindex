@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/marco0560/repoindex/compare/v1.6.0...v1.6.1) (2026-04-03)
+
+
+### Bug Fixes
+
+* **docstrings:** make audit-docstrings language-aware for current analyzers ([a40e90b](https://github.com/marco0560/repoindex/commit/a40e90bf255ded6e56b39b70a1b6c1dc7cc522bf))
+
 # [1.6.0](https://github.com/marco0560/repoindex/compare/v1.5.0...v1.6.0) (2026-04-03)
 
 
