@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/marco0560/repoindex/compare/v1.6.1...v1.7.0) (2026-04-03)
+
+
+### Features
+
+* **cli:** add JSON output for index command ([a77f10d](https://github.com/marco0560/repoindex/commit/a77f10da7c4c966ba3e6181371bcb12b60cc8307))
+
 ## [1.6.1](https://github.com/marco0560/repoindex/compare/v1.6.0...v1.6.1) (2026-04-03)
 
 
