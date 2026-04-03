@@ -59,7 +59,12 @@ from repoindex.storage import get_db_path, init_db
 
 if TYPE_CHECKING:
     from repoindex.contracts import LanguageAnalyzer
-    from repoindex.types import ChannelResults, IncludeEdgeRow, SymbolRow
+    from repoindex.types import (
+        ChannelResults,
+        DocstringIssueRow,
+        IncludeEdgeRow,
+        SymbolRow,
+    )
 
 CallRecord = dict[str, str | int]
 ReferenceRecord = dict[str, str | int]
@@ -2797,7 +2802,7 @@ class SQLiteIndexBackend:
         *,
         prefix: str | None = None,
         conn: sqlite3.Connection | None = None,
-    ) -> list[tuple[str, str]]:
+    ) -> list[DocstringIssueRow]:
         """
         Return indexed docstring validation issues.
 
@@ -2812,8 +2817,9 @@ class SQLiteIndexBackend:
 
         Returns
         -------
-        list[tuple[str, str]]
-            Issue rows as ``(issue_type, message)`` tuples.
+        list[repoindex.types.DocstringIssueRow]
+            Issue rows with issue text, stable identity, and defining
+            location metadata.
         """
         owns_connection = conn is None
         normalized_prefix = normalize_prefix(root, prefix)
@@ -2823,17 +2829,102 @@ class SQLiteIndexBackend:
             prefix_sql, prefix_params = prefix_clause(normalized_prefix, "f.path")
             rows = conn.execute(
                 f"""
-                SELECT di.issue_type, di.message
+                SELECT
+                    di.issue_type,
+                    di.message,
+                    COALESCE(si_fn.stable_id, si_cls.stable_id, si_mod.stable_id, '') AS stable_id,
+                    CASE
+                        WHEN di.function_id IS NOT NULL AND fn.is_method = 1 THEN 'method'
+                        WHEN di.function_id IS NOT NULL THEN 'function'
+                        WHEN di.class_id IS NOT NULL THEN 'class'
+                        ELSE 'module'
+                    END AS symbol_type,
+                    COALESCE(fn_mod.name, cls_mod.name, mod.name, '') AS module_name,
+                    CASE
+                        WHEN di.function_id IS NOT NULL AND fn.is_method = 1
+                            THEN cls.name || '.' || fn.name
+                        WHEN di.function_id IS NOT NULL THEN fn.name
+                        WHEN di.class_id IS NOT NULL THEN cls.name
+                        ELSE COALESCE(mod.name, '')
+                    END AS symbol_name,
+                    f.path,
+                    CASE
+                        WHEN di.function_id IS NOT NULL THEN fn.lineno
+                        WHEN di.class_id IS NOT NULL THEN cls.lineno
+                        ELSE 1
+                    END AS lineno,
+                    CASE
+                        WHEN di.function_id IS NOT NULL THEN fn.end_lineno
+                        WHEN di.class_id IS NOT NULL THEN cls.end_lineno
+                        ELSE NULL
+                    END AS end_lineno
                 FROM docstring_issues di
                 JOIN files f
                   ON di.file_id = f.id
+                LEFT JOIN functions fn
+                  ON di.function_id = fn.id
+                LEFT JOIN classes cls
+                  ON cls.id = COALESCE(di.class_id, fn.class_id)
+                LEFT JOIN modules fn_mod
+                  ON fn.module_id = fn_mod.id
+                LEFT JOIN modules cls_mod
+                  ON cls.module_id = cls_mod.id
+                LEFT JOIN modules mod
+                  ON di.module_id = mod.id
+                LEFT JOIN symbol_index si_fn
+                  ON di.function_id IS NOT NULL
+                 AND si_fn.file_id = di.file_id
+                 AND si_fn.type = CASE
+                     WHEN fn.is_method = 1 THEN 'method'
+                     ELSE 'function'
+                 END
+                 AND si_fn.module_name = fn_mod.name
+                 AND si_fn.name = fn.name
+                 AND si_fn.lineno = fn.lineno
+                LEFT JOIN symbol_index si_cls
+                  ON di.class_id IS NOT NULL
+                 AND si_cls.file_id = di.file_id
+                 AND si_cls.type = 'class'
+                 AND si_cls.module_name = cls_mod.name
+                 AND si_cls.name = cls.name
+                 AND si_cls.lineno = cls.lineno
+                LEFT JOIN symbol_index si_mod
+                  ON di.module_id IS NOT NULL
+                 AND si_mod.file_id = di.file_id
+                 AND si_mod.type = 'module'
+                 AND si_mod.module_name = mod.name
+                 AND si_mod.name = mod.name
+                 AND si_mod.lineno = 1
                 WHERE 1 = 1
                 {prefix_sql}
-                ORDER BY di.issue_type, di.message
+                ORDER BY di.issue_type, f.path, lineno, di.message
                 """,
                 tuple(prefix_params),
             ).fetchall()
-            return [(str(t), str(m)) for t, m in rows]
+            return [
+                (
+                    str(issue_type),
+                    str(message),
+                    str(stable_id),
+                    str(symbol_type),
+                    str(module_name),
+                    str(symbol_name),
+                    str(file_path),
+                    int(lineno),
+                    None if end_lineno is None else int(end_lineno),
+                )
+                for (
+                    issue_type,
+                    message,
+                    stable_id,
+                    symbol_type,
+                    module_name,
+                    symbol_name,
+                    file_path,
+                    lineno,
+                    end_lineno,
+                ) in rows
+            ]
         finally:
             if owns_connection:
                 conn.close()

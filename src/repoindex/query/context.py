@@ -2663,7 +2663,9 @@ def _issue_driven_symbols(
 
     GENERIC_NAMES = {"main", "__init__", "run"}
 
-    for issue_type, message in issue_rows:
+    for issue in issue_rows:
+        issue_type = issue[0]
+        message = issue[1]
         message_lower = message.lower()
 
         if not any(token in message_lower for token in query_tokens):
@@ -2755,7 +2757,9 @@ def _collect_doc_issues_and_related(
 
     symbol_names = {name for _, _, name, _, _ in top_matches if name}
 
-    for issue_type, message in issue_rows:
+    for issue in issue_rows:
+        issue_type = issue[0]
+        message = issue[1]
         if not any(name in message for name in symbol_names):
             continue
 

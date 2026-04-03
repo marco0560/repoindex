@@ -1099,8 +1099,28 @@ def _run_audit_docstrings(
                 "ok" if rows else "no_matches",
                 {"prefix": query_prefix},
                 [
-                    {"type": issue_type, "message": message}
-                    for issue_type, message in rows
+                    {
+                        "type": issue_type,
+                        "message": message,
+                        "stable_id": stable_id,
+                        "symbol_type": symbol_type,
+                        "module": module_name,
+                        "name": symbol_name,
+                        "file": file_path,
+                        "lineno": lineno,
+                        "end_lineno": end_lineno,
+                    }
+                    for (
+                        issue_type,
+                        message,
+                        stable_id,
+                        symbol_type,
+                        module_name,
+                        symbol_name,
+                        file_path,
+                        lineno,
+                        end_lineno,
+                    ) in rows
                 ],
             )
         )
@@ -1110,8 +1130,18 @@ def _run_audit_docstrings(
         print("No docstring issues found")
         return 0
 
-    for issue_type, message in rows:
-        print(f"{issue_type}: {message}")
+    for (
+        issue_type,
+        message,
+        _stable_id,
+        _symbol_type,
+        _module_name,
+        _symbol_name,
+        file_path,
+        lineno,
+        _end_lineno,
+    ) in rows:
+        print(f"{issue_type}: {message} [{file_path}:{lineno}]")
     return 0
 
 

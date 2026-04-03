@@ -240,14 +240,15 @@ def test_docstring_audit_respects_prefix(tmp_path: Path) -> None:
     other_issues = docstring_issues(tmp_path, prefix="other")
 
     assert any(
-        msg == "Function undocumented_pkg: Missing docstring" for _, msg in pkg_issues
+        issue[1] == "Function undocumented_pkg: Missing docstring"
+        for issue in pkg_issues
     )
-    assert all("undocumented_other" not in msg for _, msg in pkg_issues)
+    assert all("undocumented_other" not in issue[1] for issue in pkg_issues)
     assert any(
-        msg == "Function undocumented_other: Missing docstring"
-        for _, msg in other_issues
+        issue[1] == "Function undocumented_other: Missing docstring"
+        for issue in other_issues
     )
-    assert all("undocumented_pkg" not in msg for _, msg in other_issues)
+    assert all("undocumented_pkg" not in issue[1] for issue in other_issues)
 
 
 def test_docstring_audit_skips_bash_module_missing_docstring_noise(
@@ -329,8 +330,7 @@ def test_docstring_audit_skips_raises_requirement_for_pytest_tests(
     issues = docstring_issues(tmp_path)
 
     assert all(
-        message != "Function test_example: Missing section: Raises"
-        for _, message in issues
+        issue[1] != "Function test_example: Missing section: Raises" for issue in issues
     )
 
 
@@ -653,6 +653,61 @@ def test_embeddings_and_audit_cli_json_emit_shared_envelope(
     messages = {row["message"] for row in audit_payload["results"]}
     assert "Function undocumented_pkg: Missing docstring" in messages
     assert all("undocumented_other" not in message for message in messages)
+    undocumented_pkg = next(
+        row for row in audit_payload["results"] if row["name"] == "undocumented_pkg"
+    )
+    assert undocumented_pkg["stable_id"] == "python:function:pkg.b:undocumented_pkg"
+    assert undocumented_pkg["symbol_type"] == "function"
+    assert undocumented_pkg["module"] == "pkg.b"
+    assert undocumented_pkg["file"] == str(tmp_path / "pkg" / "b.py")
+    assert undocumented_pkg["lineno"] == 11
+    assert undocumented_pkg["end_lineno"] == 12
+
+
+def test_plain_docstring_audit_reports_file_location(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Include defining file locations in plain docstring-audit output.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts plain audit output includes actionable file context.
+    """
+    _write_prefix_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "audit-docstrings",
+            "--prefix",
+            "pkg",
+        ],
+    )
+
+    assert main() == 0
+    output = capsys.readouterr().out
+    assert (
+        f"missing: Function undocumented_pkg: Missing docstring "
+        f"[{tmp_path / 'pkg' / 'b.py'}:11]"
+    ) in output
 
 
 def test_json_cli_reports_no_matches_status(

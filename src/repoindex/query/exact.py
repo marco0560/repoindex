@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     import sqlite3
     from pathlib import Path
 
-    from repoindex.types import IncludeEdgeRow, SymbolRow
+    from repoindex.types import DocstringIssueRow, IncludeEdgeRow, SymbolRow
 
 CallEdgeRow = tuple[str, str, str | None, str | None, int]
 CallableRefRow = tuple[str, str, str | None, str | None, int]
@@ -68,7 +68,7 @@ def docstring_issues(
     *,
     prefix: str | None = None,
     conn: sqlite3.Connection | None = None,
-) -> list[tuple[str, str]]:
+) -> list[DocstringIssueRow]:
     """
     Return indexed docstring validation issues.
 
@@ -84,8 +84,9 @@ def docstring_issues(
 
     Returns
     -------
-    list[tuple[str, str]]
-        Issue rows as ``(issue_type, message)`` tuples.
+    list[repoindex.types.DocstringIssueRow]
+        Issue rows with issue text, stable identity, and defining location
+        metadata.
     """
     backend = active_index_backend()
     return backend.docstring_issues(root, prefix=prefix, conn=conn)

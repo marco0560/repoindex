@@ -215,8 +215,8 @@ def test_index_repo_purges_stale_shell_docstring_issues(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    assert docstring_issues(tmp_path) == [
-        ("missing", "Function build: Missing docstring")
+    assert [issue[1] for issue in docstring_issues(tmp_path)] == [
+        "Function build: Missing docstring"
     ]
 
     second = index_repo(tmp_path)

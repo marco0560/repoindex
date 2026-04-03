@@ -82,7 +82,7 @@ def test_index_and_queries(tmp_path: Path) -> None:
     assert len(demo_rows) == 1
 
     issues = docstring_issues(tmp_path)
-    messages = [message for _issue_type, message in issues]
+    messages = [issue[1] for issue in issues]
     assert any(
         message == "Method Demo.method: Missing docstring" for message in messages
     )
