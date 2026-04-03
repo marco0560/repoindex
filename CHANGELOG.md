@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/marco0560/repoindex/compare/v1.5.0...v1.6.0) (2026-04-03)
+
+
+### Features
+
+* **embeddings:** batch index-time embedding generation ([c9d339e](https://github.com/marco0560/repoindex/commit/c9d339eddf09e859f89184c7f183dbb0f1b6b544))
+
 # [1.5.0](https://github.com/marco0560/repoindex/compare/v1.4.0...v1.5.0) (2026-04-03)
 
 
