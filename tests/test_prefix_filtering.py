@@ -254,7 +254,7 @@ def test_docstring_audit_skips_bash_module_missing_docstring_noise(
     tmp_path: Path,
 ) -> None:
     """
-    Avoid module-level missing-docstring noise for Bash entrypoint wrappers.
+    Avoid docstring-audit noise for Bash entrypoint wrappers.
 
     Parameters
     ----------
@@ -264,8 +264,7 @@ def test_docstring_audit_skips_bash_module_missing_docstring_noise(
     Returns
     -------
     None
-        The test asserts shell wrappers do not emit module-level missing
-        docstring issues.
+        The test asserts shell wrappers do not emit docstring issues.
     """
     script_dir = tmp_path / "scripts"
     script_dir.mkdir()
@@ -279,9 +278,7 @@ def test_docstring_audit_skips_bash_module_missing_docstring_noise(
 
     issues = docstring_issues(tmp_path)
 
-    assert all(
-        message != "Module scripts.build: Missing docstring" for _, message in issues
-    )
+    assert issues == []
 
 
 def test_docstring_audit_skips_raises_requirement_for_pytest_tests(

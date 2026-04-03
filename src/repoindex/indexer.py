@@ -455,6 +455,39 @@ def _clear_index_tables(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM files")
 
 
+def _purge_skipped_docstring_issues(conn: sqlite3.Connection) -> None:
+    """
+    Remove persisted docstring issues for files excluded from audit policy.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Open database connection to clean in place.
+
+    Returns
+    -------
+    None
+        Rows owned by shell-analyzed files are deleted from ``docstring_issues``.
+
+    Notes
+    -----
+    Existing indexes may already contain stale shell docstring findings from
+    older repoindex versions. Purging those rows during normal indexing keeps
+    audit output aligned with the current policy without requiring a full
+    rebuild of unchanged shell files.
+    """
+    conn.execute("""
+        DELETE FROM docstring_issues
+        WHERE file_id IN (
+            SELECT id
+            FROM files
+            WHERE analyzer_name = 'bash'
+               OR path LIKE '%.sh'
+               OR path LIKE '%.bash'
+        )
+        """)
+
+
 def _qualified_callable_name(name: str, class_name: str | None = None) -> str:
     """
     Build the logical name used for call-graph identity.
@@ -1686,25 +1719,25 @@ def _persist_docstring_issues(
         )
 
 
-def _should_audit_module_docstring(source_path: Path) -> bool:
+def _should_audit_docstrings(source_path: Path) -> bool:
     """
-    Decide whether a file should emit module-level missing-docstring issues.
+    Decide whether one source file participates in docstring auditing.
 
     Parameters
     ----------
     source_path : pathlib.Path
-        Source file path owning the module artifact.
+        Source file path whose indexed artifacts are being audited.
 
     Returns
     -------
     bool
-        ``True`` when module-level missing docstrings should be audited.
+        ``True`` when docstring issues should be emitted for the file.
 
     Notes
     -----
-    Bash entrypoint wrappers commonly omit a module-style summary block while
-    still carrying useful function-level documentation. Treating those files
-    like Python modules produces noisy audit output.
+    Shell scripts and shell functions do not follow the project's NumPy-style
+    docstring contract. Treating Bash artifacts like Python callables produces
+    deterministic but semantically invalid audit noise, so they are excluded.
     """
     return source_path.suffix not in {".sh", ".bash"}
 
@@ -1805,7 +1838,7 @@ def _persist_module_artifacts(
         module_id=module_id,
         label=f"Module {module_name}",
         docstring=module.docstring,
-        is_public=int(_should_audit_module_docstring(analysis.source_path)),
+        is_public=int(_should_audit_docstrings(analysis.source_path)),
     )
     return module_name, module_id, c_embedding_context
 
@@ -1886,14 +1919,15 @@ def _persist_class_artifacts(
             docstring=cls.docstring,
             extra_context=c_embedding_context,
         )
-        _persist_docstring_issues(
-            conn,
-            file_id=file_id,
-            class_id=class_id,
-            label=f"Class {cls.name}",
-            docstring=cls.docstring,
-            is_public=1,
-        )
+        if _should_audit_docstrings(analysis.source_path):
+            _persist_docstring_issues(
+                conn,
+                file_id=file_id,
+                class_id=class_id,
+                label=f"Class {cls.name}",
+                docstring=cls.docstring,
+                is_public=1,
+            )
 
         for method in cls.methods:
             logical_name = _qualified_callable_name(method.name, cls.name)
@@ -1942,20 +1976,23 @@ def _persist_class_artifacts(
                 docstring=method.docstring,
                 extra_context=python_embedding_context or c_embedding_context,
             )
-            _persist_docstring_issues(
-                conn,
-                file_id=file_id,
-                function_id=function_id,
-                label=f"Method {cls.name}.{method.name}",
-                docstring=method.docstring,
-                is_public=method.is_public,
-                parameters=list(method.parameters),
-                require_callable_sections=True,
-                yields_value=bool(method.yields_value),
-                returns_value=bool(method.returns_value),
-                raises_exception=bool(method.raises)
-                and _should_require_raises_section(analysis.source_path, method.name),
-            )
+            if _should_audit_docstrings(analysis.source_path):
+                _persist_docstring_issues(
+                    conn,
+                    file_id=file_id,
+                    function_id=function_id,
+                    label=f"Method {cls.name}.{method.name}",
+                    docstring=method.docstring,
+                    is_public=method.is_public,
+                    parameters=list(method.parameters),
+                    require_callable_sections=True,
+                    yields_value=bool(method.yields_value),
+                    returns_value=bool(method.returns_value),
+                    raises_exception=bool(method.raises)
+                    and _should_require_raises_section(
+                        analysis.source_path, method.name
+                    ),
+                )
             for call in method.calls:
                 call_rows.append(
                     _record_tuple(file_id, module_name, logical_name, call)
@@ -2049,20 +2086,21 @@ def _persist_function_artifacts(
             docstring=fn.docstring,
             extra_context=python_embedding_context or c_embedding_context,
         )
-        _persist_docstring_issues(
-            conn,
-            file_id=file_id,
-            function_id=function_id,
-            label=f"Function {fn.name}",
-            docstring=fn.docstring,
-            is_public=fn.is_public,
-            parameters=list(fn.parameters),
-            require_callable_sections=True,
-            yields_value=bool(fn.yields_value),
-            returns_value=bool(fn.returns_value),
-            raises_exception=bool(fn.raises)
-            and _should_require_raises_section(analysis.source_path, fn.name),
-        )
+        if _should_audit_docstrings(analysis.source_path):
+            _persist_docstring_issues(
+                conn,
+                file_id=file_id,
+                function_id=function_id,
+                label=f"Function {fn.name}",
+                docstring=fn.docstring,
+                is_public=fn.is_public,
+                parameters=list(fn.parameters),
+                require_callable_sections=True,
+                yields_value=bool(fn.yields_value),
+                returns_value=bool(fn.returns_value),
+                raises_exception=bool(fn.raises)
+                and _should_require_raises_section(analysis.source_path, fn.name),
+            )
         for call in fn.calls:
             call_rows.append(_record_tuple(file_id, module_name, fn.name, call))
         for ref in fn.callable_refs:
@@ -4222,6 +4260,7 @@ def index_repo(
     coverage_issues = _audit_canonical_directory_coverage(root, analyzers=analyzers)
 
     try:
+        _purge_skipped_docstring_issues(conn)
         sqlite_backend.prune_orphaned_embeddings(root, conn=conn)
         current_state = _collect_project_scan_state(root, analyzers=analyzers)
         existing_state = _load_existing_index_state(

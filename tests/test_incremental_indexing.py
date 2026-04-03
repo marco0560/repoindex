@@ -43,7 +43,7 @@ from repoindex.models import (
     FunctionArtifact,
     ModuleArtifact,
 )
-from repoindex.query.exact import find_symbol
+from repoindex.query.exact import docstring_issues, find_symbol
 from repoindex.scanner import file_metadata
 from repoindex.schema import SCHEMA_VERSION
 from repoindex.semantic.embeddings import (
@@ -166,6 +166,64 @@ def test_index_repo_reuses_unchanged_files(tmp_path: Path) -> None:
     assert second.deleted == 0
     assert second.embeddings_recomputed == 0
     assert second.embeddings_reused == first.embeddings_recomputed
+
+
+def test_index_repo_purges_stale_shell_docstring_issues(tmp_path: Path) -> None:
+    """
+    Remove stale shell docstring issues during a normal incremental index run.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts shell-owned docstring issues disappear without
+        reindexing unchanged files.
+    """
+    script_dir = tmp_path / "scripts"
+    script_dir.mkdir()
+    shell_path = script_dir / "build.sh"
+    shell_path.write_text("build() {\n    echo hello\n}\n", encoding="utf-8")
+
+    init_db(tmp_path)
+    first = index_repo(tmp_path)
+    assert first.indexed == 1
+    assert docstring_issues(tmp_path) == []
+
+    conn = sqlite3.connect(get_db_path(tmp_path))
+    try:
+        file_id = int(
+            conn.execute(
+                "SELECT id FROM files WHERE path = ?",
+                (shell_path.as_posix(),),
+            ).fetchone()[0]
+        )
+        conn.execute(
+            "INSERT INTO docstring_issues"
+            "(file_id, function_id, class_id, module_id, issue_type, message) "
+            "VALUES (?, NULL, NULL, NULL, ?, ?)",
+            (
+                file_id,
+                "missing",
+                "Function build: Missing docstring",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert docstring_issues(tmp_path) == [
+        ("missing", "Function build: Missing docstring")
+    ]
+
+    second = index_repo(tmp_path)
+
+    assert second.indexed == 0
+    assert second.reused == 1
+    assert docstring_issues(tmp_path) == []
 
 
 def test_index_repo_reports_duplicate_stable_ids_as_file_failures(
