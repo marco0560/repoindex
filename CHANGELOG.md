@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/marco0560/repoindex/compare/v1.7.1...v1.8.0) (2026-04-03)
+
+
+### Features
+
+* **cli:** enrich docstring audit results ([684915e](https://github.com/marco0560/repoindex/commit/684915e6e2eefaf2078d7abbe065c9fa213edf41))
+
 ## [1.7.1](https://github.com/marco0560/repoindex/compare/v1.7.0...v1.7.1) (2026-04-03)
 
 
