@@ -48,13 +48,49 @@ def _symbol(
     file_path: str,
     lineno: int,
 ) -> SymbolRow:
+    """
+    Create one compact symbol row for retrieval-merge fixtures.
+
+    Parameters
+    ----------
+    symbol_type : str
+        Symbol kind stored in the row.
+    module_name : str
+        Dotted module name owning the symbol.
+    name : str
+        Symbol name.
+    file_path : str
+        Repository-relative source path for the symbol.
+    lineno : int
+        Defining line number for the symbol.
+
+    Returns
+    -------
+    repoindex.types.SymbolRow
+        Compact symbol row used in merge tests.
+    """
     return (symbol_type, module_name, name, file_path, lineno)
 
 
 def _query_producers(
     query: str, bundles: list[tuple[str, ChannelResults]]
 ) -> list[QueryProducerSpec]:
-    """Compose query producer specs for retrieval-merge fixtures."""
+    """
+    Compose query producer specs for retrieval-merge fixtures.
+
+    Parameters
+    ----------
+    query : str
+        Query text used to derive the retrieval plan.
+    bundles : list[tuple[str, ChannelResults]]
+        Ranked channel bundles included in the fixture.
+
+    Returns
+    -------
+    list[QueryProducerSpec]
+        Query producer specifications matching the fixture channels and
+        enabled enrichments.
+    """
     plan = build_retrieval_plan(classify_query(query))
     ordered_channels = [name for name, _channel in bundles]
     return _channel_retrieval_producers(

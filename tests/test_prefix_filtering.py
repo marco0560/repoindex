@@ -250,6 +250,93 @@ def test_docstring_audit_respects_prefix(tmp_path: Path) -> None:
     assert all("undocumented_pkg" not in msg for _, msg in other_issues)
 
 
+def test_docstring_audit_skips_bash_module_missing_docstring_noise(
+    tmp_path: Path,
+) -> None:
+    """
+    Avoid module-level missing-docstring noise for Bash entrypoint wrappers.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts shell wrappers do not emit module-level missing
+        docstring issues.
+    """
+    script_dir = tmp_path / "scripts"
+    script_dir.mkdir()
+    (script_dir / "build.sh").write_text(
+        "build() {\n    echo hello\n}\n",
+        encoding="utf-8",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    issues = docstring_issues(tmp_path)
+
+    assert all(
+        message != "Module scripts.build: Missing docstring" for _, message in issues
+    )
+
+
+def test_docstring_audit_skips_raises_requirement_for_pytest_tests(
+    tmp_path: Path,
+) -> None:
+    """
+    Avoid ``Raises`` noise for pytest-style tests with fallback assertions.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts pytest-style ``test_*`` functions do not require a
+        ``Raises`` section when they contain local fallback raises.
+    """
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_sample.py").write_text(
+        "def test_example():\n"
+        '    """Exercise a local fallback assertion.\n'
+        "\n"
+        "    Parameters\n"
+        "    ----------\n"
+        "    None\n"
+        "\n"
+        "    Returns\n"
+        "    -------\n"
+        "    None\n"
+        "        The test has no meaningful return value.\n"
+        '    """\n'
+        "    try:\n"
+        "        pass\n"
+        "    except ValueError:\n"
+        '        message = "ignored"\n'
+        "        assert message\n"
+        "    else:\n"
+        '        raise AssertionError("expected fallback")\n',
+        encoding="utf-8",
+    )
+
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    issues = docstring_issues(tmp_path)
+
+    assert all(
+        message != "Function test_example: Missing section: Raises"
+        for _, message in issues
+    )
+
+
 def test_context_for_respects_prefix_across_symbols_and_references(
     tmp_path: Path,
 ) -> None:

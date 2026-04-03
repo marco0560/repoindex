@@ -585,6 +585,11 @@ def test_select_language_analyzer_reports_optional_extra_hint(
     -------
     None
         The test asserts the failure message includes the C package hint.
+
+    Notes
+    -----
+    The test captures the ``ValueError`` internally, so it does not expose a
+    ``Raises`` contract to callers.
     """
     real_entry_points = registry_module._entry_points_for_group
 
@@ -749,6 +754,19 @@ def test_c_analyzer_preserves_suffix_in_declaration_stable_ids(
 
 
 def test_c_analyzer_keeps_last_duplicate_named_declaration(tmp_path: Path) -> None:
+    """
+    Keep the last duplicate named C declaration when analysis sees both forms.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts only the final declaration variant is retained.
+    """
     source = tmp_path / "native" / "types.h"
     source.parent.mkdir()
     source.write_text(
@@ -766,6 +784,19 @@ def test_c_analyzer_keeps_last_duplicate_named_declaration(tmp_path: Path) -> No
 
 
 def test_c_analyzer_uses_real_name_for_annotated_functions(tmp_path: Path) -> None:
+    """
+    Recover real C function names from annotation-prefixed declarations.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts annotation wrappers do not replace function names.
+    """
     source = tmp_path / "native" / "annotated.c"
     source.parent.mkdir()
     source.write_text(
@@ -793,6 +824,19 @@ def test_c_analyzer_uses_real_name_for_annotated_functions(tmp_path: Path) -> No
 def test_index_repo_handles_duplicate_c_declaration_redefinitions(
     tmp_path: Path,
 ) -> None:
+    """
+    Index duplicate C declarations without surfacing a failure.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts the repository indexes successfully.
+    """
     source = tmp_path / "native" / "types.h"
     source.parent.mkdir()
     source.write_text(
@@ -807,6 +851,19 @@ def test_index_repo_handles_duplicate_c_declaration_redefinitions(
 
 
 def test_index_repo_handles_annotated_c_functions(tmp_path: Path) -> None:
+    """
+    Index annotated C functions without tripping the fallback parser path.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts indexing completes without failures.
+    """
     source = tmp_path / "native" / "annotated.c"
     source.parent.mkdir()
     source.write_text(
@@ -832,6 +889,19 @@ def test_index_repo_handles_annotated_c_functions(tmp_path: Path) -> None:
 def test_c_analyzer_uses_real_name_for_macro_wrapped_functions(
     tmp_path: Path,
 ) -> None:
+    """
+    Recover real names from macro-wrapped C function declarations.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts wrapper macros do not leak into function names.
+    """
     source = tmp_path / "native" / "compat.c"
     source.parent.mkdir()
     source.write_text(
@@ -862,6 +932,19 @@ def test_c_analyzer_uses_real_name_for_macro_wrapped_functions(
 
 
 def test_index_repo_handles_macro_wrapped_c_functions(tmp_path: Path) -> None:
+    """
+    Index macro-wrapped C functions without reporting analyzer failures.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts one file is indexed successfully.
+    """
     source = tmp_path / "native" / "compat.c"
     source.parent.mkdir()
     source.write_text(
@@ -890,6 +973,19 @@ def test_index_repo_handles_macro_wrapped_c_functions(tmp_path: Path) -> None:
 
 
 def test_c_analyzer_handles_latin1_encoded_source(tmp_path: Path) -> None:
+    """
+    Decode latin-1 C source deterministically during analysis.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts module comment recovery and function extraction.
+    """
     source = tmp_path / "native" / "legacy.c"
     source.parent.mkdir()
     source.write_bytes(
@@ -911,6 +1007,19 @@ def test_c_analyzer_handles_latin1_encoded_source(tmp_path: Path) -> None:
 
 
 def test_index_repo_handles_latin1_encoded_c_source(tmp_path: Path) -> None:
+    """
+    Index latin-1 encoded C source without surfacing a failure.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts the file indexes successfully.
+    """
     source = tmp_path / "native" / "legacy.c"
     source.parent.mkdir()
     source.write_bytes(
@@ -932,6 +1041,19 @@ def test_index_repo_handles_latin1_encoded_c_source(tmp_path: Path) -> None:
 def test_c_analyzer_uses_error_recovered_name_for_export_macros(
     tmp_path: Path,
 ) -> None:
+    """
+    Recover exported function names when macros disrupt the first parse pass.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts the recovered names match the declarations.
+    """
     source = tmp_path / "native" / "exported.c"
     source.parent.mkdir()
     source.write_text(
@@ -959,6 +1081,19 @@ def test_c_analyzer_uses_error_recovered_name_for_export_macros(
 def test_c_analyzer_ignores_throw_exception_specifier_as_function_name(
     tmp_path: Path,
 ) -> None:
+    """
+    Ignore ``throw()`` syntax when recovering the function name.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts the function name remains ``logger``.
+    """
     source = tmp_path / "native" / "face.h"
     source.parent.mkdir()
     source.write_text(
@@ -981,6 +1116,19 @@ def test_c_analyzer_ignores_throw_exception_specifier_as_function_name(
 def test_c_analyzer_uses_error_recovered_name_for_type_like_prefix(
     tmp_path: Path,
 ) -> None:
+    """
+    Recover names when type-like prefixes precede C declarations.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts both names are recovered correctly.
+    """
     source = tmp_path / "native" / "float_funcs.c"
     source.parent.mkdir()
     source.write_text(
@@ -1007,6 +1155,18 @@ def test_c_analyzer_uses_error_recovered_name_for_type_like_prefix(
 
 
 def test_c_function_stable_ids_are_disambiguated_when_names_repeat() -> None:
+    """
+    Disambiguate repeated C function stable IDs with deterministic suffixes.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts repeated names do not collide.
+    """
     functions = (
         FunctionArtifact(
             name="assign",
@@ -1818,6 +1978,19 @@ def test_sqlite_backend_persists_runtime_inventory(tmp_path: Path) -> None:
 
 
 def test_bash_analyzer_extracts_simple_calls(tmp_path: Path) -> None:
+    """
+    Extract plain shell command calls from one Bash function body.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts simple sequential calls are recorded in order.
+    """
     source = tmp_path / "scripts" / "build.sh"
     source.parent.mkdir()
     source.write_text(
@@ -1834,6 +2007,19 @@ def test_bash_analyzer_extracts_simple_calls(tmp_path: Path) -> None:
 
 
 def test_bash_analyzer_extracts_pipeline_calls(tmp_path: Path) -> None:
+    """
+    Extract every command participating in one shell pipeline.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts pipeline commands are recorded left to right.
+    """
     source = tmp_path / "scripts" / "build.sh"
     source.parent.mkdir()
     source.write_text(
@@ -1851,6 +2037,19 @@ def test_bash_analyzer_extracts_pipeline_calls(tmp_path: Path) -> None:
 
 
 def test_bash_analyzer_extracts_subshell_and_substitution_calls(tmp_path: Path) -> None:
+    """
+    Extract calls nested in subshells and command substitutions.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts nested calls are still collected in order.
+    """
     source = tmp_path / "scripts" / "build.sh"
     source.parent.mkdir()
     source.write_text(
@@ -1868,6 +2067,19 @@ def test_bash_analyzer_extracts_subshell_and_substitution_calls(tmp_path: Path) 
 
 
 def test_bash_analyzer_ignores_plain_assignments(tmp_path: Path) -> None:
+    """
+    Ignore bare variable assignments that do not execute shell commands.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts no calls are collected for plain assignments.
+    """
     source = tmp_path / "scripts" / "build.sh"
     source.parent.mkdir()
     source.write_text(
@@ -1881,6 +2093,19 @@ def test_bash_analyzer_ignores_plain_assignments(tmp_path: Path) -> None:
 
 
 def test_bash_analyzer_extracts_env_prefixed_command(tmp_path: Path) -> None:
+    """
+    Keep the executed command when an environment assignment prefixes it.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts the prefixed command is still recorded.
+    """
     source = tmp_path / "scripts" / "build.sh"
     source.parent.mkdir()
     source.write_text(
@@ -1896,6 +2121,19 @@ def test_bash_analyzer_extracts_env_prefixed_command(tmp_path: Path) -> None:
 def test_bash_analyzer_keeps_last_duplicate_function_definition(
     tmp_path: Path,
 ) -> None:
+    """
+    Keep only the last duplicate Bash function definition during analysis.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts the final definition and its calls survive.
+    """
     source = tmp_path / "scripts" / "build.sh"
     source.parent.mkdir()
     source.write_text(
@@ -1912,6 +2150,19 @@ def test_bash_analyzer_keeps_last_duplicate_function_definition(
 def test_index_repo_handles_duplicate_bash_function_redefinitions(
     tmp_path: Path,
 ) -> None:
+    """
+    Index duplicate Bash function redefinitions without surfacing a failure.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts the file indexes successfully.
+    """
     source = tmp_path / "scripts" / "build.sh"
     source.parent.mkdir()
     source.write_text(

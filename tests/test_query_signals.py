@@ -27,7 +27,27 @@ def _symbol(
     file_path: str,
     lineno: int,
 ) -> tuple[str, str, str, str, int]:
-    """Create one compact symbol row for signal tests."""
+    """
+    Create one compact symbol row for signal tests.
+
+    Parameters
+    ----------
+    symbol_type : str
+        Symbol kind stored in the row.
+    module_name : str
+        Dotted module name owning the symbol.
+    name : str
+        Symbol name.
+    file_path : str
+        Repository-relative source path for the symbol.
+    lineno : int
+        Defining line number for the symbol.
+
+    Returns
+    -------
+    tuple[str, str, str, str, int]
+        Compact symbol row used by retrieval-signal fixtures.
+    """
     return (symbol_type, module_name, name, file_path, lineno)
 
 

@@ -1686,6 +1686,58 @@ def _persist_docstring_issues(
         )
 
 
+def _should_audit_module_docstring(source_path: Path) -> bool:
+    """
+    Decide whether a file should emit module-level missing-docstring issues.
+
+    Parameters
+    ----------
+    source_path : pathlib.Path
+        Source file path owning the module artifact.
+
+    Returns
+    -------
+    bool
+        ``True`` when module-level missing docstrings should be audited.
+
+    Notes
+    -----
+    Bash entrypoint wrappers commonly omit a module-style summary block while
+    still carrying useful function-level documentation. Treating those files
+    like Python modules produces noisy audit output.
+    """
+    return source_path.suffix not in {".sh", ".bash"}
+
+
+def _should_require_raises_section(source_path: Path, function_name: str) -> bool:
+    """
+    Decide whether a callable should require a ``Raises`` docstring section.
+
+    Parameters
+    ----------
+    source_path : pathlib.Path
+        Source file path owning the callable.
+    function_name : str
+        Callable name as stored in the index.
+
+    Returns
+    -------
+    bool
+        ``True`` when explicit raises should require a ``Raises`` section.
+
+    Notes
+    -----
+    Pytest-style ``test_*`` callables often use local ``raise`` statements as
+    assertion fallbacks. Requiring ``Raises`` sections for those tests creates
+    audit noise without improving user-facing documentation quality.
+    """
+    return not (
+        "tests" in source_path.parts
+        and source_path.suffix == ".py"
+        and function_name.startswith("test_")
+    )
+
+
 def _persist_module_artifacts(
     conn: sqlite3.Connection,
     *,
@@ -1753,7 +1805,7 @@ def _persist_module_artifacts(
         module_id=module_id,
         label=f"Module {module_name}",
         docstring=module.docstring,
-        is_public=1,
+        is_public=int(_should_audit_module_docstring(analysis.source_path)),
     )
     return module_name, module_id, c_embedding_context
 
@@ -1901,7 +1953,8 @@ def _persist_class_artifacts(
                 require_callable_sections=True,
                 yields_value=bool(method.yields_value),
                 returns_value=bool(method.returns_value),
-                raises_exception=bool(method.raises),
+                raises_exception=bool(method.raises)
+                and _should_require_raises_section(analysis.source_path, method.name),
             )
             for call in method.calls:
                 call_rows.append(
@@ -2007,7 +2060,8 @@ def _persist_function_artifacts(
             require_callable_sections=True,
             yields_value=bool(fn.yields_value),
             returns_value=bool(fn.returns_value),
-            raises_exception=bool(fn.raises),
+            raises_exception=bool(fn.raises)
+            and _should_require_raises_section(analysis.source_path, fn.name),
         )
         for call in fn.calls:
             call_rows.append(_record_tuple(file_id, module_name, fn.name, call))
@@ -3530,6 +3584,18 @@ class SQLiteIndexBackend:
         -------
         tuple[int, int]
             ``(recomputed, reused)`` embedding counts for the file.
+
+        Raises
+        ------
+        OSError
+            If file-backed persistence fails while storing analyzed artifacts.
+        sqlite3.Error
+            If SQLite rejects the persistence operation or transaction
+            boundaries.
+        RuntimeError
+            If embedding persistence cannot complete for the analyzed file.
+        ValueError
+            If validated persistence inputs are semantically inconsistent.
         """
         owns_connection = conn is None
         if conn is None:
