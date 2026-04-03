@@ -1,3 +1,11 @@
+# [1.5.0](https://github.com/marco0560/repoindex/compare/v1.4.0...v1.5.0) (2026-04-03)
+
+
+### Features
+
+* **packaging:** deprecate stale extras and label plugin origin ([a3d7a49](https://github.com/marco0560/repoindex/commit/a3d7a49bc0af4f31907bb03b4166a7618784e8b2))
+* **packaging:** extract official analyzer packages ([c4197f8](https://github.com/marco0560/repoindex/commit/c4197f87b88ef515bfa24b76814249d720a5a254))
+
 # [1.4.0](https://github.com/marco0560/repoindex/compare/v1.3.0...v1.4.0) (2026-04-02)
 
 
