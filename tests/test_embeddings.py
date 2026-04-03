@@ -31,6 +31,7 @@ from repoindex.indexer import (
 from repoindex.query.exact import find_symbol
 from repoindex.semantic import embeddings as embeddings_module
 from repoindex.semantic.embeddings import (
+    DEFAULT_EMBEDDING_BATCH_SIZE,
     EMBEDDING_BACKEND,
     EMBEDDING_DIM,
     EMBEDDING_VERSION,
@@ -172,6 +173,98 @@ def test_embed_texts_batches_inputs_and_preserves_blank_vectors(
     assert vectors[0] == [1.0] * EMBEDDING_DIM
     assert vectors[1] == [0.0] * EMBEDDING_DIM
     assert vectors[2] == [2.0] * EMBEDDING_DIM
+
+
+def test_embed_texts_uses_repo_default_batch_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Use the repository default batch size when no override is configured.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control embedding model loading.
+
+    Returns
+    -------
+    None
+        The test asserts the default batch size reaches the backend call.
+    """
+
+    class _FakeVector:
+        def __init__(self, values: list[float]) -> None:
+            self._values = values
+
+        def tolist(self) -> list[float]:
+            return list(self._values)
+
+    class _FakeModel:
+        def __init__(self) -> None:
+            self.batch_sizes: list[int] = []
+
+        def encode(
+            self,
+            sentences: list[str],
+            *,
+            batch_size: int,
+            convert_to_numpy: bool,
+            normalize_embeddings: bool,
+            show_progress_bar: bool,
+        ) -> list[_FakeVector]:
+            del sentences, convert_to_numpy, normalize_embeddings, show_progress_bar
+            self.batch_sizes.append(batch_size)
+            return [_FakeVector([1.0] * EMBEDDING_DIM)]
+
+        def get_sentence_embedding_dimension(self) -> int:
+            return EMBEDDING_DIM
+
+    fake_model = _FakeModel()
+    embeddings_module._load_model.cache_clear()
+    monkeypatch.delenv("REPOINDEX_EMBED_BATCH_SIZE", raising=False)
+    monkeypatch.setattr(embeddings_module, "_load_model", lambda: fake_model)
+
+    assert embed_texts(["schema migration"]) == [[1.0] * EMBEDDING_DIM]
+    assert fake_model.batch_sizes == [DEFAULT_EMBEDDING_BATCH_SIZE]
+
+
+def test_configure_torch_runtime_uses_explicit_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Apply explicit Torch thread overrides when they are configured.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control the imported Torch module.
+
+    Returns
+    -------
+        None
+            The test asserts explicit Torch thread overrides are applied.
+    """
+
+    class _FakeTorch:
+        def __init__(self) -> None:
+            self.num_threads: list[int] = []
+            self.num_interop_threads: list[int] = []
+
+        def set_num_threads(self, value: int) -> None:
+            self.num_threads.append(value)
+
+        def set_num_interop_threads(self, value: int) -> None:
+            self.num_interop_threads.append(value)
+
+    fake_torch = _FakeTorch()
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setenv("REPOINDEX_TORCH_NUM_THREADS", "3")
+    monkeypatch.setenv("REPOINDEX_TORCH_NUM_INTEROP_THREADS", "2")
+
+    embeddings_module._configure_torch_runtime()
+
+    assert fake_torch.num_threads == [3]
+    assert fake_torch.num_interop_threads == [2]
 
 
 def test_flush_embedding_rows_batches_and_reuses_identical_payloads(

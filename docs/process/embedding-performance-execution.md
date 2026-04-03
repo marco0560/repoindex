@@ -41,6 +41,10 @@ feat/batch-embedding-indexing
 * [x] Captured one instrumented full-index benchmark on this repository. The
   first sample showed `embed_texts` and `flush_embedding_rows` dominating wall
   time, which confirmed the optimization target.
-* [x] Reviewed the first benchmark sample and kept Torch thread defaults
-  operator-controlled rather than changing them globally in this branch.
+* [x] Ran controlled embedding microbenchmarks after the first pass. On this
+  host, constrained Torch threads and larger batches sometimes helped on the
+  synthetic benchmark.
+* [x] Kept runtime tuning operator-controlled after follow-up end-to-end
+  measurements proved too noisy to justify hardcoded thread defaults in this
+  branch.
 * [x] Create the final branch commit.

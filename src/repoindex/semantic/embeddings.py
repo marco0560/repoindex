@@ -309,6 +309,23 @@ def _configure_torch_runtime() -> None:
         raise EmbeddingBackendError(msg) from exc
 
 
+@lru_cache(maxsize=1)
+def _configure_torch_runtime_once() -> None:
+    """
+    Apply Torch runtime configuration at most once per process.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        Torch runtime settings are configured once and then reused.
+    """
+    _configure_torch_runtime()
+
+
 def _load_sentence_transformer(
     sentence_transformer: object,
     *,
@@ -410,7 +427,7 @@ def _load_model() -> _EmbeddingModel:
     else:
         transformers_logging.set_verbosity_error()  # type: ignore[no-untyped-call]
 
-    _configure_torch_runtime()
+    _configure_torch_runtime_once()
 
     try:
         model = _load_sentence_transformer(SentenceTransformer, offline=True)

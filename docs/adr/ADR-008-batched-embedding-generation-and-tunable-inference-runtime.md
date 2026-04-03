@@ -66,6 +66,9 @@ The embedding backend will expose environment-driven runtime controls for:
 These controls remain explicit. They do not introduce background adaptation or
 host-specific heuristics.
 
+Operators can override these values explicitly through environment variables
+when a given host performs better with different settings.
+
 ### Benchmark Script
 
 The repository will provide a dedicated benchmark script that times major index
