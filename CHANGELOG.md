@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/marco0560/repoindex/compare/v1.7.0...v1.7.1) (2026-04-03)
+
+
+### Bug Fixes
+
+* **docstrings:** skip shell audit issues ([48329f4](https://github.com/marco0560/repoindex/commit/48329f45f4a94c5a271ac3c319ef73f94ec845f7))
+
 # [1.7.0](https://github.com/marco0560/repoindex/compare/v1.6.1...v1.7.0) (2026-04-03)
 
 
