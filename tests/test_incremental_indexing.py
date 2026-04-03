@@ -1135,6 +1135,144 @@ def test_index_cli_can_require_full_coverage(
     assert not get_db_path(tmp_path).exists()
 
 
+def test_index_cli_emits_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Emit structured JSON for one successful index run.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch argv and cwd.
+
+    Returns
+    -------
+    None
+        The test asserts the JSON payload includes the index summary,
+        canonical coverage issues, and per-file decisions when explain mode is
+        enabled.
+    """
+    python_module = tmp_path / "src" / "sample.py"
+    config_file = tmp_path / "scripts" / "build.json"
+    _write_module(
+        python_module,
+        'def demo():\n    """Return a constant."""\n    return 1\n',
+    )
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text('{"task": "demo"}\n', encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["repoindex", "index", "--json", "--explain"])
+
+    assert main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "index"
+    assert payload["status"] == "ok"
+    assert payload["query"] == {
+        "full": False,
+        "explain": True,
+        "require_full_coverage": False,
+    }
+    assert payload["results"] == []
+    assert payload["summary"] == {
+        "indexed": 1,
+        "reused": 0,
+        "deleted": 0,
+        "failed": 0,
+        "embeddings_recomputed": 2,
+        "embeddings_reused": 0,
+    }
+    assert payload["coverage_issues"] == [
+        {
+            "path": str(config_file),
+            "directory": "scripts",
+            "suffix": ".json",
+            "reason": "no registered analyzer covers this canonical file",
+        }
+    ]
+    assert payload["warnings"] == []
+    assert payload["failures"] == []
+    assert payload["decisions"] == [
+        {
+            "path": str(python_module),
+            "action": "indexed",
+            "reason": "new file",
+        }
+    ]
+
+
+def test_index_cli_emits_json_for_required_coverage_failure(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Emit structured JSON when strict canonical coverage blocks indexing.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch argv and cwd.
+
+    Returns
+    -------
+    None
+        The test asserts strict coverage mode returns JSON without creating the
+        index when uncovered canonical files are present.
+    """
+    rust_module = tmp_path / "src" / "lib.rs"
+    rust_module.parent.mkdir(parents=True, exist_ok=True)
+    rust_module.write_text("pub fn helper() {}\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["repoindex", "index", "--json", "--require-full-coverage"],
+    )
+
+    assert main() == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "index"
+    assert payload["status"] == "coverage_incomplete"
+    assert payload["query"] == {
+        "full": False,
+        "explain": False,
+        "require_full_coverage": True,
+    }
+    assert payload["summary"] == {
+        "indexed": 0,
+        "reused": 0,
+        "deleted": 0,
+        "failed": 0,
+        "embeddings_recomputed": 0,
+        "embeddings_reused": 0,
+    }
+    assert payload["coverage_issues"] == [
+        {
+            "path": str(rust_module),
+            "directory": "src",
+            "suffix": ".rs",
+            "reason": "no registered analyzer covers this canonical file",
+        }
+    ]
+    assert payload["warnings"] == []
+    assert payload["failures"] == []
+    assert payload["decisions"] == []
+    assert not get_db_path(tmp_path).exists()
+
+
 def test_ensure_index_rebuilds_when_analyzer_inventory_changes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

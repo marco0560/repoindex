@@ -26,6 +26,7 @@ import sys
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from repoindex._version import version as __version__
 from repoindex.indexer import (
@@ -62,6 +63,9 @@ from repoindex.storage import (
     get_metadata_path,
     init_db,
 )
+
+if TYPE_CHECKING:
+    import repoindex.indexer as indexer_types
 
 GIT_EXE = shutil.which("git") or "git"
 
@@ -200,6 +204,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Fail before indexing when canonical directories contain "
             "uncovered tracked files"
         ),
+    )
+    index_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON for machine consumption",
     )
 
     coverage_parser = sub.add_parser(
@@ -524,6 +533,7 @@ def _run_index(
     full: bool,
     explain: bool,
     require_full_coverage: bool,
+    as_json: bool = False,
 ) -> int:
     """
     Build or refresh the repository index.
@@ -539,6 +549,8 @@ def _run_index(
     require_full_coverage : bool
         Whether to fail before indexing when canonical directories are not
         fully covered by the active analyzer set.
+    as_json : bool, optional
+        Whether to render structured JSON output.
 
     Returns
     -------
@@ -546,15 +558,37 @@ def _run_index(
         Process exit status for a successful indexing run.
     """
     coverage_issues = audit_repo_coverage(root)
-    if require_full_coverage and _render_required_coverage_failure(
-        root,
-        coverage_issues,
-    ):
+    if require_full_coverage and coverage_issues:
+        if as_json:
+            _emit_json(
+                _index_payload(
+                    full=full,
+                    explain=explain,
+                    require_full_coverage=require_full_coverage,
+                    status="coverage_incomplete",
+                    report=None,
+                    coverage_issues=coverage_issues,
+                )
+            )
+        else:
+            _render_required_coverage_failure(root, coverage_issues)
         return 2
 
     init_db(root)
     report = index_repo(root, full=full)
     _write_index_head_metadata(root)
+    if as_json:
+        _emit_json(
+            _index_payload(
+                full=full,
+                explain=explain,
+                require_full_coverage=require_full_coverage,
+                status="ok",
+                report=report,
+                coverage_issues=report.coverage_issues,
+            )
+        )
+        return 0
     _render_index_report(root, report)
     if explain:
         for decision in report.decisions:
@@ -565,6 +599,158 @@ def _run_index(
                 rel_label = decision.path
             print(f"{decision.action}: {rel_label} ({decision.reason})")
     return 0
+
+
+def _index_payload(
+    *,
+    full: bool,
+    explain: bool,
+    require_full_coverage: bool,
+    status: str,
+    report: IndexReport | None,
+    coverage_issues: list[CoverageIssue],
+) -> dict[str, object]:
+    """
+    Build the structured JSON payload for one index command run.
+
+    Parameters
+    ----------
+    full : bool
+        Whether the caller requested a full rebuild.
+    explain : bool
+        Whether the caller requested per-file decision details.
+    require_full_coverage : bool
+        Whether strict coverage gating was enabled.
+    status : str
+        Stable status code for the current command outcome.
+    report : repoindex.indexer.IndexReport | None
+        Completed index report, or ``None`` when indexing stopped early.
+    coverage_issues : list[repoindex.indexer.CoverageIssue]
+        Coverage issues relevant to the command outcome.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable payload for ``repoindex index --json``.
+    """
+    return {
+        "schema_version": QUERY_JSON_SCHEMA_VERSION,
+        "command": "index",
+        "status": status,
+        "query": {
+            "full": full,
+            "explain": explain,
+            "require_full_coverage": require_full_coverage,
+        },
+        "results": [],
+        "summary": {
+            "indexed": 0 if report is None else report.indexed,
+            "reused": 0 if report is None else report.reused,
+            "deleted": 0 if report is None else report.deleted,
+            "failed": 0 if report is None else report.failed,
+            "embeddings_recomputed": (
+                0 if report is None else report.embeddings_recomputed
+            ),
+            "embeddings_reused": 0 if report is None else report.embeddings_reused,
+        },
+        "coverage_issues": [
+            {
+                "path": issue.path,
+                "directory": issue.directory,
+                "suffix": issue.suffix,
+                "reason": issue.reason,
+            }
+            for issue in coverage_issues
+        ],
+        "warnings": [] if report is None else _index_warning_payload(report.warnings),
+        "failures": [] if report is None else _index_failure_payload(report.failures),
+        "decisions": (
+            []
+            if report is None or not explain
+            else _index_decision_payload(report.decisions)
+        ),
+    }
+
+
+def _index_decision_payload(
+    decisions: list[indexer_types.IndexDecision],
+) -> list[dict[str, object]]:
+    """
+    Serialize per-file index decisions for JSON output.
+
+    Parameters
+    ----------
+    decisions : list[repoindex.indexer.IndexDecision]
+        Deterministic per-file decisions emitted by the indexer.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        JSON rows describing indexed, reused, and deleted files.
+    """
+    return [
+        {
+            "path": decision.path,
+            "action": decision.action,
+            "reason": decision.reason,
+        }
+        for decision in decisions
+    ]
+
+
+def _index_warning_payload(
+    warnings: list[IndexWarning],
+) -> list[dict[str, object]]:
+    """
+    Serialize index warning diagnostics for JSON output.
+
+    Parameters
+    ----------
+    warnings : list[repoindex.indexer.IndexWarning]
+        Warning diagnostics recorded during indexing.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        JSON rows for warning diagnostics.
+    """
+    return [
+        {
+            "path": warning.path,
+            "analyzer_name": warning.analyzer_name,
+            "warning_type": warning.warning_type,
+            "line": warning.line,
+            "reason": warning.reason,
+        }
+        for warning in warnings
+    ]
+
+
+def _index_failure_payload(
+    failures: list[IndexFailure],
+) -> list[dict[str, object]]:
+    """
+    Serialize index failure diagnostics for JSON output.
+
+    Parameters
+    ----------
+    failures : list[repoindex.indexer.IndexFailure]
+        Failure diagnostics recorded during indexing.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        JSON rows for failure diagnostics.
+    """
+    return [
+        {
+            "path": failure.path,
+            "analyzer_name": failure.analyzer_name,
+            "error_type": failure.error_type,
+            "reason": failure.reason,
+        }
+        for failure in failures
+    ]
 
 
 def _render_required_coverage_failure(
@@ -1684,6 +1870,7 @@ def main() -> int:
                 full=args.full,
                 explain=args.explain,
                 require_full_coverage=args.require_full_coverage,
+                as_json=args.json,
             )
         if args.command == "coverage":
             return _run_coverage(root, as_json=args.json)
