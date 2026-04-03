@@ -10,6 +10,7 @@ The repository currently tracks these architecture decision records:
 - [ADR-006 — Capability-driven signal layer for language-agnostic scoring](ADR-006-capability-driven-signal-layer.md)
 - [ADR-007 — First-party package boundary for extracted official plugins](ADR-007-first-party-package-boundary.md)
 - [ADR-008 — Batched embedding generation and tunable inference runtime](ADR-008-batched-embedding-generation-and-tunable-inference-runtime.md)
+- [ADR-009 — End-user distribution and publishing model](ADR-009-end-user-distribution-and-publishing-model.md)
 
 `ADR-004` is the active migration record for the current architecture branch
 and should be read together with the documents under `docs/architecture/`.
