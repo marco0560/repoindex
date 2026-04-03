@@ -47,4 +47,32 @@ feat/batch-embedding-indexing
 * [x] Kept runtime tuning operator-controlled after follow-up end-to-end
   measurements proved too noisy to justify hardcoded thread defaults in this
   branch.
+* [x] Recovered the historical large-repository baseline for
+  `Personalia/Progetti/Software/texlive-2026-source` under `repoindex 1.4.0`.
+  The timed `repoindex index --full` run started at `21:30:18` on 02/04/2026
+  and ended at `05:31:21` on 03/04/2026, for a total wall time of
+  `8h01m03s`, with:
+  `Indexed: 7933`,
+  `Reused: 0`,
+  `Deleted: 0`,
+  `Failed: 0`,
+  `Embeddings recomputed: 43732`,
+  `Embeddings reused: 0`,
+  `Coverage issues: 0`.
+* [x] Captured a large-repository full-index benchmark on
+  `Personalia/Progetti/Software/texlive-2026-source` after the 1.7.x
+  performance and audit-policy updates. On 03/04/2026 the command
+  `repoindex index --full` ran from `17:27:36` to `17:40:21`, for a total wall
+  time of `12m45s`, with:
+  `Indexed: 7933`,
+  `Reused: 0`,
+  `Deleted: 0`,
+  `Failed: 0`,
+  `Embeddings recomputed: 43732`,
+  `Embeddings reused: 0`,
+  `Coverage issues: 0`.
+* [x] Recorded an apples-to-apples before/after comparison for the same large
+  repository and the same full-index workload:
+  `8h01m03s` on `repoindex 1.4.0` versus `12m45s` on the current 1.7.x line,
+  which is roughly a `37.7x` speedup by wall clock.
 * [x] Create the final branch commit.
