@@ -43,6 +43,7 @@ from repoindex.query.exact import (
     CallTreeNode,
     CallTreeResult,
     build_call_tree,
+    build_ref_tree,
     docstring_issues,
     embedding_inventory,
     find_call_edges,
@@ -381,6 +382,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Output structured JSON for machine consumption",
+    )
+    refs_parser.add_argument(
+        "--tree",
+        action="store_true",
+        help="Render a bounded traversal tree instead of a flat reference list",
+    )
+    refs_parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=2,
+        help="Maximum traversal depth used by --tree (default: 2)",
+    )
+    refs_parser.add_argument(
+        "--max-nodes",
+        type=int,
+        default=20,
+        help="Maximum number of rendered nodes used by --tree (default: 20)",
     )
     refs_parser.add_argument(
         "--prefix",
@@ -1590,12 +1608,61 @@ def _render_call_tree_lines(tree: CallTreeResult) -> list[str]:
     return lines
 
 
+def _render_relation_tree_lines(
+    tree: CallTreeResult,
+    *,
+    outgoing_marker: str,
+    incoming_marker: str,
+) -> list[str]:
+    """
+    Render a bounded relation tree with caller-selected edge markers.
+
+    Parameters
+    ----------
+    tree : repoindex.query.exact.CallTreeResult
+        Traversal result to render.
+    outgoing_marker : str
+        Marker used for outgoing traversal edges.
+    incoming_marker : str
+        Marker used for incoming traversal edges.
+
+    Returns
+    -------
+    list[str]
+        Deterministic plain-text lines for the bounded relation tree.
+    """
+    lines = [
+        _call_tree_display(
+            tree.root_module,
+            tree.root_name,
+            resolved=True,
+        )
+    ]
+    marker = incoming_marker if tree.incoming else outgoing_marker
+
+    def append_children(nodes: tuple[CallTreeNode, ...], *, depth: int) -> None:
+        for node in nodes:
+            suffix = " [cycle]" if node.cycle else ""
+            lines.append(
+                f"{'  ' * depth}{marker}"
+                f"{_call_tree_display(node.module, node.name, resolved=node.resolved)}"
+                f"{suffix}"
+            )
+            append_children(node.children, depth=depth + 1)
+
+    append_children(tree.children, depth=1)
+    return lines
+
+
 def _run_refs(
     root: Path,
     name: str,
     *,
     module: str | None,
     incoming: bool,
+    as_tree: bool = False,
+    max_depth: int = 2,
+    max_nodes: int = 20,
     prefix: str | None = None,
     as_json: bool = False,
     query_prefix: str | None = None,
@@ -1614,6 +1681,12 @@ def _run_refs(
     incoming : bool
         Whether to show incoming references for a target instead of outgoing
         references for an owner.
+    as_tree : bool, optional
+        Whether to render a bounded traversal tree instead of a flat reference list.
+    max_depth : int, optional
+        Maximum traversal depth used by the tree mode.
+    max_nodes : int, optional
+        Maximum number of rendered nodes used by the tree mode.
     prefix : str | None, optional
         Repo-root-relative path prefix used to restrict owner files.
     as_json : bool, optional
@@ -1626,6 +1699,75 @@ def _run_refs(
     int
         Zero when at least one reference is found, otherwise one.
     """
+    if max_depth < 0:
+        print("--max-depth must be >= 0", file=sys.stderr)
+        return 2
+    if max_nodes < 1:
+        print("--max-nodes must be >= 1", file=sys.stderr)
+        return 2
+
+    if as_tree:
+        tree = build_ref_tree(
+            root,
+            name,
+            module=module,
+            incoming=incoming,
+            prefix=prefix,
+            max_depth=max_depth,
+            max_nodes=max_nodes,
+        )
+        if as_json:
+            _emit_json(
+                _query_payload(
+                    "refs",
+                    "ok" if tree is not None else "no_matches",
+                    {
+                        "name": name,
+                        "module": module,
+                        "incoming": incoming,
+                        "tree": True,
+                        "max_depth": max_depth,
+                        "max_nodes": max_nodes,
+                        "prefix": query_prefix,
+                    },
+                    [_call_tree_result_payload(tree)] if tree is not None else [],
+                    truncated=(
+                        {
+                            "depth": tree.truncated_by_depth,
+                            "nodes": tree.truncated_by_nodes,
+                        }
+                        if tree is not None
+                        else {"depth": False, "nodes": False}
+                    ),
+                    node_count=tree.node_count if tree is not None else 0,
+                    edge_count=tree.edge_count if tree is not None else 0,
+                )
+            )
+            return 0 if tree is not None else 1
+
+        if tree is None:
+            direction = "target" if incoming else "owner"
+            if module is None:
+                print(f"No callable references found for {direction}: {name}")
+            else:
+                print(f"No callable references found for {direction}: {module}.{name}")
+            return 1
+
+        for line in _render_relation_tree_lines(
+            tree,
+            outgoing_marker="=> ",
+            incoming_marker="<= ",
+        ):
+            print(line)
+        if tree.truncated_by_depth or tree.truncated_by_nodes:
+            truncation_bits: list[str] = []
+            if tree.truncated_by_depth:
+                truncation_bits.append(f"max_depth={max_depth}")
+            if tree.truncated_by_nodes:
+                truncation_bits.append(f"max_nodes={max_nodes}")
+            print(f"truncated: {', '.join(truncation_bits)}")
+        return 0
+
     rows = find_callable_refs(
         root,
         name,
@@ -2157,6 +2299,9 @@ def main() -> int:
                 args.name,
                 module=args.module,
                 incoming=args.incoming,
+                as_tree=args.tree,
+                max_depth=args.max_depth,
+                max_nodes=args.max_nodes,
                 prefix=prefix,
                 as_json=args.json,
                 query_prefix=raw_prefix,

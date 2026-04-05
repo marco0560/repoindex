@@ -427,6 +427,183 @@ def find_callable_refs(
     )
 
 
+def build_ref_tree(
+    root: Path,
+    name: str,
+    *,
+    module: str | None = None,
+    incoming: bool = False,
+    prefix: str | None = None,
+    max_depth: int = 2,
+    max_nodes: int = 20,
+    conn: sqlite3.Connection | None = None,
+) -> CallTreeResult | None:
+    """
+    Build a bounded traversal tree for one exact `refs` query.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index database.
+    name : str
+        Exact logical owner or referenced target name to traverse around.
+    module : str | None, optional
+        Optional exact module filter for the selected side of the reference.
+    incoming : bool, optional
+        When ``True``, traverse owners that reference the named target;
+        otherwise traverse referenced targets for the named owner.
+    prefix : str | None, optional
+        Repo-root-relative path prefix used to restrict owner files.
+    max_depth : int, optional
+        Maximum traversal depth below the root. Depth ``0`` renders only the
+        root node.
+    max_nodes : int, optional
+        Maximum number of rendered nodes including the root.
+    conn : sqlite3.Connection | None, optional
+        Existing database connection to reuse. When omitted, the function
+        opens and closes its own connection through nested exact helpers.
+
+    Returns
+    -------
+    repoindex.query.exact.CallTreeResult | None
+        Bounded traversal result, or ``None`` when the root query matches no
+        callable references.
+    """
+    initial_rows = find_callable_refs(
+        root,
+        name,
+        module=module,
+        incoming=incoming,
+        prefix=prefix,
+        conn=conn,
+    )
+    if not initial_rows:
+        return None
+
+    root_candidates: set[tuple[str | None, str]] = {
+        (
+            (target_module, target_name)
+            if incoming and target_module is not None and target_name is not None
+            else (owner_module, owner_name)
+        )
+        for owner_module, owner_name, target_module, target_name, _resolved in initial_rows
+    }
+    if len(root_candidates) == 1:
+        root_module, root_name = next(iter(root_candidates))
+    else:
+        root_module, root_name = module, name
+
+    rendered_nodes = 1
+    rendered_edges = 0
+    truncated_by_depth = False
+    truncated_by_nodes = False
+
+    def ordered_neighbors(
+        rows: list[CallableRefRow],
+    ) -> list[tuple[str | None, str, bool]]:
+        deduped: dict[tuple[str | None, str, bool], tuple[str | None, str, bool]] = {}
+        for owner_module, owner_name, target_module, target_name, resolved in rows:
+            key: tuple[str | None, str, bool]
+            if incoming:
+                key = (owner_module, owner_name, True)
+            elif resolved and target_module is not None and target_name is not None:
+                key = (target_module, target_name, True)
+            else:
+                key = (None, "<unresolved>", False)
+            deduped.setdefault(key, key)
+        return sorted(
+            deduped.values(),
+            key=lambda item: (
+                0 if item[2] else 1,
+                item[0] or "",
+                item[1],
+            ),
+        )
+
+    def build_children(
+        current_module: str | None,
+        current_name: str,
+        *,
+        depth: int,
+        path: tuple[tuple[str | None, str], ...],
+    ) -> tuple[CallTreeNode, ...]:
+        nonlocal rendered_edges, rendered_nodes, truncated_by_depth, truncated_by_nodes
+
+        rows = find_callable_refs(
+            root,
+            current_name,
+            module=current_module,
+            incoming=incoming,
+            prefix=prefix,
+            conn=conn,
+        )
+        if not rows:
+            return ()
+        if depth >= max_depth:
+            truncated_by_depth = True
+            return ()
+
+        children: list[CallTreeNode] = []
+        for child_module, child_name, child_resolved in ordered_neighbors(rows):
+            if rendered_nodes >= max_nodes:
+                truncated_by_nodes = True
+                break
+
+            rendered_edges += 1
+            rendered_nodes += 1
+
+            if not child_resolved:
+                children.append(
+                    CallTreeNode(module=None, name=child_name, resolved=False)
+                )
+                continue
+
+            child_identity = (child_module, child_name)
+            if child_identity in path:
+                children.append(
+                    CallTreeNode(
+                        module=child_module,
+                        name=child_name,
+                        resolved=True,
+                        cycle=True,
+                    )
+                )
+                continue
+
+            grandchildren = build_children(
+                child_module,
+                child_name,
+                depth=depth + 1,
+                path=path + (child_identity,),
+            )
+            children.append(
+                CallTreeNode(
+                    module=child_module,
+                    name=child_name,
+                    resolved=True,
+                    children=grandchildren,
+                )
+            )
+
+        return tuple(children)
+
+    return CallTreeResult(
+        root_module=root_module,
+        root_name=root_name,
+        children=build_children(
+            root_module,
+            root_name,
+            depth=0,
+            path=((root_module, root_name),),
+        ),
+        incoming=incoming,
+        truncated_by_depth=truncated_by_depth,
+        truncated_by_nodes=truncated_by_nodes,
+        node_count=rendered_nodes,
+        edge_count=rendered_edges,
+    )
+
+
 def find_include_edges(
     root: Path,
     name: str,

@@ -384,6 +384,60 @@ def test_refs_cli_prints_incoming_references(
     assert captured.out.strip() == "pkg.a.registry => pkg.a.helper"
 
 
+def test_refs_cli_tree_prints_bounded_incoming_references(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render a bounded incoming reference tree while preserving flat refs output.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts deterministic tree rendering for a small incoming
+        reference neighborhood.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "refs",
+            "helper",
+            "--module",
+            "pkg.a",
+            "--incoming",
+            "--tree",
+            "--max-depth",
+            "2",
+            "--max-nodes",
+            "10",
+        ],
+    )
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip().splitlines() == [
+        "pkg.a.helper",
+        "  <= pkg.a.registry",
+    ]
+
+
 def test_c_call_edges_are_indexed_for_same_module_functions(tmp_path: Path) -> None:
     """
     Ensure lightweight C call extraction reaches the stored call-edge graph.
@@ -863,5 +917,73 @@ def test_calls_cli_tree_json_reports_truncation(
                     "children": [],
                 }
             ],
+        }
+    ]
+
+
+def test_refs_cli_tree_json_reports_truncation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Expose explicit truncation metadata for bounded ref-tree traversal.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts JSON tree output includes explicit depth-cap
+        truncation for incoming refs.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "refs",
+            "helper",
+            "--module",
+            "pkg.a",
+            "--incoming",
+            "--tree",
+            "--max-depth",
+            "0",
+            "--max-nodes",
+            "10",
+            "--json",
+        ],
+    )
+
+    assert main() == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["command"] == "refs"
+    assert payload["status"] == "ok"
+    assert payload["truncated"] == {"depth": True, "nodes": False}
+    assert payload["node_count"] == 1
+    assert payload["edge_count"] == 0
+    assert payload["results"] == [
+        {
+            "module": "pkg.a",
+            "name": "helper",
+            "display": "pkg.a.helper",
+            "resolved": True,
+            "incoming": True,
+            "cycle": False,
+            "children": [],
         }
     ]
