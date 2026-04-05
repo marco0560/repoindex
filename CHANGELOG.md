@@ -1,3 +1,16 @@
+# [1.9.0](https://github.com/marco0560/repoindex/compare/v1.8.0...v1.9.0) (2026-04-05)
+
+
+### Features
+
+* **cli:** add bounded calls traversal ([b08db50](https://github.com/marco0560/repoindex/commit/b08db5016a4b79752243548204259235fc7b0238))
+* **cli:** add bounded refs traversal ([776f3da](https://github.com/marco0560/repoindex/commit/776f3da17873ad57bc9c8eaa8d4880fd27f8f16e))
+* **cli:** add dot export for bounded graph trees ([b4b37c3](https://github.com/marco0560/repoindex/commit/b4b37c3b73f6dc3f46c2bef0c24c7177f4423a29))
+* Merge branch 'issue/10-call-graph-retrieval-producer' ([cf0277b](https://github.com/marco0560/repoindex/commit/cf0277bda946e928f3bb45c9aa851ad477672e07)), closes [#10](https://github.com/marco0560/repoindex/issues/10)
+* **query:** add bounded graph retrieval to context ([2bd8570](https://github.com/marco0560/repoindex/commit/2bd857029e39dc69679ab1e4332807c88432c87e))
+* **query:** extract graph enrichment orchestration ([f7ff579](https://github.com/marco0560/repoindex/commit/f7ff579391a888e37bc9003bcd64b058f2151514))
+* **query:** extract graph producers and support monorepo analyzer fallback ([ab00b5a](https://github.com/marco0560/repoindex/commit/ab00b5a20531873ba248ce6350bcc8941ef19ff3))
+
 # [1.8.0](https://github.com/marco0560/repoindex/compare/v1.7.1...v1.8.0) (2026-04-03)
 
 
