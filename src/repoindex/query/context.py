@@ -48,8 +48,11 @@ from repoindex.query.exact import (
     logical_symbol_name,
 )
 from repoindex.query.producers import (
+    CALL_GRAPH_RETRIEVAL_PRODUCER,
     CHANNEL_PRODUCER_SPECS,
     EMBEDDING_RETRIEVAL_PRODUCER,
+    INCLUDE_GRAPH_RETRIEVAL_PRODUCER,
+    REFERENCE_RETRIEVAL_PRODUCER,
     QueryChannelSpec,
     QueryProducerSpec,
     channel_producer_specs,
@@ -2919,14 +2922,9 @@ def _expand_include_graph_neighbors(
             )
             if graph_signals is not None:
                 graph_signals.append(
-                    RetrievalSignal(
+                    INCLUDE_GRAPH_RETRIEVAL_PRODUCER.build_signal(
                         kind="proximity",
-                        family="graph",
                         target=candidate,
-                        producer_name="query-enrichment-include-graph",
-                        producer_version="1",
-                        capability_name="graph_relations",
-                        capability_version="1",
                         source_symbol=symbol,
                         distance=1,
                     )
@@ -3143,14 +3141,9 @@ def _expand_graph_related_symbols(
                 _add_related_symbol(expanded, seen_symbols, related)
                 if graph_signals is not None:
                     graph_signals.append(
-                        RetrievalSignal(
+                        CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
                             kind="relation",
-                            family="graph",
                             target=related,
-                            producer_name="query-enrichment-call-graph",
-                            producer_version="1",
-                            capability_name="graph_relations",
-                            capability_version="1",
                             source_symbol=symbol,
                             distance=1,
                         )
@@ -3175,14 +3168,9 @@ def _expand_graph_related_symbols(
                 _add_related_symbol(expanded, seen_symbols, related)
                 if graph_signals is not None:
                     graph_signals.append(
-                        RetrievalSignal(
+                        CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
                             kind="relation",
-                            family="graph",
                             target=related,
-                            producer_name="query-enrichment-call-graph",
-                            producer_version="1",
-                            capability_name="graph_relations",
-                            capability_version="1",
                             source_symbol=symbol,
                             distance=1,
                         )
@@ -3207,14 +3195,9 @@ def _expand_graph_related_symbols(
                 _add_related_symbol(expanded, seen_symbols, related)
                 if graph_signals is not None:
                     graph_signals.append(
-                        RetrievalSignal(
+                        REFERENCE_RETRIEVAL_PRODUCER.build_signal(
                             kind="relation",
-                            family="graph",
                             target=related,
-                            producer_name="query-enrichment-references",
-                            producer_version="1",
-                            capability_name="graph_relations",
-                            capability_version="1",
                             source_symbol=symbol,
                             distance=1,
                         )
@@ -3239,14 +3222,9 @@ def _expand_graph_related_symbols(
                 _add_related_symbol(expanded, seen_symbols, related)
                 if graph_signals is not None:
                     graph_signals.append(
-                        RetrievalSignal(
+                        REFERENCE_RETRIEVAL_PRODUCER.build_signal(
                             kind="relation",
-                            family="graph",
                             target=related,
-                            producer_name="query-enrichment-references",
-                            producer_version="1",
-                            capability_name="graph_relations",
-                            capability_version="1",
                             source_symbol=symbol,
                             distance=1,
                         )

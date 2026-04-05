@@ -26,9 +26,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from repoindex.query.classifier import QueryIntent
-    from repoindex.types import ChannelName, ChannelResults
+    from repoindex.types import ChannelName, ChannelResults, SymbolRow
 
 from repoindex.contracts import RetrievalProducerInfo
+from repoindex.query.signals import RetrievalSignal
 from repoindex.registry import active_index_backend
 
 QUERY_PRODUCER_VERSION = "1"
@@ -194,6 +195,100 @@ class EmbeddingRetrievalProducer(QueryProducerSpec):
         )
 
 
+class GraphRetrievalProducer(QueryProducerSpec):
+    """
+    Native retrieval producer for graph-derived enrichment signals.
+
+    Parameters
+    ----------
+    producer_name : str
+        Stable producer identifier exposed in explain diagnostics.
+    producer_version : str
+        Producer implementation version.
+    capability_version : str
+        Version of the retrieval capability contract used for interpretation.
+    capabilities : tuple[str, ...]
+        Declared retrieval capabilities for the source.
+    source_kind : {"channel", "enrichment"}
+        Producer category.
+    source_name : str
+        Stable source identifier for the graph enrichment source.
+    """
+
+    def retrieval_producer_info(self) -> RetrievalProducerInfo:
+        """
+        Return versioned identity metadata for the graph producer.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        repoindex.contracts.RetrievalProducerInfo
+            Producer identity and capability-version metadata.
+        """
+        return RetrievalProducerInfo(
+            producer_name=self.producer_name,
+            producer_version=self.producer_version,
+            capability_version=self.capability_version,
+        )
+
+    def retrieval_capabilities(self) -> tuple[str, ...]:
+        """
+        Return declared retrieval capabilities for the graph producer.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[str, ...]
+            Declared capability names in deterministic order.
+        """
+        return self.capabilities
+
+    def build_signal(
+        self,
+        *,
+        kind: Literal["relation", "proximity"],
+        target: SymbolRow,
+        source_symbol: SymbolRow | None = None,
+        distance: int | None = None,
+    ) -> RetrievalSignal:
+        """
+        Build one normalized graph retrieval signal for this producer.
+
+        Parameters
+        ----------
+        kind : {"relation", "proximity"}
+            Graph evidence kind emitted by the producer.
+        target : repoindex.types.SymbolRow
+            Target symbol supported by the graph evidence.
+        source_symbol : repoindex.types.SymbolRow | None, optional
+            Source symbol that led to the graph relation.
+        distance : int | None, optional
+            Graph traversal distance for the evidence.
+
+        Returns
+        -------
+        repoindex.query.signals.RetrievalSignal
+            Normalized graph signal attributed to this producer.
+        """
+        return RetrievalSignal(
+            kind=kind,
+            family="graph",
+            target=target,
+            producer_name=self.producer_name,
+            producer_version=self.producer_version,
+            capability_name="graph_relations",
+            capability_version=self.capability_version,
+            source_symbol=source_symbol,
+            distance=distance,
+        )
+
+
 EMBEDDING_RETRIEVAL_PRODUCER = EmbeddingRetrievalProducer(
     producer_name="query-channel-embedding",
     producer_version=QUERY_PRODUCER_VERSION,
@@ -201,6 +296,33 @@ EMBEDDING_RETRIEVAL_PRODUCER = EmbeddingRetrievalProducer(
     capabilities=("embedding_similarity", "diagnostics_metadata"),
     source_kind="channel",
     source_name="embedding",
+)
+
+CALL_GRAPH_RETRIEVAL_PRODUCER = GraphRetrievalProducer(
+    producer_name="query-enrichment-call-graph",
+    producer_version=QUERY_PRODUCER_VERSION,
+    capability_version=QUERY_CAPABILITY_VERSION,
+    capabilities=("graph_relations",),
+    source_kind="enrichment",
+    source_name="call_graph",
+)
+
+REFERENCE_RETRIEVAL_PRODUCER = GraphRetrievalProducer(
+    producer_name="query-enrichment-references",
+    producer_version=QUERY_PRODUCER_VERSION,
+    capability_version=QUERY_CAPABILITY_VERSION,
+    capabilities=("graph_relations",),
+    source_kind="enrichment",
+    source_name="references",
+)
+
+INCLUDE_GRAPH_RETRIEVAL_PRODUCER = GraphRetrievalProducer(
+    producer_name="query-enrichment-include-graph",
+    producer_version=QUERY_PRODUCER_VERSION,
+    capability_version=QUERY_CAPABILITY_VERSION,
+    capabilities=("graph_relations",),
+    source_kind="enrichment",
+    source_name="include_graph",
 )
 
 
@@ -250,30 +372,9 @@ ENRICHMENT_PRODUCER_SPECS: dict[EnrichmentSourceName, QueryProducerSpec] = {
         source_kind="enrichment",
         source_name="doc_issues",
     ),
-    "call_graph": QueryProducerSpec(
-        producer_name="query-enrichment-call-graph",
-        producer_version=QUERY_PRODUCER_VERSION,
-        capability_version=QUERY_CAPABILITY_VERSION,
-        capabilities=("graph_relations",),
-        source_kind="enrichment",
-        source_name="call_graph",
-    ),
-    "references": QueryProducerSpec(
-        producer_name="query-enrichment-references",
-        producer_version=QUERY_PRODUCER_VERSION,
-        capability_version=QUERY_CAPABILITY_VERSION,
-        capabilities=("graph_relations",),
-        source_kind="enrichment",
-        source_name="references",
-    ),
-    "include_graph": QueryProducerSpec(
-        producer_name="query-enrichment-include-graph",
-        producer_version=QUERY_PRODUCER_VERSION,
-        capability_version=QUERY_CAPABILITY_VERSION,
-        capabilities=("graph_relations",),
-        source_kind="enrichment",
-        source_name="include_graph",
-    ),
+    "call_graph": CALL_GRAPH_RETRIEVAL_PRODUCER,
+    "references": REFERENCE_RETRIEVAL_PRODUCER,
+    "include_graph": INCLUDE_GRAPH_RETRIEVAL_PRODUCER,
 }
 
 

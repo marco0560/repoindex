@@ -31,8 +31,11 @@ from repoindex.query.context import (
     _signals_from_channel_bundles,
 )
 from repoindex.query.producers import (
+    CALL_GRAPH_RETRIEVAL_PRODUCER,
     CHANNEL_PRODUCER_SPECS,
     EMBEDDING_RETRIEVAL_PRODUCER,
+    INCLUDE_GRAPH_RETRIEVAL_PRODUCER,
+    REFERENCE_RETRIEVAL_PRODUCER,
     selected_enrichment_producers,
 )
 
@@ -146,6 +149,34 @@ def test_embedding_channel_uses_native_retrieval_producer() -> None:
         embedding producer instance directly.
     """
     assert CHANNEL_PRODUCER_SPECS["embedding"] is EMBEDDING_RETRIEVAL_PRODUCER
+
+
+def test_graph_enrichment_specs_use_native_retrieval_producers() -> None:
+    """
+    Keep graph enrichment metadata bound to native producer instances.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts selected enrichment producers preserve their
+        deterministic order while exposing native call, reference, and include
+        producer instances.
+    """
+    producers = selected_enrichment_producers(
+        include_issue_annotations=False,
+        include_references=True,
+        include_include_graph=True,
+    )
+
+    assert producers == [
+        CALL_GRAPH_RETRIEVAL_PRODUCER,
+        REFERENCE_RETRIEVAL_PRODUCER,
+        INCLUDE_GRAPH_RETRIEVAL_PRODUCER,
+    ]
 
 
 def test_merge_ranked_channel_bundles_explain_dedupes_and_orders_ties() -> None:

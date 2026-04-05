@@ -444,6 +444,43 @@ def test_context_for_expands_related_cross_module_graph_symbols(
     assert ("pkg.b", "imported_helper") in registry_expansion
 
 
+def test_context_for_explain_marks_call_graph_and_reference_producers_as_used(
+    tmp_path: Path,
+) -> None:
+    """
+    Preserve explain-mode producer attribution for graph expansion evidence.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts call-graph and callable-reference enrichments move
+        from diagnostics-only to used producers when they emit graph signals.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    payload = json.loads(
+        context_for(
+            tmp_path,
+            "imported_helper",
+            as_json=True,
+            explain=True,
+        )
+    )
+    signal_collection = payload["explain"]["signal_collection"]
+
+    assert "graph" in signal_collection["families"]
+    assert "graph_relations" in signal_collection["capabilities"]
+    assert "query-enrichment-call-graph" in signal_collection["used_producers"]
+    assert "query-enrichment-references" in signal_collection["used_producers"]
+
+
 def test_c_include_edges_are_queryable_and_expand_context(tmp_path: Path) -> None:
     """
     Expose direct local include edges through exact queries and context.

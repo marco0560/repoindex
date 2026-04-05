@@ -228,9 +228,27 @@ def _registered_language_analyzer_factories() -> (
     tuple[collections.abc.Callable[[], repoindex.contracts.LanguageAnalyzer], ...]
         Analyzer factories in deterministic first-match order.
     """
+    import importlib
+
     from repoindex.analyzers.python import PythonAnalyzer
 
-    return (cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),)
+    factories: list[Callable[[], LanguageAnalyzer]] = [
+        cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer)
+    ]
+
+    for module_name, analyzer_name in (
+        ("repoindex.analyzers.c", "CAnalyzer"),
+        ("repoindex.analyzers.bash", "BashAnalyzer"),
+    ):
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError:
+            continue
+        factories.append(
+            cast("Callable[[], LanguageAnalyzer]", getattr(module, analyzer_name))
+        )
+
+    return tuple(factories)
 
 
 def _builtin_analyzer_plugins() -> list[_LoadedPlugin]:

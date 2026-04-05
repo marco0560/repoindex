@@ -339,7 +339,9 @@ def test_active_registry_uses_loaded_entry_point_plugins(
     backend = registry.active_index_backend()
 
     assert isinstance(analyzers[0], LanguageAnalyzer)
-    assert [analyzer.name for analyzer in analyzers] == ["python", "demo"]
+    analyzer_names = [analyzer.name for analyzer in analyzers]
+    assert analyzer_names[0] == "python"
+    assert "demo" in analyzer_names
     assert isinstance(backend, IndexBackend)
     assert backend.name == "demo-backend"
 
