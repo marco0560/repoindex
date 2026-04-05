@@ -111,4 +111,4 @@ Examples of out-of-scope first-version behavior:
 * [x] Phase 3 — Bounded `calls` user surface
 * [x] Phase 4 — Optional bounded `refs` parity
 * [x] Phase 5 — `context-for` call-graph channel integration
-* [ ] Phase 6 — Optional graph/export surfaces
+* [x] Phase 6 — Optional graph/export surfaces

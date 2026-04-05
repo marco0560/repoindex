@@ -161,6 +161,7 @@ Constraints:
 Exit criteria:
 
 * optional export exists only if its value is clear and its limits are explicit
+* status: complete via bounded `calls --tree --dot` and `refs --tree --dot`
 
 ## Non-Goals
 

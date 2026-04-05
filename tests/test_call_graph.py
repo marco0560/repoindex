@@ -966,6 +966,58 @@ def test_calls_cli_tree_json_reports_truncation(
     ]
 
 
+def test_calls_cli_tree_dot_renders_bounded_graphviz_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render bounded call-tree traversal as Graphviz DOT.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts `calls --tree --dot` emits deterministic DOT with
+        bounded traversal edges.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "calls",
+            "caller",
+            "--tree",
+            "--dot",
+            "--max-depth",
+            "1",
+        ],
+    )
+
+    assert main() == 0
+    output = capsys.readouterr().out
+
+    assert "digraph repoindex_calls {" in output
+    assert 'n0 [label="pkg.a.caller"];' in output
+    assert 'n1 [label="pkg.a.dynamic"];' in output
+    assert "n0 -> n1;" in output
+    assert 'graph [label="truncated by max_depth", labelloc="b"];' in output
+
+
 def test_refs_cli_tree_json_reports_truncation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1032,3 +1084,93 @@ def test_refs_cli_tree_json_reports_truncation(
             "children": [],
         }
     ]
+
+
+def test_refs_cli_tree_dot_renders_incoming_graphviz_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render bounded ref traversal as Graphviz DOT with incoming edge direction.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts incoming `refs --tree --dot` points owners toward the
+        selected target.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "refs",
+            "helper",
+            "--module",
+            "pkg.a",
+            "--incoming",
+            "--tree",
+            "--dot",
+            "--max-depth",
+            "1",
+        ],
+    )
+
+    assert main() == 0
+    output = capsys.readouterr().out
+
+    assert "digraph repoindex_refs {" in output
+    assert 'n0 [label="pkg.a.helper"];' in output
+    assert 'n1 [label="pkg.a.registry"];' in output
+    assert "n1 -> n0;" in output
+
+
+def test_calls_cli_dot_rejects_non_tree_and_json_combinations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Reject unsupported DOT flag combinations at the parser boundary.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture parser stderr.
+
+    Returns
+    -------
+    None
+        The test asserts `--dot` remains tree-only and plain-text only.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["repoindex", "calls", "caller", "--dot", "--json"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 2
+    assert "--dot requires --tree for calls" in capsys.readouterr().err
