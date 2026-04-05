@@ -40,6 +40,9 @@ from repoindex.indexer import (
 from repoindex.prefix import normalize_prefix
 from repoindex.query.context import context_for
 from repoindex.query.exact import (
+    CallTreeNode,
+    CallTreeResult,
+    build_call_tree,
     docstring_issues,
     embedding_inventory,
     find_call_edges,
@@ -320,6 +323,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Output structured JSON for machine consumption",
+    )
+    calls_parser.add_argument(
+        "--tree",
+        action="store_true",
+        help="Render a bounded traversal tree instead of a flat edge list",
+    )
+    calls_parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=2,
+        help="Maximum traversal depth used by --tree (default: 2)",
+    )
+    calls_parser.add_argument(
+        "--max-nodes",
+        type=int,
+        default=20,
+        help="Maximum number of rendered nodes used by --tree (default: 20)",
     )
     calls_parser.add_argument(
         "--prefix",
@@ -1287,6 +1307,9 @@ def _run_calls(
     *,
     module: str | None,
     incoming: bool,
+    as_tree: bool = False,
+    max_depth: int = 2,
+    max_nodes: int = 20,
     prefix: str | None = None,
     as_json: bool = False,
     query_prefix: str | None = None,
@@ -1305,6 +1328,12 @@ def _run_calls(
     incoming : bool
         Whether to show incoming edges for a callee instead of outgoing edges
         for a caller.
+    as_tree : bool, optional
+        Whether to render a bounded traversal tree instead of a flat edge list.
+    max_depth : int, optional
+        Maximum traversal depth used by the tree mode.
+    max_nodes : int, optional
+        Maximum number of rendered nodes used by the tree mode.
     prefix : str | None, optional
         Repo-root-relative path prefix used to restrict caller files.
     as_json : bool, optional
@@ -1317,6 +1346,71 @@ def _run_calls(
     int
         Zero when at least one edge is found, otherwise one.
     """
+    if max_depth < 0:
+        print("--max-depth must be >= 0", file=sys.stderr)
+        return 2
+    if max_nodes < 1:
+        print("--max-nodes must be >= 1", file=sys.stderr)
+        return 2
+
+    if as_tree:
+        tree = build_call_tree(
+            root,
+            name,
+            module=module,
+            incoming=incoming,
+            prefix=prefix,
+            max_depth=max_depth,
+            max_nodes=max_nodes,
+        )
+        if as_json:
+            _emit_json(
+                _query_payload(
+                    "calls",
+                    "ok" if tree is not None else "no_matches",
+                    {
+                        "name": name,
+                        "module": module,
+                        "incoming": incoming,
+                        "tree": True,
+                        "max_depth": max_depth,
+                        "max_nodes": max_nodes,
+                        "prefix": query_prefix,
+                    },
+                    [_call_tree_result_payload(tree)] if tree is not None else [],
+                    truncated=(
+                        {
+                            "depth": tree.truncated_by_depth,
+                            "nodes": tree.truncated_by_nodes,
+                        }
+                        if tree is not None
+                        else {"depth": False, "nodes": False}
+                    ),
+                    node_count=tree.node_count if tree is not None else 0,
+                    edge_count=tree.edge_count if tree is not None else 0,
+                )
+            )
+            return 0 if tree is not None else 1
+
+        if tree is None:
+            direction = "callee" if incoming else "caller"
+            if module is None:
+                print(f"No call edges found for {direction}: {name}")
+            else:
+                print(f"No call edges found for {direction}: {module}.{name}")
+            return 1
+
+        for line in _render_call_tree_lines(tree):
+            print(line)
+        if tree.truncated_by_depth or tree.truncated_by_nodes:
+            truncation_bits: list[str] = []
+            if tree.truncated_by_depth:
+                truncation_bits.append(f"max_depth={max_depth}")
+            if tree.truncated_by_nodes:
+                truncation_bits.append(f"max_nodes={max_nodes}")
+            print(f"truncated: {', '.join(truncation_bits)}")
+        return 0
+
     rows = find_call_edges(
         root,
         name,
@@ -1375,6 +1469,125 @@ def _run_calls(
         print(f"{caller} -> {callee}")
 
     return 0
+
+
+def _call_tree_display(module: str | None, name: str, *, resolved: bool) -> str:
+    """
+    Render a compact display label for one call-tree node.
+
+    Parameters
+    ----------
+    module : str | None
+        Owning module when the node resolves to an indexed symbol.
+    name : str
+        Logical symbol name or unresolved placeholder.
+    resolved : bool
+        Whether the node resolves to a concrete indexed symbol.
+
+    Returns
+    -------
+    str
+        Display label suitable for plain-text tree rendering.
+    """
+    if not resolved:
+        return name
+    if module is None:
+        return name
+    return f"{module}.{name}"
+
+
+def _call_tree_node_payload(node: CallTreeNode) -> dict[str, object]:
+    """
+    Serialize one bounded call-tree node for JSON output.
+
+    Parameters
+    ----------
+    node : repoindex.query.exact.CallTreeNode
+        Tree node to serialize.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable tree node payload.
+    """
+    return {
+        "module": node.module,
+        "name": node.name,
+        "display": _call_tree_display(
+            node.module,
+            node.name,
+            resolved=node.resolved,
+        ),
+        "resolved": node.resolved,
+        "cycle": node.cycle,
+        "children": [_call_tree_node_payload(child) for child in node.children],
+    }
+
+
+def _call_tree_result_payload(tree: CallTreeResult) -> dict[str, object]:
+    """
+    Serialize one bounded call-tree result for JSON output.
+
+    Parameters
+    ----------
+    tree : repoindex.query.exact.CallTreeResult
+        Traversal result to serialize.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable root payload for the bounded tree.
+    """
+    return {
+        "module": tree.root_module,
+        "name": tree.root_name,
+        "display": _call_tree_display(
+            tree.root_module,
+            tree.root_name,
+            resolved=True,
+        ),
+        "resolved": True,
+        "incoming": tree.incoming,
+        "cycle": False,
+        "children": [_call_tree_node_payload(child) for child in tree.children],
+    }
+
+
+def _render_call_tree_lines(tree: CallTreeResult) -> list[str]:
+    """
+    Render a bounded call tree as deterministic plain-text lines.
+
+    Parameters
+    ----------
+    tree : repoindex.query.exact.CallTreeResult
+        Traversal result to render.
+
+    Returns
+    -------
+    list[str]
+        Deterministic plain-text lines for the bounded tree.
+    """
+    lines = [
+        _call_tree_display(
+            tree.root_module,
+            tree.root_name,
+            resolved=True,
+        )
+    ]
+    marker = "<- " if tree.incoming else "-> "
+
+    def append_children(nodes: tuple[CallTreeNode, ...], *, depth: int) -> None:
+        for node in nodes:
+            suffix = " [cycle]" if node.cycle else ""
+            lines.append(
+                f"{'  ' * depth}{marker}"
+                f"{_call_tree_display(node.module, node.name, resolved=node.resolved)}"
+                f"{suffix}"
+            )
+            append_children(node.children, depth=depth + 1)
+
+    append_children(tree.children, depth=1)
+    return lines
 
 
 def _run_refs(
@@ -1930,6 +2143,9 @@ def main() -> int:
                 args.name,
                 module=args.module,
                 incoming=args.incoming,
+                as_tree=args.tree,
+                max_depth=args.max_depth,
+                max_nodes=args.max_nodes,
                 prefix=prefix,
                 as_json=args.json,
                 query_prefix=raw_prefix,

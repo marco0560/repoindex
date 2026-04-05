@@ -107,8 +107,8 @@ Examples of out-of-scope first-version behavior:
 ## Phase Ledger
 
 * [x] Phase 1 — Placeholder ADR and execution ledger
-* [ ] Phase 2 — Native call-graph retrieval producer extraction
-* [ ] Phase 3 — Bounded `calls` user surface
+* [x] Phase 2 — Native call-graph retrieval producer extraction
+* [x] Phase 3 — Bounded `calls` user surface
 * [ ] Phase 4 — Optional bounded `refs` parity
 * [ ] Phase 5 — `context-for` call-graph channel integration
 * [ ] Phase 6 — Optional graph/export surfaces

@@ -286,6 +286,59 @@ def test_calls_cli_prints_incoming_edges(
     assert captured.out.strip() == "pkg.a.imported_caller -> pkg.b.imported_helper"
 
 
+def test_calls_cli_tree_prints_bounded_outgoing_traversal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render a bounded outgoing call tree without changing flat call output.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts deterministic tree rendering for a small caller
+        neighborhood.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "calls",
+            "caller",
+            "--tree",
+            "--max-depth",
+            "2",
+            "--max-nodes",
+            "10",
+        ],
+    )
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip().splitlines() == [
+        "pkg.a.caller",
+        "  -> pkg.a.dynamic",
+        "    -> <unresolved>",
+        "  -> pkg.a.helper",
+    ]
+
+
 def test_refs_cli_prints_incoming_references(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -729,3 +782,86 @@ def test_query_subcommand_help_includes_json_examples(
         output = capsys.readouterr().out
         assert "--json" in output
         assert example in output
+
+
+def test_calls_cli_tree_json_reports_truncation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Expose explicit truncation metadata for bounded tree traversal.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts JSON tree output includes explicit node-cap
+        truncation.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "calls",
+            "caller",
+            "--tree",
+            "--max-depth",
+            "2",
+            "--max-nodes",
+            "2",
+            "--json",
+        ],
+    )
+
+    assert main() == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["command"] == "calls"
+    assert payload["status"] == "ok"
+    assert payload["query"] == {
+        "name": "caller",
+        "module": None,
+        "incoming": False,
+        "tree": True,
+        "max_depth": 2,
+        "max_nodes": 2,
+        "prefix": None,
+    }
+    assert payload["truncated"] == {"depth": False, "nodes": True}
+    assert payload["node_count"] == 2
+    assert payload["edge_count"] == 1
+    assert payload["results"] == [
+        {
+            "module": "pkg.a",
+            "name": "caller",
+            "display": "pkg.a.caller",
+            "resolved": True,
+            "incoming": False,
+            "cycle": False,
+            "children": [
+                {
+                    "module": "pkg.a",
+                    "name": "dynamic",
+                    "display": "pkg.a.dynamic",
+                    "resolved": True,
+                    "cycle": False,
+                    "children": [],
+                }
+            ],
+        }
+    ]
