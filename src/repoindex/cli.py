@@ -145,14 +145,15 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  repoindex index\n"
+            "  repoindex index --require-full-coverage\n"
+            "  repoindex symbol build_parser\n"
+            '  repoindex embeddings "schema migration rules"\n'
             '  repoindex context-for "find schema migration logic"\n'
             "  repoindex context-for --prompt "
             '"add a regression test for symbol lookup"\n'
-            '  repoindex context-for "schema migration rules"\n'
-            '  repoindex embeddings "schema migration rules"\n'
-            "  repoindex calls caller\n"
-            "  repoindex refs _retrieve_script_candidates --incoming\n"
-            "  repoindex calls imported_helper --module pkg.b --incoming"
+            '  repoindex context-for --explain "why does symbol lookup rank this result?"\n'
+            "  repoindex calls caller --tree\n"
+            "  repoindex refs _retrieve_script_candidates --incoming --tree --dot"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -302,9 +303,10 @@ def build_parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  repoindex calls caller\n"
             "  repoindex calls caller --json\n"
+            "  repoindex calls caller --tree\n"
             "  repoindex calls caller --tree --dot\n"
-            "  repoindex calls caller --prefix src/repoindex/query\n"
-            "  repoindex calls imported_helper --module pkg.b --incoming"
+            "  repoindex calls imported_helper --module pkg.b --incoming\n"
+            "  repoindex calls caller --prefix src/repoindex/query"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -365,10 +367,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  repoindex refs helper\n"
             "  repoindex refs helper --json\n"
+            "  repoindex refs helper --incoming --tree\n"
             "  repoindex refs helper --tree --dot\n"
-            "  repoindex refs helper --prefix src/repoindex/query\n"
             "  repoindex refs _retrieve_script_candidates --incoming\n"
-            "  repoindex refs imported_helper --module pkg.b --incoming"
+            "  repoindex refs imported_helper --module pkg.b --incoming\n"
+            "  repoindex refs helper --prefix src/repoindex/query"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -450,13 +453,13 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             '  repoindex context-for "find schema migration logic"\n'
-            '  repoindex context-for "find schema migration logic" --prefix '
-            "src/repoindex/query\n"
-            '  repoindex context-for "schema migration rules"\n'
-            '  repoindex context-for --json "static call graph"\n'
+            '  repoindex context-for --json "schema migration rules"\n'
             '  repoindex context-for --prompt "add a test for imported calls"\n'
             "  repoindex context-for --explain "
-            '"why does symbol lookup rank this result?"'
+            '"why does symbol lookup rank this result?"\n'
+            '  repoindex context-for "find schema migration logic" --prefix '
+            "src/repoindex/query\n"
+            '  repoindex context-for "static call graph"'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
