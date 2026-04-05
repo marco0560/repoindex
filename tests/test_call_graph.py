@@ -542,13 +542,14 @@ def test_context_for_expands_related_cross_module_graph_symbols(
         (row["module"], row["name"])
         for row in imported_data["top_matches"] + imported_data["module_expansion"]
     }
-    registry_expansion = {
-        (row["module"], row["name"]) for row in registry_data["module_expansion"]
+    registry_related = {
+        (row["module"], row["name"])
+        for row in registry_data["top_matches"] + registry_data["module_expansion"]
     }
 
     assert ("pkg.a", "imported_caller") in imported_related
     assert ("pkg.a", "registry") in imported_related
-    assert ("pkg.b", "imported_helper") in registry_expansion
+    assert ("pkg.b", "imported_helper") in registry_related
 
 
 def test_context_for_explain_marks_call_graph_and_reference_producers_as_used(
@@ -586,6 +587,50 @@ def test_context_for_explain_marks_call_graph_and_reference_producers_as_used(
     assert "graph_relations" in signal_collection["capabilities"]
     assert "query-enrichment-call-graph" in signal_collection["used_producers"]
     assert "query-enrichment-references" in signal_collection["used_producers"]
+
+
+def test_context_for_uses_bounded_graph_retrieval_to_score_top_matches(
+    tmp_path: Path,
+) -> None:
+    """
+    Add bounded graph evidence to ranked top matches during retrieval.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts top matches carry explicit graph-family retrieval
+        support once bounded graph scoring is integrated.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    payload = json.loads(
+        context_for(
+            tmp_path,
+            "helper registry",
+            as_json=True,
+            explain=True,
+        )
+    )
+
+    top_matches = {(row["module"], row["name"]) for row in payload["top_matches"]}
+    signal_collection = payload["explain"]["signal_collection"]
+    signal_merge = payload["explain"]["signal_merge"]
+    signal_support = {(entry["module"], entry["name"]): entry for entry in signal_merge}
+
+    assert ("pkg.a", "registry") in top_matches
+    assert "graph" in signal_collection["families"]
+    assert signal_support[("pkg.a", "registry")]["families"]["graph"] > 0
+    assert (
+        "query-enrichment-references"
+        in signal_support[("pkg.a", "registry")]["producers"]
+    )
 
 
 def test_c_include_edges_are_queryable_and_expand_context(tmp_path: Path) -> None:

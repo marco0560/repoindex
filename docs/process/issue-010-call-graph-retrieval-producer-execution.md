@@ -138,6 +138,7 @@ Exit criteria:
 * call-graph evidence appears as a bounded retrieval-time contribution
 * explain output makes that contribution visible
 * ranking remains stable and test-covered
+* status: complete
 
 ### Phase 6 — Optional graph/export surfaces
 

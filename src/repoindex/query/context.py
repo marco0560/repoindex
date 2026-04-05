@@ -22,7 +22,7 @@ import contextlib
 import json
 import re
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -121,8 +121,12 @@ CHANNEL_WEIGHTS: dict[ChannelName, float] = {
     "semantic": 1.0,
     "test": 1.0,
     "script": 1.0,
+    "call_graph": 0.35,
+    "references": 0.3,
+    "include_graph": 0.25,
 }
 MERGE_CROSS_FAMILY_BONUS = 0.15
+GRAPH_RETRIEVAL_LIMIT_PER_PRODUCER = 5
 FileRole = Literal["implementation", "interface", "test", "tooling", "other"]
 SelectionStage = Literal["primary", "deferred"]
 DeferralReason = Literal["file_cap", "role_cap", "language_cap"]
@@ -2112,6 +2116,172 @@ def _signals_from_channel_producer(
         )
 
     return signals
+
+
+def _graph_channel_name_for_signal(signal: RetrievalSignal) -> ChannelName | None:
+    """
+    Map one graph producer signal onto a bounded ranking pseudo-channel.
+
+    Parameters
+    ----------
+    signal : repoindex.query.signals.RetrievalSignal
+        Graph-derived signal emitted by one enrichment producer.
+
+    Returns
+    -------
+    repoindex.types.ChannelName | None
+        Stable pseudo-channel name used during bounded graph ranking, or
+        ``None`` when the signal should not influence retrieval-time ranking.
+    """
+    producer_to_channel: dict[str, ChannelName] = {
+        "query-enrichment-call-graph": "call_graph",
+        "query-enrichment-references": "references",
+        "query-enrichment-include-graph": "include_graph",
+    }
+    return producer_to_channel.get(signal.producer_name)
+
+
+def _strength_for_graph_signal(distance: int, support_count: int) -> float:
+    """
+    Compute a bounded retrieval strength for one graph-supported target.
+
+    Parameters
+    ----------
+    distance : int
+        Best graph distance observed for the target.
+    support_count : int
+        Number of raw graph relations supporting the same target.
+
+    Returns
+    -------
+    float
+        Deterministic bounded strength that rewards direct and repeated graph
+        evidence without overwhelming stronger primary channels.
+    """
+    repeat_bonus = min(float(max(support_count - 1, 0)) * 0.1, 0.3)
+    return (1.0 / float(max(distance, 1))) + repeat_bonus
+
+
+def _bounded_graph_retrieval_signals(
+    raw_graph_signals: list[RetrievalSignal],
+) -> list[RetrievalSignal]:
+    """
+    Convert raw graph expansion evidence into bounded ranking signals.
+
+    Parameters
+    ----------
+    raw_graph_signals : list[repoindex.query.signals.RetrievalSignal]
+        Raw graph-derived signals collected around current top matches.
+
+    Returns
+    -------
+    list[repoindex.query.signals.RetrievalSignal]
+        Deterministically ranked graph signals that can participate in the
+        normal retrieval merge path.
+    """
+    grouped: dict[
+        tuple[ChannelName, SymbolRow],
+        tuple[RetrievalSignal, int, int],
+    ] = {}
+
+    for signal in sorted(raw_graph_signals, key=signal_sort_key):
+        channel_name = _graph_channel_name_for_signal(signal)
+        if channel_name is None:
+            continue
+        distance = signal.distance if signal.distance is not None else 1
+        key = (channel_name, signal.target)
+        if key not in grouped:
+            grouped[key] = (signal, distance, 1)
+            continue
+
+        representative, best_distance, support_count = grouped[key]
+        if distance < best_distance:
+            representative = signal
+            best_distance = distance
+        grouped[key] = (representative, best_distance, support_count + 1)
+
+    ranked_signals: list[RetrievalSignal] = []
+    grouped_by_channel: dict[
+        ChannelName,
+        list[tuple[RetrievalSignal, int, int]],
+    ] = {}
+    for (channel_name, _target), value in grouped.items():
+        grouped_by_channel.setdefault(channel_name, []).append(value)
+
+    for channel_name, items in sorted(grouped_by_channel.items()):
+        ranked_items = sorted(
+            items,
+            key=lambda item: (
+                -_strength_for_graph_signal(item[1], item[2]),
+                item[1],
+                *_symbol_sort_key(item[0].target),
+            ),
+        )
+        for rank, (signal, distance, support_count) in enumerate(
+            ranked_items[:GRAPH_RETRIEVAL_LIMIT_PER_PRODUCER], start=1
+        ):
+            ranked_signals.append(
+                replace(
+                    signal,
+                    channel_name=channel_name,
+                    rank=rank,
+                    strength=_strength_for_graph_signal(distance, support_count),
+                    distance=distance,
+                )
+            )
+
+    return sorted(ranked_signals, key=signal_sort_key)
+
+
+def _collect_graph_retrieval_signals(  # noqa: PLR0913
+    root: Path,
+    top_matches: list[SymbolRow],
+    conn: sqlite3.Connection,
+    *,
+    include_include_graph: bool,
+    include_references: bool,
+    prefix: str | None,
+) -> list[RetrievalSignal]:
+    """
+    Collect bounded graph-derived retrieval signals around current top matches.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Repository root containing the index database.
+    top_matches : list[repoindex.types.SymbolRow]
+        Current retrieval winners used as bounded graph-expansion seeds.
+    conn : sqlite3.Connection
+        Open database connection reused for exact graph lookups.
+    include_include_graph : bool
+        Whether include-graph evidence is enabled by the retrieval plan.
+    include_references : bool
+        Whether callable-reference evidence is enabled by the retrieval plan.
+    prefix : str | None
+        Absolute normalized prefix used to restrict owner files and symbols.
+
+    Returns
+    -------
+    list[repoindex.query.signals.RetrievalSignal]
+        Bounded graph-derived retrieval signals eligible for merged ranking.
+    """
+    raw_graph_signals: list[RetrievalSignal] = []
+    expand_graph_related_symbols(
+        root,
+        top_matches,
+        conn,
+        include_include_graph=include_include_graph,
+        include_references=include_references,
+        prefix=prefix,
+        expanded=[],
+        seen_symbols=set(top_matches),
+        graph_signals=raw_graph_signals,
+        classify_file_language=_classify_file_language,
+        classify_file_role=_classify_file_role,
+        include_target_module_name=_include_target_module_name,
+        symbols_in_module=_symbols_in_module,
+    )
+    return _bounded_graph_retrieval_signals(raw_graph_signals)
 
 
 def _collect_retrieval_signals(
@@ -4280,20 +4450,16 @@ def context_for(
         normalized_prefix,
     )
 
+    ordered_channels: list[ChannelName] | None = [
+        name for name, _ in _get_channel_functions(plan)
+    ]
+    assert ordered_channels is not None
+    channel_producers = _channel_retrieval_producers(ordered_channels)
+
     if explain:
-        ranked_merged, provenance = _rank_merged_symbols_with_provenance(
-            bundles,
-            intent=intent,
-        )
-        top_matches, diversity = _diversify_merged_symbols_explain(
-            [symbol for symbol, _score in ranked_merged]
-        )
         enabled = _enabled_channels(plan)
         priority = _channel_priority(plan)
-        ordered_channels = [name for name, _ in _get_channel_functions(plan)]
-        retrieval_producers = _channel_retrieval_producers(
-            ordered_channels
-        ) + selected_enrichment_producers(
+        retrieval_producers = channel_producers + selected_enrichment_producers(
             include_issue_annotations=_is_issue_query(query) or plan.include_doc_issues,
             include_references=plan.include_references,
             include_include_graph=plan.include_include_graph,
@@ -4304,26 +4470,26 @@ def context_for(
             producers=retrieval_producers,
         )
     else:
-        top_matches = _merge_ranked_channels(bundles, intent=intent)
         enabled = None
         priority = None
+        retrieval_signals, _signal_collection = _collect_retrieval_signals(
+            bundles,
+            producers=channel_producers,
+        )
+
+    ranked_merged, provenance = _rank_signals_with_provenance(
+        retrieval_signals,
+        intent=intent,
+    )
+    if explain:
+        top_matches, diversity = _diversify_merged_symbols_explain(
+            [symbol for symbol, _score in ranked_merged]
+        )
+    else:
+        top_matches = _diversify_merged_symbols(
+            [symbol for symbol, _score in ranked_merged]
+        )
         ordered_channels = None
-
-    # --- confidence estimation (lightweight, deterministic) ---
-    confidence_map: dict[SymbolRow, float] = {}
-
-    query_tokens = list(_tokenize(query))
-
-    for rank, symbol in enumerate(top_matches):
-        base = 1.0 - (rank / max(len(top_matches), 1))
-        name = symbol[2].lower()
-        overlap = sum(1 for t in query_tokens if t in name)
-
-        confidence = base + (0.1 * overlap)
-
-        confidence = min(confidence, 1.0)
-
-        confidence_map[symbol] = confidence
 
     # --- PHASE 2B: issue-driven candidate enrichment ---
     if _is_issue_query(query):
@@ -4353,6 +4519,7 @@ def context_for(
         filtered_matches.append(sym)
 
     top_matches = filtered_matches
+    confidence_map: dict[SymbolRow, float] = {}
 
     if not top_matches:
         if as_json:
@@ -4400,6 +4567,46 @@ def context_for(
         conn.close()
         return "No relevant matches found."
 
+    graph_retrieval_signals = _collect_graph_retrieval_signals(
+        root,
+        top_matches,
+        conn,
+        include_include_graph=plan.include_include_graph,
+        include_references=plan.include_references,
+        prefix=normalized_prefix,
+    )
+    if graph_retrieval_signals:
+        retrieval_signals = sorted(
+            [*retrieval_signals, *graph_retrieval_signals],
+            key=signal_sort_key,
+        )
+        ranked_merged, provenance = _rank_signals_with_provenance(
+            retrieval_signals,
+            intent=intent,
+        )
+        if explain:
+            top_matches, diversity = _diversify_merged_symbols_explain(
+                [symbol for symbol, _score in ranked_merged]
+            )
+        else:
+            top_matches = _diversify_merged_symbols(
+                [symbol for symbol, _score in ranked_merged]
+            )
+
+    # --- confidence estimation (lightweight, deterministic) ---
+    query_tokens = list(_tokenize(query))
+
+    for rank, symbol in enumerate(top_matches):
+        base = 1.0 - (rank / max(len(top_matches), 1))
+        name = symbol[2].lower()
+        overlap = sum(1 for t in query_tokens if t in name)
+
+        confidence = base + (0.1 * overlap)
+
+        confidence = min(confidence, 1.0)
+
+        confidence_map[symbol] = confidence
+
     # --- PHASE 3: related docstring issues ---
     if plan.include_doc_issues:
         doc_issues, related_symbols = _collect_doc_issues_and_related(
@@ -4428,7 +4635,6 @@ def context_for(
         include_include_graph=plan.include_include_graph,
         include_references=plan.include_references,
         prefix=normalized_prefix,
-        graph_signals=retrieval_signals if explain else None,
     )
 
     if explain and signal_collection is not None:

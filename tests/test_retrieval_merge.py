@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from repoindex.query.classifier import build_retrieval_plan, classify_query
 from repoindex.query.context import (
     MERGE_RESULT_LIMIT,
+    _bounded_graph_retrieval_signals,
     _channel_retrieval_producers,
     _collect_retrieval_signals,
     _dedupe_channel_results,
@@ -532,6 +533,63 @@ def test_graph_expansion_still_keeps_enrichment_producers_out_of_initial_collect
 
     assert isinstance(ignored_producers, list)
     assert "query-enrichment-call-graph" in ignored_producers
+
+
+def test_bounded_graph_retrieval_signals_promote_graph_evidence_into_ranking() -> None:
+    """
+    Convert repeated raw graph evidence into bounded ranking-ready signals.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts graph evidence gains pseudo-channel metadata while
+        keeping the bounded per-producer cap and deterministic ordering.
+    """
+    seed = _symbol("function", "pkg.seed", "search", "src/seed.py", 10)
+    alpha = _symbol("function", "pkg.alpha", "run", "src/a.py", 20)
+    beta = _symbol("function", "pkg.beta", "build", "src/b.py", 30)
+
+    ranked = _bounded_graph_retrieval_signals(
+        [
+            CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
+                kind="relation",
+                target=alpha,
+                source_symbol=seed,
+                distance=1,
+            ),
+            CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
+                kind="relation",
+                target=alpha,
+                source_symbol=seed,
+                distance=1,
+            ),
+            CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
+                kind="relation",
+                target=beta,
+                source_symbol=seed,
+                distance=2,
+            ),
+            REFERENCE_RETRIEVAL_PRODUCER.build_signal(
+                kind="relation",
+                target=beta,
+                source_symbol=seed,
+                distance=1,
+            ),
+        ]
+    )
+
+    assert [(signal.channel_name, signal.target, signal.rank) for signal in ranked] == [
+        ("call_graph", alpha, 1),
+        ("call_graph", beta, 2),
+        ("references", beta, 1),
+    ]
+    assert ranked[0].strength == 1.1
+    assert ranked[1].strength == 0.5
+    assert ranked[2].strength == 1.0
 
 
 def test_rank_signals_with_provenance_matches_channel_merge_contract() -> None:
