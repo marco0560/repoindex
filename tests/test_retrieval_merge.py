@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from repoindex.query.classifier import build_retrieval_plan, classify_query
 from repoindex.query.context import (
     MERGE_RESULT_LIMIT,
+    _bounded_graph_retrieval_signals,
     _channel_retrieval_producers,
     _collect_retrieval_signals,
     _dedupe_channel_results,
@@ -31,8 +32,11 @@ from repoindex.query.context import (
     _signals_from_channel_bundles,
 )
 from repoindex.query.producers import (
+    CALL_GRAPH_RETRIEVAL_PRODUCER,
     CHANNEL_PRODUCER_SPECS,
     EMBEDDING_RETRIEVAL_PRODUCER,
+    INCLUDE_GRAPH_RETRIEVAL_PRODUCER,
+    REFERENCE_RETRIEVAL_PRODUCER,
     selected_enrichment_producers,
 )
 
@@ -146,6 +150,34 @@ def test_embedding_channel_uses_native_retrieval_producer() -> None:
         embedding producer instance directly.
     """
     assert CHANNEL_PRODUCER_SPECS["embedding"] is EMBEDDING_RETRIEVAL_PRODUCER
+
+
+def test_graph_enrichment_specs_use_native_retrieval_producers() -> None:
+    """
+    Keep graph enrichment metadata bound to native producer instances.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts selected enrichment producers preserve their
+        deterministic order while exposing native call, reference, and include
+        producer instances.
+    """
+    producers = selected_enrichment_producers(
+        include_issue_annotations=False,
+        include_references=True,
+        include_include_graph=True,
+    )
+
+    assert producers == [
+        CALL_GRAPH_RETRIEVAL_PRODUCER,
+        REFERENCE_RETRIEVAL_PRODUCER,
+        INCLUDE_GRAPH_RETRIEVAL_PRODUCER,
+    ]
 
 
 def test_merge_ranked_channel_bundles_explain_dedupes_and_orders_ties() -> None:
@@ -472,6 +504,92 @@ def test_collect_retrieval_signals_uses_known_channel_producers_only() -> None:
             "query-enrichment-references",
         ],
     }
+
+
+def test_graph_expansion_still_keeps_enrichment_producers_out_of_initial_collection() -> (
+    None
+):
+    """
+    Keep graph enrichments diagnostics-only before expansion contributes signals.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the extracted graph enrichment path does not change
+        initial capability-gated collection semantics.
+    """
+    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
+    bundles = [("symbol", [(9.0, alpha)])]
+    producers = _query_producers("architecture graph cache flow", bundles)
+
+    signals, diagnostics = _collect_retrieval_signals(bundles, producers=producers)
+
+    assert [signal.producer_name for signal in signals] == ["query-channel-symbol"]
+    ignored_producers = diagnostics["ignored_producers"]
+
+    assert isinstance(ignored_producers, list)
+    assert "query-enrichment-call-graph" in ignored_producers
+
+
+def test_bounded_graph_retrieval_signals_promote_graph_evidence_into_ranking() -> None:
+    """
+    Convert repeated raw graph evidence into bounded ranking-ready signals.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts graph evidence gains pseudo-channel metadata while
+        keeping the bounded per-producer cap and deterministic ordering.
+    """
+    seed = _symbol("function", "pkg.seed", "search", "src/seed.py", 10)
+    alpha = _symbol("function", "pkg.alpha", "run", "src/a.py", 20)
+    beta = _symbol("function", "pkg.beta", "build", "src/b.py", 30)
+
+    ranked = _bounded_graph_retrieval_signals(
+        [
+            CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
+                kind="relation",
+                target=alpha,
+                source_symbol=seed,
+                distance=1,
+            ),
+            CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
+                kind="relation",
+                target=alpha,
+                source_symbol=seed,
+                distance=1,
+            ),
+            CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
+                kind="relation",
+                target=beta,
+                source_symbol=seed,
+                distance=2,
+            ),
+            REFERENCE_RETRIEVAL_PRODUCER.build_signal(
+                kind="relation",
+                target=beta,
+                source_symbol=seed,
+                distance=1,
+            ),
+        ]
+    )
+
+    assert [(signal.channel_name, signal.target, signal.rank) for signal in ranked] == [
+        ("call_graph", alpha, 1),
+        ("call_graph", beta, 2),
+        ("references", beta, 1),
+    ]
+    assert ranked[0].strength == 1.1
+    assert ranked[1].strength == 0.5
+    assert ranked[2].strength == 1.0
 
 
 def test_rank_signals_with_provenance_matches_channel_merge_contract() -> None:

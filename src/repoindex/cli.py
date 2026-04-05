@@ -40,6 +40,10 @@ from repoindex.indexer import (
 from repoindex.prefix import normalize_prefix
 from repoindex.query.context import context_for
 from repoindex.query.exact import (
+    CallTreeNode,
+    CallTreeResult,
+    build_call_tree,
+    build_ref_tree,
     docstring_issues,
     embedding_inventory,
     find_call_edges,
@@ -298,6 +302,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  repoindex calls caller\n"
             "  repoindex calls caller --json\n"
+            "  repoindex calls caller --tree --dot\n"
             "  repoindex calls caller --prefix src/repoindex/query\n"
             "  repoindex calls imported_helper --module pkg.b --incoming"
         ),
@@ -322,6 +327,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output structured JSON for machine consumption",
     )
     calls_parser.add_argument(
+        "--dot",
+        action="store_true",
+        help="Render a bounded tree as Graphviz DOT; requires --tree",
+    )
+    calls_parser.add_argument(
+        "--tree",
+        action="store_true",
+        help="Render a bounded traversal tree instead of a flat edge list",
+    )
+    calls_parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=2,
+        help="Maximum traversal depth used by --tree (default: 2)",
+    )
+    calls_parser.add_argument(
+        "--max-nodes",
+        type=int,
+        default=20,
+        help="Maximum number of rendered nodes used by --tree (default: 20)",
+    )
+    calls_parser.add_argument(
         "--prefix",
         help="Restrict caller files to this repo-root-relative path prefix",
     )
@@ -338,6 +365,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  repoindex refs helper\n"
             "  repoindex refs helper --json\n"
+            "  repoindex refs helper --tree --dot\n"
             "  repoindex refs helper --prefix src/repoindex/query\n"
             "  repoindex refs _retrieve_script_candidates --incoming\n"
             "  repoindex refs imported_helper --module pkg.b --incoming"
@@ -361,6 +389,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Output structured JSON for machine consumption",
+    )
+    refs_parser.add_argument(
+        "--dot",
+        action="store_true",
+        help="Render a bounded tree as Graphviz DOT; requires --tree",
+    )
+    refs_parser.add_argument(
+        "--tree",
+        action="store_true",
+        help="Render a bounded traversal tree instead of a flat reference list",
+    )
+    refs_parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=2,
+        help="Maximum traversal depth used by --tree (default: 2)",
+    )
+    refs_parser.add_argument(
+        "--max-nodes",
+        type=int,
+        default=20,
+        help="Maximum number of rendered nodes used by --tree (default: 20)",
     )
     refs_parser.add_argument(
         "--prefix",
@@ -1287,6 +1337,10 @@ def _run_calls(
     *,
     module: str | None,
     incoming: bool,
+    as_tree: bool = False,
+    as_dot: bool = False,
+    max_depth: int = 2,
+    max_nodes: int = 20,
     prefix: str | None = None,
     as_json: bool = False,
     query_prefix: str | None = None,
@@ -1305,6 +1359,14 @@ def _run_calls(
     incoming : bool
         Whether to show incoming edges for a callee instead of outgoing edges
         for a caller.
+    as_tree : bool, optional
+        Whether to render a bounded traversal tree instead of a flat edge list.
+    as_dot : bool, optional
+        Whether to render the bounded tree as Graphviz DOT.
+    max_depth : int, optional
+        Maximum traversal depth used by the tree mode.
+    max_nodes : int, optional
+        Maximum number of rendered nodes used by the tree mode.
     prefix : str | None, optional
         Repo-root-relative path prefix used to restrict caller files.
     as_json : bool, optional
@@ -1317,6 +1379,76 @@ def _run_calls(
     int
         Zero when at least one edge is found, otherwise one.
     """
+    if max_depth < 0:
+        print("--max-depth must be >= 0", file=sys.stderr)
+        return 2
+    if max_nodes < 1:
+        print("--max-nodes must be >= 1", file=sys.stderr)
+        return 2
+
+    if as_tree:
+        tree = build_call_tree(
+            root,
+            name,
+            module=module,
+            incoming=incoming,
+            prefix=prefix,
+            max_depth=max_depth,
+            max_nodes=max_nodes,
+        )
+        if as_json:
+            _emit_json(
+                _query_payload(
+                    "calls",
+                    "ok" if tree is not None else "no_matches",
+                    {
+                        "name": name,
+                        "module": module,
+                        "incoming": incoming,
+                        "tree": True,
+                        "max_depth": max_depth,
+                        "max_nodes": max_nodes,
+                        "prefix": query_prefix,
+                    },
+                    [_call_tree_result_payload(tree)] if tree is not None else [],
+                    truncated=(
+                        {
+                            "depth": tree.truncated_by_depth,
+                            "nodes": tree.truncated_by_nodes,
+                        }
+                        if tree is not None
+                        else {"depth": False, "nodes": False}
+                    ),
+                    node_count=tree.node_count if tree is not None else 0,
+                    edge_count=tree.edge_count if tree is not None else 0,
+                )
+            )
+            return 0 if tree is not None else 1
+
+        if tree is None:
+            direction = "callee" if incoming else "caller"
+            if module is None:
+                print(f"No call edges found for {direction}: {name}")
+            else:
+                print(f"No call edges found for {direction}: {module}.{name}")
+            return 1
+
+        if as_dot:
+            for line in _render_relation_tree_dot(tree, graph_name="repoindex_calls"):
+                print(line)
+            return 0
+
+        for line in _render_call_tree_lines(tree):
+            print(line)
+        if tree.truncated_by_depth or tree.truncated_by_nodes:
+            truncation_bits: list[str] = []
+            if tree.truncated_by_depth:
+                truncation_bits.append(f"max_depth={max_depth}")
+            if tree.truncated_by_nodes:
+                truncation_bits.append(f"max_nodes={max_nodes}")
+            print(f"truncated: {', '.join(truncation_bits)}")
+        return 0
+
     rows = find_call_edges(
         root,
         name,
@@ -1377,12 +1509,283 @@ def _run_calls(
     return 0
 
 
+def _call_tree_display(module: str | None, name: str, *, resolved: bool) -> str:
+    """
+    Render a compact display label for one call-tree node.
+
+    Parameters
+    ----------
+    module : str | None
+        Owning module when the node resolves to an indexed symbol.
+    name : str
+        Logical symbol name or unresolved placeholder.
+    resolved : bool
+        Whether the node resolves to a concrete indexed symbol.
+
+    Returns
+    -------
+    str
+        Display label suitable for plain-text tree rendering.
+    """
+    if not resolved:
+        return name
+    if module is None:
+        return name
+    return f"{module}.{name}"
+
+
+def _dot_node_id(index: int) -> str:
+    """
+    Return a deterministic DOT node identifier for one rendered tree node.
+
+    Parameters
+    ----------
+    index : int
+        Zero-based traversal index assigned during DOT emission.
+
+    Returns
+    -------
+    str
+        Stable Graphviz-safe node identifier.
+    """
+    return f"n{index}"
+
+
+def _dot_escape(value: str) -> str:
+    """
+    Escape one string value for safe inclusion in DOT labels.
+
+    Parameters
+    ----------
+    value : str
+        Raw label value to escape.
+
+    Returns
+    -------
+    str
+        DOT-safe double-quoted label content.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _render_relation_tree_dot(
+    tree: CallTreeResult,
+    *,
+    graph_name: str,
+) -> list[str]:
+    """
+    Render a bounded relation tree as Graphviz DOT.
+
+    Parameters
+    ----------
+    tree : repoindex.query.exact.CallTreeResult
+        Traversal result to render.
+    graph_name : str
+        Stable graph name used in the DOT header.
+
+    Returns
+    -------
+    list[str]
+        Deterministic DOT lines describing the rendered bounded tree.
+    """
+    lines = [f"digraph {graph_name} {{", "  rankdir=LR;"]
+    node_counter = 0
+    root_id = _dot_node_id(node_counter)
+    root_label = _dot_escape(
+        _call_tree_display(tree.root_module, tree.root_name, resolved=True)
+    )
+    lines.append(f'  {root_id} [label="{root_label}"];')
+
+    def append_children(
+        parent_id: str,
+        nodes: tuple[CallTreeNode, ...],
+    ) -> None:
+        nonlocal node_counter
+        for node in nodes:
+            node_counter += 1
+            node_id = _dot_node_id(node_counter)
+            node_label = _call_tree_display(
+                node.module,
+                node.name,
+                resolved=node.resolved,
+            )
+            attributes = [f'label="{_dot_escape(node_label)}"']
+            if not node.resolved:
+                attributes.append('style="dashed"')
+            if node.cycle:
+                attributes.append('peripheries="2"')
+            lines.append(f"  {node_id} [{', '.join(attributes)}];")
+            if tree.incoming:
+                lines.append(f"  {node_id} -> {parent_id};")
+            else:
+                lines.append(f"  {parent_id} -> {node_id};")
+            append_children(node_id, node.children)
+
+    append_children(root_id, tree.children)
+
+    truncation_bits: list[str] = []
+    if tree.truncated_by_depth:
+        truncation_bits.append("max_depth")
+    if tree.truncated_by_nodes:
+        truncation_bits.append("max_nodes")
+    if truncation_bits:
+        lines.append(
+            f'  graph [label="truncated by {", ".join(truncation_bits)}", labelloc="b"];'
+        )
+    lines.append("}")
+    return lines
+
+
+def _call_tree_node_payload(node: CallTreeNode) -> dict[str, object]:
+    """
+    Serialize one bounded call-tree node for JSON output.
+
+    Parameters
+    ----------
+    node : repoindex.query.exact.CallTreeNode
+        Tree node to serialize.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable tree node payload.
+    """
+    return {
+        "module": node.module,
+        "name": node.name,
+        "display": _call_tree_display(
+            node.module,
+            node.name,
+            resolved=node.resolved,
+        ),
+        "resolved": node.resolved,
+        "cycle": node.cycle,
+        "children": [_call_tree_node_payload(child) for child in node.children],
+    }
+
+
+def _call_tree_result_payload(tree: CallTreeResult) -> dict[str, object]:
+    """
+    Serialize one bounded call-tree result for JSON output.
+
+    Parameters
+    ----------
+    tree : repoindex.query.exact.CallTreeResult
+        Traversal result to serialize.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable root payload for the bounded tree.
+    """
+    return {
+        "module": tree.root_module,
+        "name": tree.root_name,
+        "display": _call_tree_display(
+            tree.root_module,
+            tree.root_name,
+            resolved=True,
+        ),
+        "resolved": True,
+        "incoming": tree.incoming,
+        "cycle": False,
+        "children": [_call_tree_node_payload(child) for child in tree.children],
+    }
+
+
+def _render_call_tree_lines(tree: CallTreeResult) -> list[str]:
+    """
+    Render a bounded call tree as deterministic plain-text lines.
+
+    Parameters
+    ----------
+    tree : repoindex.query.exact.CallTreeResult
+        Traversal result to render.
+
+    Returns
+    -------
+    list[str]
+        Deterministic plain-text lines for the bounded tree.
+    """
+    lines = [
+        _call_tree_display(
+            tree.root_module,
+            tree.root_name,
+            resolved=True,
+        )
+    ]
+    marker = "<- " if tree.incoming else "-> "
+
+    def append_children(nodes: tuple[CallTreeNode, ...], *, depth: int) -> None:
+        for node in nodes:
+            suffix = " [cycle]" if node.cycle else ""
+            lines.append(
+                f"{'  ' * depth}{marker}"
+                f"{_call_tree_display(node.module, node.name, resolved=node.resolved)}"
+                f"{suffix}"
+            )
+            append_children(node.children, depth=depth + 1)
+
+    append_children(tree.children, depth=1)
+    return lines
+
+
+def _render_relation_tree_lines(
+    tree: CallTreeResult,
+    *,
+    outgoing_marker: str,
+    incoming_marker: str,
+) -> list[str]:
+    """
+    Render a bounded relation tree with caller-selected edge markers.
+
+    Parameters
+    ----------
+    tree : repoindex.query.exact.CallTreeResult
+        Traversal result to render.
+    outgoing_marker : str
+        Marker used for outgoing traversal edges.
+    incoming_marker : str
+        Marker used for incoming traversal edges.
+
+    Returns
+    -------
+    list[str]
+        Deterministic plain-text lines for the bounded relation tree.
+    """
+    lines = [
+        _call_tree_display(
+            tree.root_module,
+            tree.root_name,
+            resolved=True,
+        )
+    ]
+    marker = incoming_marker if tree.incoming else outgoing_marker
+
+    def append_children(nodes: tuple[CallTreeNode, ...], *, depth: int) -> None:
+        for node in nodes:
+            suffix = " [cycle]" if node.cycle else ""
+            lines.append(
+                f"{'  ' * depth}{marker}"
+                f"{_call_tree_display(node.module, node.name, resolved=node.resolved)}"
+                f"{suffix}"
+            )
+            append_children(node.children, depth=depth + 1)
+
+    append_children(tree.children, depth=1)
+    return lines
+
+
 def _run_refs(
     root: Path,
     name: str,
     *,
     module: str | None,
     incoming: bool,
+    as_tree: bool = False,
+    as_dot: bool = False,
+    max_depth: int = 2,
+    max_nodes: int = 20,
     prefix: str | None = None,
     as_json: bool = False,
     query_prefix: str | None = None,
@@ -1401,6 +1804,14 @@ def _run_refs(
     incoming : bool
         Whether to show incoming references for a target instead of outgoing
         references for an owner.
+    as_tree : bool, optional
+        Whether to render a bounded traversal tree instead of a flat reference list.
+    as_dot : bool, optional
+        Whether to render the bounded tree as Graphviz DOT.
+    max_depth : int, optional
+        Maximum traversal depth used by the tree mode.
+    max_nodes : int, optional
+        Maximum number of rendered nodes used by the tree mode.
     prefix : str | None, optional
         Repo-root-relative path prefix used to restrict owner files.
     as_json : bool, optional
@@ -1413,6 +1824,80 @@ def _run_refs(
     int
         Zero when at least one reference is found, otherwise one.
     """
+    if max_depth < 0:
+        print("--max-depth must be >= 0", file=sys.stderr)
+        return 2
+    if max_nodes < 1:
+        print("--max-nodes must be >= 1", file=sys.stderr)
+        return 2
+
+    if as_tree:
+        tree = build_ref_tree(
+            root,
+            name,
+            module=module,
+            incoming=incoming,
+            prefix=prefix,
+            max_depth=max_depth,
+            max_nodes=max_nodes,
+        )
+        if as_json:
+            _emit_json(
+                _query_payload(
+                    "refs",
+                    "ok" if tree is not None else "no_matches",
+                    {
+                        "name": name,
+                        "module": module,
+                        "incoming": incoming,
+                        "tree": True,
+                        "max_depth": max_depth,
+                        "max_nodes": max_nodes,
+                        "prefix": query_prefix,
+                    },
+                    [_call_tree_result_payload(tree)] if tree is not None else [],
+                    truncated=(
+                        {
+                            "depth": tree.truncated_by_depth,
+                            "nodes": tree.truncated_by_nodes,
+                        }
+                        if tree is not None
+                        else {"depth": False, "nodes": False}
+                    ),
+                    node_count=tree.node_count if tree is not None else 0,
+                    edge_count=tree.edge_count if tree is not None else 0,
+                )
+            )
+            return 0 if tree is not None else 1
+
+        if tree is None:
+            direction = "target" if incoming else "owner"
+            if module is None:
+                print(f"No callable references found for {direction}: {name}")
+            else:
+                print(f"No callable references found for {direction}: {module}.{name}")
+            return 1
+
+        if as_dot:
+            for line in _render_relation_tree_dot(tree, graph_name="repoindex_refs"):
+                print(line)
+            return 0
+
+        for line in _render_relation_tree_lines(
+            tree,
+            outgoing_marker="=> ",
+            incoming_marker="<= ",
+        ):
+            print(line)
+        if tree.truncated_by_depth or tree.truncated_by_nodes:
+            truncation_bits: list[str] = []
+            if tree.truncated_by_depth:
+                truncation_bits.append(f"max_depth={max_depth}")
+            if tree.truncated_by_nodes:
+                truncation_bits.append(f"max_nodes={max_nodes}")
+            print(f"truncated: {', '.join(truncation_bits)}")
+        return 0
+
     rows = find_callable_refs(
         root,
         name,
@@ -1924,23 +2409,39 @@ def main() -> int:
                 query_prefix=raw_prefix,
             )
         if args.command == "calls":
+            if args.dot and not args.tree:
+                parser.error("--dot requires --tree for calls")
+            if args.dot and args.json:
+                parser.error("--dot cannot be combined with --json for calls")
             _ensure_index(root)
             return _run_calls(
                 root,
                 args.name,
                 module=args.module,
                 incoming=args.incoming,
+                as_tree=args.tree,
+                as_dot=args.dot,
+                max_depth=args.max_depth,
+                max_nodes=args.max_nodes,
                 prefix=prefix,
                 as_json=args.json,
                 query_prefix=raw_prefix,
             )
         if args.command == "refs":
+            if args.dot and not args.tree:
+                parser.error("--dot requires --tree for refs")
+            if args.dot and args.json:
+                parser.error("--dot cannot be combined with --json for refs")
             _ensure_index(root)
             return _run_refs(
                 root,
                 args.name,
                 module=args.module,
                 incoming=args.incoming,
+                as_tree=args.tree,
+                as_dot=args.dot,
+                max_depth=args.max_depth,
+                max_nodes=args.max_nodes,
                 prefix=prefix,
                 as_json=args.json,
                 query_prefix=raw_prefix,

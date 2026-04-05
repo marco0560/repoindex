@@ -286,6 +286,59 @@ def test_calls_cli_prints_incoming_edges(
     assert captured.out.strip() == "pkg.a.imported_caller -> pkg.b.imported_helper"
 
 
+def test_calls_cli_tree_prints_bounded_outgoing_traversal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render a bounded outgoing call tree without changing flat call output.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts deterministic tree rendering for a small caller
+        neighborhood.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "calls",
+            "caller",
+            "--tree",
+            "--max-depth",
+            "2",
+            "--max-nodes",
+            "10",
+        ],
+    )
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip().splitlines() == [
+        "pkg.a.caller",
+        "  -> pkg.a.dynamic",
+        "    -> <unresolved>",
+        "  -> pkg.a.helper",
+    ]
+
+
 def test_refs_cli_prints_incoming_references(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -329,6 +382,60 @@ def test_refs_cli_prints_incoming_references(
     assert main() == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == "pkg.a.registry => pkg.a.helper"
+
+
+def test_refs_cli_tree_prints_bounded_incoming_references(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render a bounded incoming reference tree while preserving flat refs output.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts deterministic tree rendering for a small incoming
+        reference neighborhood.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "refs",
+            "helper",
+            "--module",
+            "pkg.a",
+            "--incoming",
+            "--tree",
+            "--max-depth",
+            "2",
+            "--max-nodes",
+            "10",
+        ],
+    )
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip().splitlines() == [
+        "pkg.a.helper",
+        "  <= pkg.a.registry",
+    ]
 
 
 def test_c_call_edges_are_indexed_for_same_module_functions(tmp_path: Path) -> None:
@@ -435,13 +542,95 @@ def test_context_for_expands_related_cross_module_graph_symbols(
         (row["module"], row["name"])
         for row in imported_data["top_matches"] + imported_data["module_expansion"]
     }
-    registry_expansion = {
-        (row["module"], row["name"]) for row in registry_data["module_expansion"]
+    registry_related = {
+        (row["module"], row["name"])
+        for row in registry_data["top_matches"] + registry_data["module_expansion"]
     }
 
     assert ("pkg.a", "imported_caller") in imported_related
     assert ("pkg.a", "registry") in imported_related
-    assert ("pkg.b", "imported_helper") in registry_expansion
+    assert ("pkg.b", "imported_helper") in registry_related
+
+
+def test_context_for_explain_marks_call_graph_and_reference_producers_as_used(
+    tmp_path: Path,
+) -> None:
+    """
+    Preserve explain-mode producer attribution for graph expansion evidence.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts call-graph and callable-reference enrichments move
+        from diagnostics-only to used producers when they emit graph signals.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    payload = json.loads(
+        context_for(
+            tmp_path,
+            "imported_helper",
+            as_json=True,
+            explain=True,
+        )
+    )
+    signal_collection = payload["explain"]["signal_collection"]
+
+    assert "graph" in signal_collection["families"]
+    assert "graph_relations" in signal_collection["capabilities"]
+    assert "query-enrichment-call-graph" in signal_collection["used_producers"]
+    assert "query-enrichment-references" in signal_collection["used_producers"]
+
+
+def test_context_for_uses_bounded_graph_retrieval_to_score_top_matches(
+    tmp_path: Path,
+) -> None:
+    """
+    Add bounded graph evidence to ranked top matches during retrieval.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts top matches carry explicit graph-family retrieval
+        support once bounded graph scoring is integrated.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    payload = json.loads(
+        context_for(
+            tmp_path,
+            "helper registry",
+            as_json=True,
+            explain=True,
+        )
+    )
+
+    top_matches = {(row["module"], row["name"]) for row in payload["top_matches"]}
+    signal_collection = payload["explain"]["signal_collection"]
+    signal_merge = payload["explain"]["signal_merge"]
+    signal_support = {(entry["module"], entry["name"]): entry for entry in signal_merge}
+
+    assert ("pkg.a", "registry") in top_matches
+    assert "graph" in signal_collection["families"]
+    assert signal_support[("pkg.a", "registry")]["families"]["graph"] > 0
+    assert (
+        "query-enrichment-references"
+        in signal_support[("pkg.a", "registry")]["producers"]
+    )
 
 
 def test_c_include_edges_are_queryable_and_expand_context(tmp_path: Path) -> None:
@@ -692,3 +881,296 @@ def test_query_subcommand_help_includes_json_examples(
         output = capsys.readouterr().out
         assert "--json" in output
         assert example in output
+
+
+def test_calls_cli_tree_json_reports_truncation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Expose explicit truncation metadata for bounded tree traversal.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts JSON tree output includes explicit node-cap
+        truncation.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "calls",
+            "caller",
+            "--tree",
+            "--max-depth",
+            "2",
+            "--max-nodes",
+            "2",
+            "--json",
+        ],
+    )
+
+    assert main() == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["command"] == "calls"
+    assert payload["status"] == "ok"
+    assert payload["query"] == {
+        "name": "caller",
+        "module": None,
+        "incoming": False,
+        "tree": True,
+        "max_depth": 2,
+        "max_nodes": 2,
+        "prefix": None,
+    }
+    assert payload["truncated"] == {"depth": False, "nodes": True}
+    assert payload["node_count"] == 2
+    assert payload["edge_count"] == 1
+    assert payload["results"] == [
+        {
+            "module": "pkg.a",
+            "name": "caller",
+            "display": "pkg.a.caller",
+            "resolved": True,
+            "incoming": False,
+            "cycle": False,
+            "children": [
+                {
+                    "module": "pkg.a",
+                    "name": "dynamic",
+                    "display": "pkg.a.dynamic",
+                    "resolved": True,
+                    "cycle": False,
+                    "children": [],
+                }
+            ],
+        }
+    ]
+
+
+def test_calls_cli_tree_dot_renders_bounded_graphviz_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render bounded call-tree traversal as Graphviz DOT.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts `calls --tree --dot` emits deterministic DOT with
+        bounded traversal edges.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "calls",
+            "caller",
+            "--tree",
+            "--dot",
+            "--max-depth",
+            "1",
+        ],
+    )
+
+    assert main() == 0
+    output = capsys.readouterr().out
+
+    assert "digraph repoindex_calls {" in output
+    assert 'n0 [label="pkg.a.caller"];' in output
+    assert 'n1 [label="pkg.a.dynamic"];' in output
+    assert "n0 -> n1;" in output
+    assert 'graph [label="truncated by max_depth", labelloc="b"];' in output
+
+
+def test_refs_cli_tree_json_reports_truncation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Expose explicit truncation metadata for bounded ref-tree traversal.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts JSON tree output includes explicit depth-cap
+        truncation for incoming refs.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "refs",
+            "helper",
+            "--module",
+            "pkg.a",
+            "--incoming",
+            "--tree",
+            "--max-depth",
+            "0",
+            "--max-nodes",
+            "10",
+            "--json",
+        ],
+    )
+
+    assert main() == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["command"] == "refs"
+    assert payload["status"] == "ok"
+    assert payload["truncated"] == {"depth": True, "nodes": False}
+    assert payload["node_count"] == 1
+    assert payload["edge_count"] == 0
+    assert payload["results"] == [
+        {
+            "module": "pkg.a",
+            "name": "helper",
+            "display": "pkg.a.helper",
+            "resolved": True,
+            "incoming": True,
+            "cycle": False,
+            "children": [],
+        }
+    ]
+
+
+def test_refs_cli_tree_dot_renders_incoming_graphviz_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Render bounded ref traversal as Graphviz DOT with incoming edge direction.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts incoming `refs --tree --dot` points owners toward the
+        selected target.
+    """
+    _write_fixture(tmp_path)
+    init_db(tmp_path)
+    index_repo(tmp_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repoindex",
+            "refs",
+            "helper",
+            "--module",
+            "pkg.a",
+            "--incoming",
+            "--tree",
+            "--dot",
+            "--max-depth",
+            "1",
+        ],
+    )
+
+    assert main() == 0
+    output = capsys.readouterr().out
+
+    assert "digraph repoindex_refs {" in output
+    assert 'n0 [label="pkg.a.helper"];' in output
+    assert 'n1 [label="pkg.a.registry"];' in output
+    assert "n1 -> n0;" in output
+
+
+def test_calls_cli_dot_rejects_non_tree_and_json_combinations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Reject unsupported DOT flag combinations at the parser boundary.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to control process state.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture parser stderr.
+
+    Returns
+    -------
+    None
+        The test asserts `--dot` remains tree-only and plain-text only.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["repoindex", "calls", "caller", "--dot", "--json"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 2
+    assert "--dot requires --tree for calls" in capsys.readouterr().err

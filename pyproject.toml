@@ -16,8 +16,9 @@ semantic = [
 
 bundle-official = [
   "sentence-transformers>=3.0",
-  "repoindex-analyzer-c",
-  "repoindex-analyzer-bash"
+  "tree-sitter>=0.25.2",
+  "tree-sitter-c>=0.24.1",
+  "tree-sitter-bash>=0.25.1"
 ]
 
 dev = [
@@ -255,6 +256,11 @@ unfixable = [
 ]
 "src/repoindex/contracts.py" = [
     "PLR0913", # protocol method arity follows backend/query contracts
+]
+"src/repoindex/query/graph_enrichment.py" = [
+    "PLR0913", # graph enrichment orchestration requires explicit graph/context inputs
+    "PLR0912", # bounded graph expansion branches by edge direction and relation type
+    "C901", # graph enrichment is orchestration-heavy rather than algorithmically complex
 ]
 "src/repoindex/docstring.py" = [
     "PLR0913", # validation API exposes independent semantic flags

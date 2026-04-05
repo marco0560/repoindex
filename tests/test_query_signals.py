@@ -17,6 +17,7 @@ This module belongs to the **retrieval normalization verification layer** that p
 
 from __future__ import annotations
 
+from repoindex.query.producers import CALL_GRAPH_RETRIEVAL_PRODUCER
 from repoindex.query.signals import RetrievalSignal, signal_sort_key
 
 
@@ -144,3 +145,40 @@ def test_signal_preserves_versioned_producer_and_capability_attribution() -> Non
     assert signal.capability_version == "1"
     assert signal.source_symbol == source
     assert not hasattr(signal, "merge_score")
+
+
+def test_graph_retrieval_producer_builds_normalized_relation_signal() -> None:
+    """
+    Keep graph signal construction routed through the native producer surface.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the call-graph producer emits the normalized graph
+        signal shape used by explain-mode enrichment.
+    """
+    source = _symbol("function", "pkg.beta", "caller", "src/b.py", 20)
+    target = _symbol("function", "pkg.alpha", "callee", "src/a.py", 10)
+
+    signal = CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
+        kind="relation",
+        target=target,
+        source_symbol=source,
+        distance=1,
+    )
+
+    assert signal == RetrievalSignal(
+        kind="relation",
+        family="graph",
+        target=target,
+        producer_name="query-enrichment-call-graph",
+        producer_version="1",
+        capability_name="graph_relations",
+        capability_version="1",
+        source_symbol=source,
+        distance=1,
+    )

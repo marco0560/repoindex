@@ -10,11 +10,11 @@ modules, or workflows that are not present in the repo.
 Run the standard local validation loop before concluding a change:
 
 ```bash
-git check
-black --check .
-ruff check .
-mypy .
-pytest
+source .venv/bin/activate
+black --check src scripts tests
+ruff check src scripts tests
+mypy src scripts tests
+pytest -q
 ```
 
 Use the repository-local `.venv` for all Python-facing tools.

@@ -29,6 +29,15 @@ other:
 
 Phase 1 does **not** change runtime behavior.
 
+## Phase 2 Outcome
+
+Phase 2 is complete when:
+
+* call-graph enrichment orchestration lives outside `context.py`
+* `context.py` delegates graph expansion to a dedicated query module
+* native graph enrichment producers remain visible in explain diagnostics
+* ranking and explain behavior stay covered by deterministic regression tests
+
 ## Detailed Implementation Plan
 
 ### Phase 2 — Native call-graph retrieval producer extraction
@@ -58,6 +67,16 @@ Exit criteria:
 * call-graph signal collection no longer lives inline in `context.py`
 * ranking and explain output remain behaviorally stable
 * tests cover mixed producer collection deterministically
+
+### Phase 3 Outcome
+
+Phase 3 is complete when:
+
+* `calls` keeps its existing flat output by default
+* bounded traversal is opt-in and explicit through CLI flags
+* traversal order is deterministic
+* truncation is visible in plain text and JSON output
+* no unbounded repository-wide expansion exists by default
 
 ### Phase 3 — Bounded `calls` user surface
 
@@ -119,6 +138,7 @@ Exit criteria:
 * call-graph evidence appears as a bounded retrieval-time contribution
 * explain output makes that contribution visible
 * ranking remains stable and test-covered
+* status: complete
 
 ### Phase 6 — Optional graph/export surfaces
 
@@ -141,6 +161,7 @@ Constraints:
 Exit criteria:
 
 * optional export exists only if its value is clear and its limits are explicit
+* status: complete via bounded `calls --tree --dot` and `refs --tree --dot`
 
 ## Non-Goals
 

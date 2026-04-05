@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -49,7 +50,12 @@ from repoindex.models import (
 )
 from repoindex.normalization import analysis_result_from_parsed
 from repoindex.parser_ast import parse_file
-from repoindex.query.producers import EMBEDDING_RETRIEVAL_PRODUCER
+from repoindex.query.producers import (
+    CALL_GRAPH_RETRIEVAL_PRODUCER,
+    EMBEDDING_RETRIEVAL_PRODUCER,
+    INCLUDE_GRAPH_RETRIEVAL_PRODUCER,
+    REFERENCE_RETRIEVAL_PRODUCER,
+)
 from repoindex.registry import (
     _instantiate_language_analyzers,
     active_index_backend,
@@ -63,6 +69,8 @@ from repoindex.semantic.embeddings import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pytest import MonkeyPatch
 from repoindex.scanner import (
     discovery_file_globs,
@@ -481,6 +489,9 @@ def test_language_analyzer_index_backend_and_retrieval_protocols_are_runtime_che
     assert isinstance(_FakeBackend(), IndexBackend)
     assert isinstance(_FakeRetrievalProducer(), RetrievalProducer)
     assert isinstance(EMBEDDING_RETRIEVAL_PRODUCER, RetrievalProducer)
+    assert isinstance(CALL_GRAPH_RETRIEVAL_PRODUCER, RetrievalProducer)
+    assert isinstance(REFERENCE_RETRIEVAL_PRODUCER, RetrievalProducer)
+    assert isinstance(INCLUDE_GRAPH_RETRIEVAL_PRODUCER, RetrievalProducer)
 
 
 def test_split_declared_retrieval_capabilities_partitions_known_and_unknown() -> None:
@@ -515,6 +526,39 @@ def test_split_declared_retrieval_capabilities_partitions_known_and_unknown() ->
     )
     assert unknown == ("future_extension",)
     assert "symbol_lookup" in KNOWN_RETRIEVAL_CAPABILITIES
+
+
+def test_root_optional_dependencies_support_monorepo_bundle_install() -> None:
+    """
+    Keep root extras compatible with editable installs in the current monorepo.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the root package keeps the curated bundle limited to
+        resolver-safe parser dependencies and preserves the canonical docs
+        extra.
+    """
+    with Path("pyproject.toml").open("rb") as pyproject_file:
+        project = tomllib.load(pyproject_file)["project"]
+
+    optional_dependencies = project["optional-dependencies"]
+
+    assert optional_dependencies["docs"] == [
+        "mkdocs>=1.6",
+        "mkdocs-material>=9.7",
+        "mkdocstrings[python]>=0.24",
+    ]
+    assert optional_dependencies["bundle-official"] == [
+        "sentence-transformers>=3.0",
+        "tree-sitter>=0.25.2",
+        "tree-sitter-c>=0.24.1",
+        "tree-sitter-bash>=0.25.1",
+    ]
 
 
 def test_active_phase_8_registries_expose_default_backend_and_analyzers() -> None:
@@ -554,16 +598,14 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
     None
         The test asserts the registry keeps Python active and omits C.
     """
-    real_entry_points = registry_module._entry_points_for_group
-
-    def fake_entry_points(group: str) -> list[object]:
-        entries = real_entry_points(group)
-        if group != registry_module.ANALYZER_ENTRY_POINT_GROUP:
-            return cast("list[object]", entries)
-        filtered = [entry for entry in entries if entry.name != "c"]
-        return cast("list[object]", filtered)
-
-    monkeypatch.setattr(registry_module, "_entry_points_for_group", fake_entry_points)
+    monkeypatch.setattr(
+        registry_module,
+        "_registered_language_analyzer_factories",
+        lambda: (
+            cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
+            cast("Callable[[], LanguageAnalyzer]", BashAnalyzer),
+        ),
+    )
 
     analyzers = active_language_analyzers()
 
@@ -591,16 +633,14 @@ def test_select_language_analyzer_reports_optional_extra_hint(
     The test captures the ``ValueError`` internally, so it does not expose a
     ``Raises`` contract to callers.
     """
-    real_entry_points = registry_module._entry_points_for_group
-
-    def fake_entry_points(group: str) -> list[object]:
-        entries = real_entry_points(group)
-        if group != registry_module.ANALYZER_ENTRY_POINT_GROUP:
-            return cast("list[object]", entries)
-        filtered = [entry for entry in entries if entry.name != "c"]
-        return cast("list[object]", filtered)
-
-    monkeypatch.setattr(registry_module, "_entry_points_for_group", fake_entry_points)
+    monkeypatch.setattr(
+        registry_module,
+        "_registered_language_analyzer_factories",
+        lambda: (
+            cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
+            cast("Callable[[], LanguageAnalyzer]", BashAnalyzer),
+        ),
+    )
 
     analyzers = active_language_analyzers()
 

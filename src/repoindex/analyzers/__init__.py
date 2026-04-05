@@ -26,7 +26,7 @@ __all__ = ["PythonAnalyzer"]
 try:
     c_module = importlib.import_module("repoindex.analyzers.c")
 except ModuleNotFoundError as exc:
-    if exc.name != "repoindex_analyzer_c":
+    if exc.name not in {"repoindex_analyzer_c", "tree_sitter_c"}:
         raise
 else:
     CAnalyzer = c_module.CAnalyzer
@@ -35,7 +35,7 @@ else:
 try:
     bash_module = importlib.import_module("repoindex.analyzers.bash")
 except ModuleNotFoundError as exc:
-    if exc.name != "repoindex_analyzer_bash":
+    if exc.name not in {"repoindex_analyzer_bash", "tree_sitter_bash"}:
         raise
 else:
     BashAnalyzer = bash_module.BashAnalyzer

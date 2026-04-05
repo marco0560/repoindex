@@ -75,16 +75,25 @@ repoindex context-for "schema migration rules"
 repoindex context-for "missing numpy docstring" --json
 ```
 
+Inspect bounded graph traversal and optional DOT export:
+
+```bash
+repoindex calls build_parser --tree
+repoindex calls build_parser --tree --dot
+repoindex refs _retrieve_script_candidates --incoming --tree
+repoindex refs _retrieve_script_candidates --incoming --tree --dot
+```
+
 ## Validation surface
 
 The repository expects contributors to run:
 
 ```bash
-git check
-black --check .
-ruff check .
-mypy .
-pytest
+source .venv/bin/activate
+black --check src scripts tests
+ruff check src scripts tests
+mypy src scripts tests
+pytest -q
 ```
 
 Use the repository `.venv` for all Python-facing commands.
