@@ -40,19 +40,14 @@ from repoindex.query.classifier import (
 )
 from repoindex.query.exact import (
     docstring_issues,
-    find_call_edges,
-    find_callable_refs,
     find_include_edges,
-    find_logical_symbols,
     find_symbol,
-    logical_symbol_name,
 )
+from repoindex.query.graph_enrichment import expand_graph_related_symbols
 from repoindex.query.producers import (
-    CALL_GRAPH_RETRIEVAL_PRODUCER,
     CHANNEL_PRODUCER_SPECS,
     EMBEDDING_RETRIEVAL_PRODUCER,
     INCLUDE_GRAPH_RETRIEVAL_PRODUCER,
-    REFERENCE_RETRIEVAL_PRODUCER,
     QueryChannelSpec,
     QueryProducerSpec,
     channel_producer_specs,
@@ -3063,174 +3058,25 @@ def _expand_graph_related_symbols(
     list[dict[str, object]]
         Deterministic include-graph diagnostics collected during expansion.
     """
-    include_expansion: list[dict[str, object]] = []
-
-    for symbol in top_matches:
-        if include_include_graph:
-            include_related, include_entries = _expand_include_graph_neighbors(
-                root,
-                symbol,
-                conn,
-                prefix=prefix,
-                graph_signals=graph_signals,
-            )
-            for related in include_related:
-                _add_related_symbol(expanded, seen_symbols, related)
-            include_expansion.extend(include_entries)
-
-        symbol_type, module_name, _name, _file_path, _lineno = symbol
-        if symbol_type not in {"function", "method"}:
-            continue
-
-        logical_name = logical_symbol_name(root, symbol, conn=conn)
-        outgoing_edges = find_call_edges(
-            root,
-            logical_name,
-            module=module_name,
+    return expand_graph_related_symbols(
+        root,
+        top_matches,
+        conn,
+        include_include_graph=include_include_graph,
+        include_references=include_references,
+        prefix=prefix,
+        expanded=expanded,
+        seen_symbols=seen_symbols,
+        graph_signals=graph_signals,
+        classify_file_language=_classify_file_language,
+        classify_file_role=_classify_file_role,
+        include_target_module_name=_include_target_module_name,
+        symbols_in_module=lambda module_root, module_name: _symbols_in_module(
+            module_root,
+            module_name,
             prefix=prefix,
-            conn=conn,
-        )
-        incoming_edges = find_call_edges(
-            root,
-            logical_name,
-            module=module_name,
-            incoming=True,
-            prefix=prefix,
-            conn=conn,
-        )
-        outgoing_refs = (
-            find_callable_refs(
-                root,
-                logical_name,
-                module=module_name,
-                prefix=prefix,
-                conn=conn,
-            )
-            if include_references
-            else []
-        )
-        incoming_refs = (
-            find_callable_refs(
-                root,
-                logical_name,
-                module=module_name,
-                incoming=True,
-                prefix=prefix,
-                conn=conn,
-            )
-            if include_references
-            else []
-        )
-
-        for (
-            _caller_module,
-            _caller_name,
-            callee_module,
-            callee_name,
-            resolved,
-        ) in outgoing_edges:
-            if not resolved or callee_module is None or callee_name is None:
-                continue
-            for related in find_logical_symbols(
-                root,
-                callee_module,
-                callee_name,
-                prefix=prefix,
-                conn=conn,
-            ):
-                _add_related_symbol(expanded, seen_symbols, related)
-                if graph_signals is not None:
-                    graph_signals.append(
-                        CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
-                            kind="relation",
-                            target=related,
-                            source_symbol=symbol,
-                            distance=1,
-                        )
-                    )
-
-        for (
-            caller_module,
-            caller_name,
-            _callee_module,
-            _callee_name,
-            resolved,
-        ) in incoming_edges:
-            if not resolved:
-                continue
-            for related in find_logical_symbols(
-                root,
-                caller_module,
-                caller_name,
-                prefix=prefix,
-                conn=conn,
-            ):
-                _add_related_symbol(expanded, seen_symbols, related)
-                if graph_signals is not None:
-                    graph_signals.append(
-                        CALL_GRAPH_RETRIEVAL_PRODUCER.build_signal(
-                            kind="relation",
-                            target=related,
-                            source_symbol=symbol,
-                            distance=1,
-                        )
-                    )
-
-        for (
-            _owner_module,
-            _owner_name,
-            target_module,
-            target_name,
-            resolved,
-        ) in outgoing_refs:
-            if not resolved or target_module is None or target_name is None:
-                continue
-            for related in find_logical_symbols(
-                root,
-                target_module,
-                target_name,
-                prefix=prefix,
-                conn=conn,
-            ):
-                _add_related_symbol(expanded, seen_symbols, related)
-                if graph_signals is not None:
-                    graph_signals.append(
-                        REFERENCE_RETRIEVAL_PRODUCER.build_signal(
-                            kind="relation",
-                            target=related,
-                            source_symbol=symbol,
-                            distance=1,
-                        )
-                    )
-
-        for (
-            owner_module,
-            owner_name,
-            _target_module,
-            _target_name,
-            resolved,
-        ) in incoming_refs:
-            if not resolved:
-                continue
-            for related in find_logical_symbols(
-                root,
-                owner_module,
-                owner_name,
-                prefix=prefix,
-                conn=conn,
-            ):
-                _add_related_symbol(expanded, seen_symbols, related)
-                if graph_signals is not None:
-                    graph_signals.append(
-                        REFERENCE_RETRIEVAL_PRODUCER.build_signal(
-                            kind="relation",
-                            target=related,
-                            source_symbol=symbol,
-                            distance=1,
-                        )
-                    )
-
-    return include_expansion
+        ),
+    )
 
 
 def _expand_module_related_symbols(

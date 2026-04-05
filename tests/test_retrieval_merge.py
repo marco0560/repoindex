@@ -505,6 +505,35 @@ def test_collect_retrieval_signals_uses_known_channel_producers_only() -> None:
     }
 
 
+def test_graph_expansion_still_keeps_enrichment_producers_out_of_initial_collection() -> (
+    None
+):
+    """
+    Keep graph enrichments diagnostics-only before expansion contributes signals.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the extracted graph enrichment path does not change
+        initial capability-gated collection semantics.
+    """
+    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
+    bundles = [("symbol", [(9.0, alpha)])]
+    producers = _query_producers("architecture graph cache flow", bundles)
+
+    signals, diagnostics = _collect_retrieval_signals(bundles, producers=producers)
+
+    assert [signal.producer_name for signal in signals] == ["query-channel-symbol"]
+    ignored_producers = diagnostics["ignored_producers"]
+
+    assert isinstance(ignored_producers, list)
+    assert "query-enrichment-call-graph" in ignored_producers
+
+
 def test_rank_signals_with_provenance_matches_channel_merge_contract() -> None:
     """
     Preserve current merge behavior when ranking from normalized signals.
