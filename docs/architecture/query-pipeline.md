@@ -25,7 +25,7 @@ having `query/exact.py` own raw SQLite connection setup and SQL execution.
 
 - exact-symbol matches
 - docstring issue matches
-- static references and call edges
+- bounded graph evidence from static references, call edges, and include edges
 - embedding-ranked candidates
 
 The current retrieval stack merges these channels into a deterministic context
@@ -53,6 +53,12 @@ The resulting retrieval plan now owns:
 - whether docstring issue enrichment should run
 - whether include-graph expansion should run
 - whether cross-reference collection should run
+
+The current `context-for` implementation uses call-graph, callable-reference,
+and include-graph data twice but in bounded forms:
+
+- as low-weight retrieval-time evidence that can support ranking
+- as bounded post-merge expansion around the current top matches
 
 The current capability-driven retrieval path also owns shared retrieval
 producer metadata in `src/repoindex/query/producers.py`.

@@ -166,6 +166,8 @@ Inspect static call edges:
 ```bash
 repoindex calls context_for
 repoindex calls context_for --json
+repoindex calls context_for --tree
+repoindex calls context_for --tree --dot
 repoindex calls imported_helper --module pkg.b --incoming
 repoindex calls imported_helper --module pkg.b --incoming --prefix src/repoindex/query
 ```
@@ -175,6 +177,8 @@ Inspect callable-object references such as registry bindings:
 ```bash
 repoindex refs _retrieve_script_candidates --module repoindex.query.context --incoming
 repoindex refs _retrieve_script_candidates --incoming --json
+repoindex refs _retrieve_script_candidates --incoming --tree
+repoindex refs _retrieve_script_candidates --incoming --tree --dot
 repoindex refs _retrieve_script_candidates --incoming --prefix src/repoindex/query
 ```
 
@@ -203,6 +207,228 @@ Emit a prompt-oriented view:
 ```bash
 repoindex context-for "parse inventory validation flow" --prompt
 ```
+
+## Command Guide
+
+Use the subcommands in roughly this order during development and maintenance:
+refresh the index, inspect exact symbols or relations, then ask for broader
+task-oriented context.
+
+### 0. `index`
+
+Use `index` to build or refresh the repository-local snapshot that every other
+retrieval command depends on.
+
+Suggested use cases:
+
+- first use in a repository
+- after switching branches
+- after rebases, pulls, or merges
+- after significant code or structure changes
+- before trusting results from `symbol`, `calls`, `refs`, `context-for`, or
+  `audit-docstrings`
+
+Examples:
+
+```bash
+repoindex index
+repoindex index --require-full-coverage
+```
+
+Expected result semantics:
+
+- refreshes `.repoindex/` for the current working tree
+- makes later queries deterministic against the current indexed state
+- should be rerun when you suspect the current snapshot is stale
+
+### 1. `symbol`
+
+Use `symbol` when you already know the exact symbol name and want the indexed
+definition sites.
+
+Suggested use cases:
+
+- jump to `build_parser`, `context_for`, or another known symbol
+- confirm exact defining files before editing
+- narrow down repeated symbol names with `--prefix`
+
+Examples:
+
+```bash
+repoindex symbol build_parser
+repoindex symbol build_parser --json
+repoindex symbol build_parser --prefix src/repoindex
+```
+
+Expected result semantics:
+
+- returns exact symbol-name matches, not semantic approximations
+- is best when the symbol name is already known
+
+### 2. `embeddings`
+
+Use `embeddings` to inspect the embedding channel by itself.
+
+Suggested use cases:
+
+- debug semantic recall
+- inspect backend metadata and raw embedding-ranked matches
+- compare embedding-only behavior with `context-for`
+
+Examples:
+
+```bash
+repoindex embeddings "schema migration rules"
+repoindex embeddings "schema migration rules" --json
+```
+
+Expected result semantics:
+
+- shows embedding-ranked matches only
+- does not include the multi-channel merge used by `context-for`
+
+### 3. `calls`
+
+Use `calls` to inspect direct indexed static call edges.
+
+Suggested use cases:
+
+- see what a function directly calls
+- see who directly calls a function with `--incoming`
+- render a bounded traversal with `--tree`
+- export a bounded traversal as Graphviz DOT with `--tree --dot`
+
+Examples:
+
+```bash
+repoindex calls context_for
+repoindex calls context_for --incoming
+repoindex calls context_for --tree
+repoindex calls context_for --tree --dot
+```
+
+Expected result semantics:
+
+- covers direct static call edges only
+- tree mode remains bounded by `--max-depth` and `--max-nodes`
+- DOT export is opt-in and only available for bounded tree mode
+
+### 4. `refs`
+
+Use `refs` to inspect callable-object references rather than direct call sites.
+
+Suggested use cases:
+
+- inspect registry bindings
+- see which owners return or store a callable object
+- trace incoming owners of one callable target with `--incoming`
+- render or export a bounded reference tree
+
+Examples:
+
+```bash
+repoindex refs _retrieve_script_candidates --incoming
+repoindex refs _retrieve_script_candidates --incoming --tree
+repoindex refs _retrieve_script_candidates --incoming --tree --dot
+```
+
+Expected result semantics:
+
+- focuses on callable-object references such as registries, assignment values,
+  and returned function objects
+- is complementary to `calls`, not interchangeable with it
+
+### 5. `context-for`
+
+Use `context-for` when you have a task or question rather than an exact symbol
+name.
+
+Suggested use cases:
+
+- understand where behavior lives for a bug fix
+- prepare a maintenance or refactor pass
+- gather bounded context for an agent or review workflow
+- inspect retrieval diagnostics with `--explain`
+
+Examples:
+
+```bash
+repoindex context-for "schema migration rules"
+repoindex context-for "missing numpy docstring" --json
+repoindex context-for "parse inventory validation flow" --prompt
+repoindex context-for "missing numpy docstring" --explain
+```
+
+Expected result semantics:
+
+- uses bounded multi-channel retrieval rather than exact lookup only
+- can use bounded graph evidence during ranking
+- can expand related cross-module symbols after ranking
+- is a focused context pack, not a full repository report
+
+### 6. `audit-docstrings`
+
+Use `audit-docstrings` to inspect indexed docstring problems directly.
+
+Suggested use cases:
+
+- run a documentation cleanup pass
+- focus audits on one subtree with `--prefix`
+- emit machine-readable results for automation with `--json`
+
+Examples:
+
+```bash
+repoindex audit-docstrings
+repoindex audit-docstrings --prefix src/repoindex/query
+repoindex audit-docstrings --json
+```
+
+Expected result semantics:
+
+- reports indexed docstring issues, not arbitrary style suggestions
+- is most useful after a fresh `repoindex index`
+
+### 7. `plugins`
+
+Use `plugins` to inspect which capabilities are active and where they come
+from.
+
+Suggested use cases:
+
+- confirm whether a capability came from core, an official package, or a
+  third-party plugin
+- verify packaging and installation state in a repository
+
+Examples:
+
+```bash
+repoindex plugins
+repoindex plugins --json
+```
+
+Expected result semantics:
+
+- reports installed or active plugin and capability surfaces
+- is useful when debugging environment or packaging issues
+
+### 8. Common Flags and Modes
+
+The most important cross-cutting flags are:
+
+- `--prefix`: scope results to one subtree or file
+- `--json`: machine-readable output
+- `--prompt`: compact agent handoff for `context-for`
+- `--explain`: retrieval diagnostics for `context-for`
+- `--tree`: bounded traversal mode for `calls` and `refs`
+- `--dot`: Graphviz DOT export for bounded `calls` and `refs` trees
+
+Practical rule:
+
+- use exact commands first when you already know what you are looking for
+- use `context-for` when the task is known but the exact symbol is not
+- rerun `index` whenever you would not trust the current snapshot
+- always read the referenced files before patching
 
 ## Using `--prefix`
 
@@ -432,8 +658,11 @@ Important limits:
 - `repoindex calls` only covers direct static call sites
 - `repoindex refs` should be used for callable-object references such as
   registry values, assignment values, and returned function objects
-- `context-for` uses stored call and callable-reference data to pull in
-  related cross-module symbols around top function and method matches
+- `repoindex calls --tree` and `repoindex refs --tree` provide bounded
+  traversal views, and `--dot` renders those bounded trees as Graphviz DOT
+- `context-for` now uses bounded graph evidence during retrieval and then uses
+  stored call and callable-reference data to pull in related cross-module
+  symbols around top function and method matches
 
 Recommended use:
 
