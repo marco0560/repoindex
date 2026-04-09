@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from repoindex_backend_sqlite import SQLiteIndexBackend
 
+import repoindex.indexer as indexer_module
 import repoindex.registry as registry_module
 from repoindex.analyzers import BashAnalyzer, CAnalyzer, JsonAnalyzer, PythonAnalyzer
 from repoindex.analyzers.c import _disambiguate_function_stable_ids
@@ -1030,6 +1031,22 @@ def test_active_phase_8_registries_expose_default_backend_and_analyzers() -> Non
     assert isinstance(backend, IndexBackend)
     assert isinstance(backend, SQLiteIndexBackend)
     assert [analyzer.name for analyzer in analyzers] == ["python", "json", "c", "bash"]
+
+
+def test_indexer_sqlite_backend_symbol_reexports_package_backend() -> None:
+    """
+    Keep the historical indexer backend symbol as a package-backed re-export.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts core no longer owns a separate SQLite backend class.
+    """
+    assert indexer_module.SQLiteIndexBackend is SQLiteIndexBackend
 
 
 def test_registered_index_backends_keep_core_scope_narrow() -> None:

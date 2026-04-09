@@ -27,8 +27,10 @@ from pathlib import Path
 from time import perf_counter
 from typing import cast
 
+from repoindex_backend_sqlite import SQLiteIndexBackend
+
 from repoindex import indexer
-from repoindex.indexer import SQLiteIndexBackend, index_repo
+from repoindex.indexer import index_repo
 from repoindex.semantic import embeddings as embeddings_module
 
 
