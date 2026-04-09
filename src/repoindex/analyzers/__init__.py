@@ -2,14 +2,14 @@
 
 Responsibilities
 ----------------
-- Re-export the built-in Python and JSON analyzers.
+- Re-export the current default analyzer shims and built-ins.
 - Preserve transitional imports for extracted first-party analyzers when their
   packages are installed.
 - Keep analyzer imports lightweight for registry and test callers.
 
 Design principles
 -----------------
-The package stays lightweight and avoids owning optional first-party analyzer
+The package stays lightweight and avoids owning extracted first-party analyzer
 implementations directly.
 
 Architectural role

@@ -2,8 +2,9 @@
 
 from typing import cast
 
+from repoindex_backend_sqlite import SQLiteIndexBackend
+
 from repoindex.contracts import IndexBackend
-from repoindex.indexer import SQLiteIndexBackend
 
 
 class DemoBackend(SQLiteIndexBackend):

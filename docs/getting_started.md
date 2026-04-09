@@ -10,10 +10,16 @@ python3 scripts/bootstrap_dev_environment.py
 ```
 
 The bootstrap script installs the core package, the extracted first-party
-analyzer packages, and the local embedding dependencies. It also provisions the
-local model artifact used by the real embedding backend, so `repoindex index`
-can build persisted embeddings without ad hoc first-run downloads inside this
-repository.
+analyzer/backend packages, and the local embedding dependencies. It also
+provisions the local model artifact used by the real embedding backend, so
+`repoindex index` can build persisted embeddings without ad hoc first-run
+downloads inside this repository.
+
+The repository-local first-party package set is owned by:
+
+```bash
+python scripts/install_first_party_packages.py
+```
 
 ## Install into another repository
 
@@ -24,19 +30,23 @@ Example:
 
 ```bash
 source .venv/bin/activate
-pip install -e ../repoindex[semantic]
-pip install -e ../repoindex/packages/repoindex-analyzer-c
-pip install -e ../repoindex/packages/repoindex-analyzer-bash
+python ../repoindex/scripts/install_first_party_packages.py \
+  --python "$VIRTUAL_ENV/bin/python" \
+  --include-core \
+  --core-extra semantic
 ```
 
 This keeps the `repoindex` CLI available in the target repository while using
 the live source tree from this repository.
 
 The current source-tree install keeps the embedding stack in the core package
-while the extracted first-party analyzers are installed from `packages/`.
-The accepted published bundle name is `repoindex[bundle-official]`. Inside the
-current source tree, the extracted first-party packages are still installed
-explicitly from `packages/`.
+while the extracted first-party analyzers and backend are installed from
+`packages/`.
+The accepted published umbrella name remains `repoindex[bundle-official]`, but
+that is a published-package contract rather than a source-tree shortcut. While
+working from the current checkout, the extracted first-party packages are still
+installed explicitly from `packages/`, and the canonical local package set is
+the one installed by `scripts/install_first_party_packages.py`.
 
 Use `repoindex plugins` after installation if you want to verify whether a
 capability came from the core package, an official extracted package, or a
