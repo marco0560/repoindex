@@ -86,6 +86,10 @@ Notes:
 
 * Each package now has package-local tests under its own `tests/` directory.
 * Package-local README verification snippets already point at those test paths.
+* Before the first publish, local split-repo rehearsal should install the
+  current core checkout explicitly rather than resolving `repoindex` from an
+  index. Use `scripts/verify_exported_split_repos.py` from the monorepo for
+  that pre-publish validation pass.
 
 ## Bundle Repository
 
@@ -112,3 +116,6 @@ Notes:
 
 * The bundle repo is metadata-heavy and does not own a `src/` tree.
 * The package-local test remains focused on dependency metadata integrity.
+* Before publication, bundle rehearsal also needs the local first-party package
+  repos installed explicitly. Use `scripts/verify_exported_split_repos.py`
+  rather than a plain `pip install -e ".[test]"` from a clean environment.

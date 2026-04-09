@@ -16,3 +16,11 @@ dependencies = [
     "repoindex-analyzer-bash",
     "repoindex-backend-sqlite",
 ]
+
+[project.optional-dependencies]
+test = [
+    "black",
+    "mypy",
+    "pytest",
+    "ruff",
+]

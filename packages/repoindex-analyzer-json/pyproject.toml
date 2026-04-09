@@ -12,6 +12,14 @@ dependencies = [
     "repoindex",
 ]
 
+[project.optional-dependencies]
+test = [
+    "black",
+    "mypy",
+    "pytest",
+    "ruff",
+]
+
 [project.entry-points."repoindex.analyzers"]
 json = "repoindex_analyzer_json:build_analyzer"
 

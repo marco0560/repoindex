@@ -12,6 +12,14 @@ dependencies = [
     "repoindex",
 ]
 
+[project.optional-dependencies]
+test = [
+    "black",
+    "mypy",
+    "pytest",
+    "ruff",
+]
+
 [project.entry-points."repoindex.backends"]
 sqlite = "repoindex_backend_sqlite:build_backend"
 
