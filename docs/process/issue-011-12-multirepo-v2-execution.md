@@ -161,6 +161,10 @@ Tasks:
   - `scripts/future_repo_split_manifest.py`
   - `tests/test_future_repo_split_manifest.py`
   - `docs/process/multirepo-split-manifest.md`
+- [x] Add a deterministic export rehearsal helper for one future repository in:
+  - `scripts/future_repo_export.py`
+  - `tests/test_future_repo_export.py`
+  - `docs/process/multirepo-split-manifest.md`
 
 Exit criteria:
 

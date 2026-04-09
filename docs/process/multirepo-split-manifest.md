@@ -20,6 +20,15 @@ The regression coverage for that contract lives in:
 
 * `tests/test_future_repo_split_manifest.py`
 
+The mechanical export helper for rehearsing one future repository from that
+manifest lives in:
+
+* `scripts/future_repo_export.py`
+
+The regression coverage for the export helper lives in:
+
+* `tests/test_future_repo_export.py`
+
 ## Core Repository
 
 Repository:
@@ -113,3 +122,10 @@ During the actual multirepo extraction:
    `docs/process/multirepo-ci-decomposition.md`
 4. only after the repositories exist and validate independently, proceed to
    the `#13` cleanup in core
+
+For split rehearsal from the monorepo checkout, use:
+
+```bash
+python scripts/future_repo_export.py repoindex-analyzer-python
+python scripts/future_repo_export.py repoindex-analyzer-python --destination-root /tmp/repoindex-split
+```
