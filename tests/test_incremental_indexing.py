@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, cast
 
 from repoindex_backend_sqlite import SQLiteIndexBackend
 
+import repoindex.registry as registry_module
 from repoindex.analyzers import PythonAnalyzer
 from repoindex.cli import (
     IndexRebuildRequest,
@@ -169,6 +170,96 @@ def test_cli_reports_unexpected_index_errors_without_traceback(
     captured = capsys.readouterr()
     assert "native/annotated.c" in captured.err
     assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
+def test_index_cli_fails_gracefully_when_no_language_analyzers_are_registered(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Fail with concise stderr when no language analyzers are available.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root used as the CLI working directory.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch plugin discovery and argv.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts the CLI returns a stable failure code and message.
+    """
+    original_entry_points = registry_module._entry_points_for_group
+
+    def _entry_points_without_analyzers(group: str) -> list[object]:
+        if group == registry_module.ANALYZER_ENTRY_POINT_GROUP:
+            return []
+        return cast("list[object]", original_entry_points(group))
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+    monkeypatch.setattr(
+        registry_module,
+        "_entry_points_for_group",
+        _entry_points_without_analyzers,
+    )
+
+    assert main() == 2
+    captured = capsys.readouterr()
+
+    assert "No language analyzers are registered for repoindex" in captured.err
+    assert captured.out == ""
+
+
+def test_index_cli_fails_gracefully_when_no_backend_plugins_are_registered(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Fail with concise stderr when the configured backend plugin is unavailable.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root used as the CLI working directory.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch plugin discovery and argv.
+    capsys : pytest.CaptureFixture[str]
+        Fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts the CLI returns a stable failure code and install hint.
+    """
+    original_entry_points = registry_module._entry_points_for_group
+
+    def _entry_points_without_backends(group: str) -> list[object]:
+        if group == registry_module.BACKEND_ENTRY_POINT_GROUP:
+            return []
+        return cast("list[object]", original_entry_points(group))
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+    monkeypatch.setenv(registry_module.INDEX_BACKEND_ENV_VAR, "sqlite")
+    monkeypatch.setattr(
+        registry_module,
+        "_entry_points_for_group",
+        _entry_points_without_backends,
+    )
+
+    assert main() == 2
+    captured = capsys.readouterr()
+
+    assert "Unsupported repoindex backend 'sqlite'" in captured.err
+    assert "repoindex-backend-sqlite" in captured.err
     assert captured.out == ""
 
 

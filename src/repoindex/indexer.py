@@ -58,7 +58,7 @@ from repoindex.semantic.embeddings import (
 from repoindex.storage import get_db_path, init_db
 
 if TYPE_CHECKING:
-    from repoindex.contracts import LanguageAnalyzer
+    from repoindex.contracts import IndexBackend, LanguageAnalyzer
     from repoindex.types import (
         ChannelResults,
         DocstringIssueRow,
@@ -3972,7 +3972,7 @@ def _persist_indexed_file_analyses(
     root: Path,
     *,
     conn: sqlite3.Connection,
-    sqlite_backend: SQLiteIndexBackend,
+    sqlite_backend: IndexBackend,
     parsed_files: list[ParsedFile],
     embedding_backend: EmbeddingBackendSpec,
     previous_embeddings_by_path: dict[str, dict[str, StoredEmbeddingRow]],
@@ -3986,7 +3986,7 @@ def _persist_indexed_file_analyses(
         Repository root being indexed.
     conn : sqlite3.Connection
         Open backend connection reused across writes.
-    sqlite_backend : repoindex.indexer.SQLiteIndexBackend
+    sqlite_backend : repoindex.contracts.IndexBackend
         Concrete backend receiving normalized artifacts.
     parsed_files : list[ParsedFile]
         Analyzed file snapshots in deterministic order.
@@ -4084,7 +4084,7 @@ def _collect_project_scan_state(
 def _load_existing_index_state(
     root: Path,
     *,
-    sqlite_backend: SQLiteIndexBackend,
+    sqlite_backend: IndexBackend,
     embedding_backend: EmbeddingBackendSpec,
     conn: sqlite3.Connection,
 ) -> ExistingIndexState:
@@ -4095,7 +4095,7 @@ def _load_existing_index_state(
     ----------
     root : pathlib.Path
         Repository root whose index should be queried.
-    sqlite_backend : repoindex.indexer.SQLiteIndexBackend
+    sqlite_backend : repoindex.contracts.IndexBackend
         Concrete backend providing the persisted state.
     embedding_backend : repoindex.semantic.embeddings.EmbeddingBackendSpec
         Active embedding backend metadata.
@@ -4212,7 +4212,7 @@ def _prepare_index_storage(
     *,
     full: bool,
     plan: IndexPlan,
-    sqlite_backend: SQLiteIndexBackend,
+    sqlite_backend: IndexBackend,
     conn: sqlite3.Connection,
 ) -> None:
     """
@@ -4226,7 +4226,7 @@ def _prepare_index_storage(
         Whether the current run is a full rebuild.
     plan : IndexPlan
         Deterministic indexing plan for the current run.
-    sqlite_backend : repoindex.indexer.SQLiteIndexBackend
+    sqlite_backend : repoindex.contracts.IndexBackend
         Concrete backend receiving deletion requests.
     conn : sqlite3.Connection
         Open backend connection reused across writes.

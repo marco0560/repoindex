@@ -128,6 +128,71 @@ class _FakeBackend:
     name = "fake-backend"
     version = "1"
 
+    def open_connection(self, root: Path) -> sqlite3.Connection:
+        """
+        Open an in-memory SQLite connection for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+
+        Returns
+        -------
+        sqlite3.Connection
+            In-memory SQLite connection handle.
+        """
+        del root
+        return sqlite3.connect(":memory:")
+
+    def load_runtime_inventory(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> tuple[str, str, int] | None:
+        """
+        Return no persisted runtime inventory for the fake backend.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        tuple[str, str, int] | None
+            ``None`` for protocol validation.
+        """
+        del root, conn
+        return None
+
+    def load_analyzer_inventory(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str]]:
+        """
+        Return no persisted analyzer inventory for the fake backend.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str]]
+            Empty analyzer inventory for protocol validation.
+        """
+        del root, conn
+        return []
+
     def initialize(self, root: Path) -> None:
         """
         Perform no-op initialization for the fake backend.
@@ -144,7 +209,12 @@ class _FakeBackend:
         """
         return
 
-    def load_existing_file_hashes(self, root: Path) -> dict[str, str]:
+    def load_existing_file_hashes(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, str]:
         """
         Return an empty file-hash mapping.
 
@@ -158,9 +228,40 @@ class _FakeBackend:
         dict[str, str]
             Empty mapping for protocol validation.
         """
+        del conn
         return {}
 
-    def delete_paths(self, root: Path, *, paths: list[str]) -> None:
+    def load_existing_file_ownership(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, tuple[str, str]]:
+        """
+        Return an empty analyzer-ownership mapping.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        dict[str, tuple[str, str]]
+            Empty ownership mapping for protocol validation.
+        """
+        del root, conn
+        return {}
+
+    def delete_paths(
+        self,
+        root: Path,
+        *,
+        paths: list[str],
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
         """
         Perform no-op path deletion for the fake backend.
 
@@ -176,6 +277,7 @@ class _FakeBackend:
         None
             This fake backend keeps no state.
         """
+        del conn
         return
 
     def persist_analysis(
@@ -184,6 +286,9 @@ class _FakeBackend:
         *,
         file_metadata: FileMetadataSnapshot,
         analysis: AnalysisResult,
+        embedding_backend: object | None = None,
+        previous_embeddings: dict[str, object] | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> tuple[int, int]:
         """
         Count normalized functions as a stand-in for persisted artifacts.
@@ -202,10 +307,16 @@ class _FakeBackend:
         tuple[int, int]
             Recomputed and reused semantic-artifact counts.
         """
-        del root, file_metadata
+        del root, file_metadata, embedding_backend, previous_embeddings, conn
         return (len(analysis.iter_functions()), 0)
 
-    def count_reusable_embeddings(self, root: Path, *, paths: list[str]) -> int:
+    def count_reusable_embeddings(
+        self,
+        root: Path,
+        *,
+        paths: list[str],
+        conn: sqlite3.Connection | None = None,
+    ) -> int:
         """
         Count supplied paths as a stand-in reusable-artifact metric.
 
@@ -221,9 +332,15 @@ class _FakeBackend:
         int
             Number of reusable paths.
         """
+        del root, conn
         return len(paths)
 
-    def rebuild_derived_indexes(self, root: Path) -> None:
+    def rebuild_derived_indexes(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
         """
         Perform no-op derived-index rebuilding.
 
@@ -237,7 +354,170 @@ class _FakeBackend:
         None
             This fake backend keeps no state.
         """
+        del conn
         return
+
+    def list_symbols_in_module(
+        self,
+        root: Path,
+        module: str,
+        *,
+        prefix: str | None = None,
+        limit: int = 20,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str, str, int]]:
+        """
+        Return no symbol rows for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        module : str
+            Dotted module name.
+        prefix : str | None, optional
+            Optional path filter.
+        limit : int, optional
+            Maximum result count.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str, str, int]]
+            Empty symbol rows for protocol validation.
+        """
+        del root, module, prefix, limit, conn
+        return []
+
+    def find_symbol(
+        self,
+        root: Path,
+        name: str,
+        *,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str, str, int]]:
+        """
+        Return no symbol matches for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        name : str
+            Exact symbol name.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str, str, int]]
+            Empty symbol rows for protocol validation.
+        """
+        del root, name, prefix, conn
+        return []
+
+    def docstring_issues(
+        self,
+        root: Path,
+        *,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str, str, str, str, str, int, int | None]]:
+        """
+        Return no docstring issues for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str, str, str, str, str, int, int | None]]
+            Empty docstring issue rows for protocol validation.
+        """
+        del root, prefix, conn
+        return []
+
+    def find_call_edges(
+        self,
+        root: Path,
+        name: str,
+        *,
+        module: str | None = None,
+        incoming: bool = False,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str | None, str | None, int]]:
+        """
+        Return no call edges for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        name : str
+            Logical caller or callee.
+        module : str | None, optional
+            Optional module filter.
+        incoming : bool, optional
+            Whether incoming edges would be requested.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str | None, str | None, int]]
+            Empty call-edge rows for protocol validation.
+        """
+        del root, name, module, incoming, prefix, conn
+        return []
+
+    def find_callable_refs(
+        self,
+        root: Path,
+        name: str,
+        *,
+        module: str | None = None,
+        incoming: bool = False,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str | None, str | None, int]]:
+        """
+        Return no callable references for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        name : str
+            Logical owner or target.
+        module : str | None, optional
+            Optional module filter.
+        incoming : bool, optional
+            Whether incoming references would be requested.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str | None, str | None, int]]
+            Empty callable-reference rows for protocol validation.
+        """
+        del root, name, module, incoming, prefix, conn
+        return []
 
     def find_include_edges(
         self,
@@ -274,6 +554,177 @@ class _FakeBackend:
         """
         del root, name, module, incoming, prefix, conn
         return []
+
+    def find_logical_symbols(
+        self,
+        root: Path,
+        module_name: str,
+        logical_name: str,
+        *,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str, str, int]]:
+        """
+        Return no logical-symbol rows for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        module_name : str
+            Owning module name.
+        logical_name : str
+            Logical callable name.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str, str, int]]
+            Empty symbol rows for protocol validation.
+        """
+        del root, module_name, logical_name, prefix, conn
+        return []
+
+    def logical_symbol_name(
+        self,
+        root: Path,
+        symbol: tuple[str, str, str, str, int],
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> str:
+        """
+        Return the symbol name as a stand-in logical identity.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        symbol : tuple[str, str, str, str, int]
+            Indexed symbol row.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        str
+            Symbol name extracted from the supplied row.
+        """
+        del root, conn
+        return symbol[2]
+
+    def embedding_inventory(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, int, int]]:
+        """
+        Return no embedding inventory rows for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, int, int]]
+            Empty inventory rows for protocol validation.
+        """
+        del root, conn
+        return []
+
+    def embedding_candidates(
+        self,
+        root: Path,
+        query: str,
+        *,
+        limit: int,
+        min_score: float,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[float, tuple[str, str, str, str, int]]]:
+        """
+        Return no embedding candidates for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        query : str
+            Query string.
+        limit : int
+            Maximum result count.
+        min_score : float
+            Minimum similarity threshold.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[float, tuple[str, str, str, str, int]]]
+            Empty candidate rows for protocol validation.
+        """
+        del root, query, limit, min_score, prefix, conn
+        return []
+
+    def prune_orphaned_embeddings(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        """
+        Perform no-op orphaned-embedding cleanup for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        None
+            This fake backend keeps no state.
+        """
+        del root, conn
+        return
+
+    def current_embedding_state_matches(
+        self,
+        root: Path,
+        *,
+        embedding_backend: object,
+        conn: sqlite3.Connection | None = None,
+    ) -> bool:
+        """
+        Report a matching embedding state for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        embedding_backend : object
+            Backend metadata placeholder.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        bool
+            Always ``True`` for protocol validation.
+        """
+        del root, embedding_backend, conn
+        return True
 
 
 class _FakeRetrievalProducer:

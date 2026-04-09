@@ -28,8 +28,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from repoindex.indexer import SQLiteIndexBackend
-
 DEFAULT_INDEX_BACKEND = "sqlite"
 INDEX_BACKEND_ENV_VAR = "REPOINDEX_INDEX_BACKEND"
 ANALYZER_ENTRY_POINT_GROUP = "repoindex.analyzers"
@@ -146,7 +144,7 @@ class _LoadedPlugin:
     entry_point: str | None = None
 
 
-def _registered_index_backends() -> dict[str, type[SQLiteIndexBackend]]:
+def _registered_index_backends() -> dict[str, type[IndexBackend]]:
     """
     Return the backend factory registry keyed by backend name.
 
@@ -156,7 +154,7 @@ def _registered_index_backends() -> dict[str, type[SQLiteIndexBackend]]:
 
     Returns
     -------
-    dict[str, type[repoindex.indexer.SQLiteIndexBackend]]
+    dict[str, type[repoindex.contracts.IndexBackend]]
         Deterministic backend factories keyed by stable backend name.
     """
     return {}
@@ -747,7 +745,7 @@ def configured_index_backend_name() -> str:
     return DEFAULT_INDEX_BACKEND
 
 
-def active_index_backend() -> SQLiteIndexBackend:
+def active_index_backend() -> IndexBackend:
     """
     Instantiate the configured index backend.
 
@@ -757,7 +755,7 @@ def active_index_backend() -> SQLiteIndexBackend:
 
     Returns
     -------
-    repoindex.indexer.SQLiteIndexBackend
+    repoindex.contracts.IndexBackend
         Active backend implementation for indexing and querying.
 
     Raises
@@ -768,7 +766,7 @@ def active_index_backend() -> SQLiteIndexBackend:
     configured_name = configured_index_backend_name()
     plugins, _registrations = _plugin_snapshot("backend")
     registry = {
-        plugin.name: cast("type[SQLiteIndexBackend]", plugin.factory)
+        plugin.name: cast("Callable[[], IndexBackend]", plugin.factory)
         for plugin in plugins
     }
     factory = registry.get(configured_name)
