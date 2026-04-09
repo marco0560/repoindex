@@ -14,6 +14,7 @@ The repository currently tracks these architecture decision records:
 - [ADR-010 — Call-graph retrieval producer and bounded user surfaces](ADR-010-call-graph-retrieval-producer-and-user-surfaces.md)
 - [ADR-011 — Packaging and release migration sequence for v2.0.0](ADR-011-packaging-release-migration-sequence-v2-0-0.md)
 - [ADR-012 — Phase 2 package set for default analyzers and backend](ADR-012-phase-2-package-set-default-analyzers-backend.md)
+- [ADR-013 — Final multirepo repository set and release coordination policy](ADR-013-final-multirepo-repository-set-release-coordination-policy.md)
 
 `ADR-004` is the active migration record for the current architecture branch
 and should be read together with the documents under `docs/architecture/`.

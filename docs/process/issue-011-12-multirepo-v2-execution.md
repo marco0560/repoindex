@@ -135,8 +135,10 @@ Primary areas:
 
 Tasks:
 
-- [ ] Decide the final repository set for core, analyzers, backend, and bundle.
-- [ ] Define versioning and release coordination policy across repositories.
+- [x] Decide the final repository set for core, analyzers, backend, and bundle
+  in `docs/adr/ADR-013-final-multirepo-repository-set-release-coordination-policy.md`.
+- [x] Define versioning and release coordination policy across repositories in
+  `docs/adr/ADR-013-final-multirepo-repository-set-release-coordination-policy.md`.
 - [ ] Ensure each future repository builds and tests cleanly from local package
   boundaries before splitting.
 - [ ] Move code, tests, and package-local docs into their owning repositories.
