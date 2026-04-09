@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/marco0560/repoindex/compare/v1.10.0...v1.11.0) (2026-04-09)
+
+
+### Features
+
+* **json:** support structured JSON families ([ccc1ba6](https://github.com/marco0560/repoindex/commit/ccc1ba690fabc475522417c61c02b85e3d9b835d)), closes [#7](https://github.com/marco0560/repoindex/issues/7)
+
 # [1.10.0](https://github.com/marco0560/repoindex/compare/v1.9.0...v1.10.0) (2026-04-09)
 
 
