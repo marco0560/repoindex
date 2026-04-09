@@ -131,18 +131,7 @@ def build_bootstrap_commands(
         ),
         CommandSpec(
             "Install extracted first-party analyzer packages",
-            (
-                str(python_bin),
-                "-m",
-                "pip",
-                "install",
-                "-e",
-                "packages/repoindex-analyzer-c",
-                "-e",
-                "packages/repoindex-analyzer-bash",
-                "-e",
-                "packages/repoindex-bundle-official",
-            ),
+            (str(python_bin), "scripts/install_first_party_packages.py"),
             repo_root,
         ),
         CommandSpec(
