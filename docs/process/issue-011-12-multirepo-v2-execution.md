@@ -157,6 +157,10 @@ Tasks:
 - [x] Add integration testing in the core repository using installed package
   artifacts rather than sibling-source loading through
   `tests/test_plugins.py`.
+- [x] Define a path-level split manifest for the accepted repository set in:
+  - `scripts/future_repo_split_manifest.py`
+  - `tests/test_future_repo_split_manifest.py`
+  - `docs/process/multirepo-split-manifest.md`
 
 Exit criteria:
 
