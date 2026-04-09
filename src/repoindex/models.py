@@ -31,7 +31,18 @@ CallableReferenceKind = Literal[
     "return_value",
 ]
 ImportKind = Literal["import", "include_local", "include_system"]
-DeclarationKind = Literal["struct", "enum", "typedef"]
+DeclarationKind = Literal[
+    "struct",
+    "enum",
+    "typedef",
+    "json_schema_definition",
+    "json_schema_property",
+    "json_manifest_name",
+    "json_manifest_script",
+    "json_manifest_dependency",
+    "json_release_plugin",
+    "json_release_branch",
+]
 
 
 @dataclass(frozen=True)
@@ -97,7 +108,7 @@ class DeclarationArtifact:
         Declaration name exposed to exact and semantic queries.
     stable_id : str
         Durable analyzer-owned identity for cross-run reuse.
-    kind : {"struct", "enum", "typedef"}
+    kind : {"struct", "enum", "typedef", "json_schema_definition", "json_schema_property", "json_manifest_name", "json_manifest_script", "json_manifest_dependency", "json_release_plugin", "json_release_branch"}
         Stable declaration classifier used as the symbol type.
     lineno : int
         Source line where the declaration begins.

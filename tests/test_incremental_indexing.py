@@ -966,6 +966,66 @@ def test_index_repo_covers_json_schema_documents_in_canonical_directories(
     ]
 
 
+def test_index_repo_indexes_package_and_release_json_families(tmp_path: Path) -> None:
+    """
+    Index supported non-schema JSON families through the main indexing path.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts manifest and release-config declarations become queryable.
+    """
+    package_file = tmp_path / "package.json"
+    release_file = tmp_path / ".releaserc.json"
+    package_file.write_text(
+        json.dumps(
+            {
+                "name": "repoindex-release",
+                "devDependencies": {"semantic-release": "^23.0.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    release_file.write_text(
+        json.dumps(
+            {
+                "branches": ["main"],
+                "plugins": ["@semantic-release/commit-analyzer"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    init_db(tmp_path)
+    report = index_repo(tmp_path)
+
+    assert report.coverage_issues == []
+    assert report.indexed == 2
+    assert find_symbol(tmp_path, "repoindex-release") == [
+        (
+            "json_manifest_name",
+            "package",
+            "repoindex-release",
+            str(package_file),
+            1,
+        )
+    ]
+    assert find_symbol(tmp_path, "@semantic-release/commit-analyzer") == [
+        (
+            "json_release_plugin",
+            "releaserc",
+            "@semantic-release/commit-analyzer",
+            str(release_file),
+            1,
+        )
+    ]
+
+
 def test_index_cli_prints_coverage_issues(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

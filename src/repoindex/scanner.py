@@ -167,6 +167,7 @@ def _iter_source_files(
     root: Path,
     *,
     discovery_globs: Sequence[str],
+    analyzers: Sequence[LanguageAnalyzer],
 ) -> Iterator[Path]:
     """
     Yield supported source files from a filesystem scan.
@@ -177,11 +178,15 @@ def _iter_source_files(
         Repository root to scan recursively.
     discovery_globs : collections.abc.Sequence[str]
         Filename patterns contributed by the active analyzers.
+    analyzers : collections.abc.Sequence[repoindex.contracts.LanguageAnalyzer]
+        Active analyzers used to confirm that a discovered path is actually
+        claimed.
 
     Yields
     ------
     pathlib.Path
-        Supported source files that survive exclusion filtering.
+        Supported source files that survive exclusion filtering and are claimed
+        by at least one active analyzer.
     """
     patterns = _load_gitignore(root)
 
@@ -192,6 +197,8 @@ def _iter_source_files(
                 continue
             seen.add(path)
             if _is_excluded(path, root, patterns):
+                continue
+            if not any(analyzer.supports_path(path) for analyzer in analyzers):
                 continue
             yield path
 
@@ -241,8 +248,12 @@ def iter_project_files(
         files = [
             root / line.strip() for line in result.stdout.splitlines() if line.strip()
         ]
-
-        return iter(sorted(files))
+        supported_files = [
+            path
+            for path in sorted(files)
+            if any(analyzer.supports_path(path) for analyzer in analyzers)
+        ]
+        return iter(supported_files)
 
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
         # fallback only if git is unavailable or not a repository
@@ -256,6 +267,7 @@ def iter_project_files(
                 _iter_source_files(
                     root,
                     discovery_globs=discovery_file_globs(analyzers),
+                    analyzers=analyzers,
                 )
             )
         )

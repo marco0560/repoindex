@@ -1,8 +1,11 @@
 # Language Analyzers
 
-The current repository now has two active analyzers:
+The current repository now has three built-in analyzers plus optional
+first-party plugin analyzers:
 
 - Python for the existing AST-driven index surface
+- JSON for deterministic structured document families such as JSON Schema,
+  `package.json`, and `.releaserc.json`
 - C for the first non-Python proof required by `ADR-004`, installed through
   the extracted `repoindex-analyzer-c` first-party package
 
@@ -20,6 +23,7 @@ Today these responsibilities are concentrated in:
 
 - `src/repoindex/parser_ast.py`
 - `src/repoindex/analyzers/python.py`
+- `src/repoindex/analyzers/json.py`
 - `src/repoindex/analyzers/c.py`
 - `src/repoindex/indexer.py` for analyzer routing only
 
@@ -29,7 +33,8 @@ Today these responsibilities are concentrated in:
 analyzer set instead of relying on a hard-coded core tuple.
 
 Each analyzer declares deterministic `discovery_globs`, and scanner discovery
-uses those globs for both:
+uses those globs for candidate discovery before confirming ownership through
+`supports_path()` for both:
 
 - Git-backed tracked-file discovery
 - filesystem fallback outside Git repositories
@@ -81,10 +86,40 @@ That module owns:
 Phase 8 moves analyzer registration into `src/repoindex/registry.py`.
 
 - analyzers are instantiated from built-ins plus entry-point plugin discovery
-- registry order defines deterministic first-match routing order
+- registry order defines deterministic first-match routing order after
+  scanner-side ownership filtering
 - an empty analyzer registry raises `ValueError`
 - extracted analyzers may be omitted when their plugin packages are not
   installed
+
+## Current JSON Family Boundary
+
+The built-in JSON analyzer is intentionally family-based rather than generic.
+
+Supported families:
+
+- JSON Schema documents
+- npm-style `package.json` manifests
+- semantic-release `.releaserc.json` configuration
+
+Supported JSON symbols currently include:
+
+- schema definition names
+- schema property paths
+- package names
+- package script keys
+- package dependency names
+- semantic-release branch names
+- semantic-release plugin identifiers
+
+Explicitly unsupported JSON inputs include:
+
+- lockfiles such as `package-lock.json`
+- VS Code workspace JSONC files under `.vscode/`
+- generic unclassified JSON blobs
+
+This keeps JSON indexing deterministic and query-oriented without broadening
+support to arbitrary machine-generated artifacts.
 
 ## Phase-9 Second Analyzer Proof
 

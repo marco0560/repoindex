@@ -681,6 +681,182 @@ def test_json_analyzer_rejects_unclassified_json_documents(tmp_path: Path) -> No
     assert JsonAnalyzer().supports_path(source) is False
 
 
+def test_json_analyzer_extracts_schema_properties_and_definitions(
+    tmp_path: Path,
+) -> None:
+    """
+    Extract deterministic definition and property symbols from JSON Schema.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts the JSON analyzer emits schema-specific declarations.
+    """
+    source = tmp_path / "src" / "repoindex" / "schema" / "example.schema.json"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        json.dumps(
+            {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "$defs": {
+                    "Channel": {
+                        "type": "string",
+                        "description": "One retrieval channel.",
+                    }
+                },
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Rendered query status.",
+                    },
+                    "explain": {
+                        "type": "object",
+                        "properties": {
+                            "planner": {"type": "object"},
+                        },
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = JsonAnalyzer().analyze_file(source, tmp_path)
+    declaration_rows = [
+        (decl.kind, decl.name, decl.signature, decl.docstring)
+        for decl in result.declarations
+    ]
+
+    assert (
+        "json_schema_definition",
+        "Channel",
+        "definition Channel type=string",
+        "One retrieval channel.",
+    ) in declaration_rows
+    assert (
+        "json_schema_property",
+        "status",
+        "property path=status type=string",
+        "Rendered query status.",
+    ) in declaration_rows
+    assert (
+        "json_schema_property",
+        "explain.planner",
+        "property path=explain.planner type=object",
+        None,
+    ) in declaration_rows
+
+
+def test_json_analyzer_extracts_package_manifest_symbols(tmp_path: Path) -> None:
+    """
+    Extract stable manifest symbols from one ``package.json`` file.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts package, script, and dependency symbols are emitted.
+    """
+    source = tmp_path / "package.json"
+    source.write_text(
+        json.dumps(
+            {
+                "name": "repoindex-release",
+                "version": "1.2.3",
+                "scripts": {"release": "semantic-release"},
+                "devDependencies": {"semantic-release": "^23.0.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = JsonAnalyzer().analyze_file(source, tmp_path)
+    declaration_rows = [
+        (decl.kind, decl.name, decl.signature) for decl in result.declarations
+    ]
+
+    assert (
+        "json_manifest_name",
+        "repoindex-release",
+        "package name=repoindex-release version=1.2.3",
+    ) in declaration_rows
+    assert (
+        "json_manifest_script",
+        "release",
+        "package script release: semantic-release",
+    ) in declaration_rows
+    assert (
+        "json_manifest_dependency",
+        "semantic-release",
+        "package dependency section=devDependencies name=semantic-release version=^23.0.0",
+    ) in declaration_rows
+
+
+def test_json_analyzer_extracts_semantic_release_symbols(tmp_path: Path) -> None:
+    """
+    Extract stable branch and plugin symbols from semantic-release config.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts semantic-release symbols are emitted deterministically.
+    """
+    source = tmp_path / ".releaserc.json"
+    source.write_text(
+        json.dumps(
+            {
+                "branches": ["main", {"name": "next"}],
+                "plugins": [
+                    "@semantic-release/commit-analyzer",
+                    ["@semantic-release/git", {"assets": ["CHANGELOG.md"]}],
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = JsonAnalyzer().analyze_file(source, tmp_path)
+    declaration_rows = [
+        (decl.kind, decl.name, decl.signature) for decl in result.declarations
+    ]
+
+    assert (
+        "json_release_branch",
+        "main",
+        "semantic-release branch main",
+    ) in declaration_rows
+    assert (
+        "json_release_branch",
+        "next",
+        "semantic-release branch next",
+    ) in declaration_rows
+    assert (
+        "json_release_plugin",
+        "@semantic-release/commit-analyzer",
+        "semantic-release plugin @semantic-release/commit-analyzer",
+    ) in declaration_rows
+    assert (
+        "json_release_plugin",
+        "@semantic-release/git",
+        "semantic-release plugin @semantic-release/git",
+    ) in declaration_rows
+
+
 def test_select_language_analyzer_reports_optional_extra_hint(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -1451,6 +1627,60 @@ def test_iter_project_files_uses_analyzer_globs_with_git(tmp_path: Path) -> None
     discovered = list(iter_project_files(tmp_path, analyzers=[_DemoAnalyzer()]))
 
     assert discovered == [demo_file]
+
+
+def test_iter_project_files_filters_broad_globs_by_supports_path(
+    tmp_path: Path,
+) -> None:
+    """
+    Filter broad discovery globs through analyzer ownership checks.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts broad globs do not force unsupported files into the
+        indexing set.
+    """
+
+    class _SelectiveJsonAnalyzer:
+        name = "selective-json"
+        version = "1"
+        discovery_globs: tuple[str, ...] = ("*.json",)
+
+        def supports_path(self, path: Path) -> bool:
+            return path.name == "package.json"
+
+        def analyze_file(self, path: Path, root: Path) -> AnalysisResult:
+            del root
+            return AnalysisResult(
+                source_path=path,
+                module=ModuleArtifact(
+                    name=path.stem,
+                    stable_id=f"json:module:{path.name}",
+                    docstring=None,
+                    has_docstring=0,
+                ),
+                classes=(),
+                functions=(),
+                declarations=(),
+                imports=(),
+            )
+
+    package_file = tmp_path / "package.json"
+    lockfile = tmp_path / "package-lock.json"
+    package_file.write_text('{"name": "demo"}\n', encoding="utf-8")
+    lockfile.write_text('{"name": "demo"}\n', encoding="utf-8")
+
+    discovered = list(
+        iter_project_files(tmp_path, analyzers=[_SelectiveJsonAnalyzer()])
+    )
+
+    assert discovered == [package_file]
 
 
 def test_iter_canonical_project_files_uses_git_tracked_directories(
