@@ -32,10 +32,25 @@ class _InstallHelperModule(Protocol):
 
     FIRST_PARTY_EDITABLE_PACKAGES: tuple[str, ...]
 
+    def editable_core_requirement(
+        self,
+        repo_root: Path,
+        *,
+        extras: tuple[str, ...] = (),
+    ) -> str:
+        """Return the editable requirement string for the core package."""
+
     def editable_package_paths(self, repo_root: Path) -> tuple[Path, ...]:
         """Return package paths in deterministic order."""
 
-    def build_install_argv(self, *, python: str, repo_root: Path) -> tuple[str, ...]:
+    def build_install_argv(
+        self,
+        *,
+        python: str,
+        repo_root: Path,
+        include_core: bool = False,
+        core_extras: tuple[str, ...] = (),
+    ) -> tuple[str, ...]:
         """Build the editable-install argv for first-party packages."""
 
 
@@ -358,6 +373,58 @@ def test_build_install_argv_installs_each_first_party_package_editably() -> None
         "-m",
         "pip",
         "install",
+        "-e",
+        "/tmp/repoindex/packages/repoindex-analyzer-python",
+        "-e",
+        "/tmp/repoindex/packages/repoindex-analyzer-json",
+        "-e",
+        "/tmp/repoindex/packages/repoindex-analyzer-c",
+        "-e",
+        "/tmp/repoindex/packages/repoindex-analyzer-bash",
+        "-e",
+        "/tmp/repoindex/packages/repoindex-backend-sqlite",
+        "-e",
+        "/tmp/repoindex/packages/repoindex-bundle-official",
+    )
+
+
+def test_install_helper_can_include_core_repo_with_requested_extras() -> None:
+    """
+    Build one source-tree install command for core plus first-party packages.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the helper can prepend the editable core requirement
+        with requested extras ahead of the extracted package set.
+    """
+    helper = _load_install_helper()
+    repo_root = Path("/tmp/repoindex")
+
+    assert helper.editable_core_requirement(repo_root) == "/tmp/repoindex"
+    assert (
+        helper.editable_core_requirement(
+            repo_root,
+            extras=("semantic",),
+        )
+        == "/tmp/repoindex[semantic]"
+    )
+    assert helper.build_install_argv(
+        python="/tmp/repoindex/.venv/bin/python",
+        repo_root=repo_root,
+        include_core=True,
+        core_extras=("semantic",),
+    ) == (
+        "/tmp/repoindex/.venv/bin/python",
+        "-m",
+        "pip",
+        "install",
+        "-e",
+        "/tmp/repoindex[semantic]",
         "-e",
         "/tmp/repoindex/packages/repoindex-analyzer-python",
         "-e",

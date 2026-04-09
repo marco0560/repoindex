@@ -34,6 +34,32 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 FIRST_PARTY_EDITABLE_PACKAGES = FIRST_PARTY_PACKAGE_DIRS
 
 
+def editable_core_requirement(
+    repo_root: Path,
+    *,
+    extras: tuple[str, ...] = (),
+) -> str:
+    """
+    Return the editable requirement string for the core package.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Repository root containing the core ``repoindex`` package.
+    extras : tuple[str, ...], optional
+        Optional extras requested on the core editable install.
+
+    Returns
+    -------
+    str
+        Editable requirement string for the core package, including extras when
+        requested.
+    """
+    if not extras:
+        return str(repo_root)
+    return f"{repo_root}[{','.join(extras)}]"
+
+
 def editable_package_paths(repo_root: Path) -> tuple[Path, ...]:
     """
     Return the authoritative editable package paths for the repository.
@@ -51,7 +77,13 @@ def editable_package_paths(repo_root: Path) -> tuple[Path, ...]:
     return package_paths(repo_root)
 
 
-def build_install_argv(*, python: str, repo_root: Path) -> tuple[str, ...]:
+def build_install_argv(
+    *,
+    python: str,
+    repo_root: Path,
+    include_core: bool = False,
+    core_extras: tuple[str, ...] = (),
+) -> tuple[str, ...]:
     """
     Build the exact pip-install command for first-party packages.
 
@@ -61,6 +93,11 @@ def build_install_argv(*, python: str, repo_root: Path) -> tuple[str, ...]:
         Python interpreter used to run `pip`.
     repo_root : pathlib.Path
         Repository root containing the package directories.
+    include_core : bool, optional
+        Whether to include the editable core ``repoindex`` package before the
+        first-party package set.
+    core_extras : tuple[str, ...], optional
+        Optional extras requested on the editable core install.
 
     Returns
     -------
@@ -68,6 +105,13 @@ def build_install_argv(*, python: str, repo_root: Path) -> tuple[str, ...]:
         Deterministic command arguments for the install step.
     """
     argv: list[str] = [python, "-m", "pip", "install"]
+    if include_core:
+        argv.extend(
+            (
+                "-e",
+                editable_core_requirement(repo_root, extras=core_extras),
+            )
+        )
     for package_path in editable_package_paths(repo_root):
         argv.extend(("-e", str(package_path)))
     return tuple(argv)
@@ -96,6 +140,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Python interpreter used to run `pip install`.",
     )
     parser.add_argument(
+        "--include-core",
+        action="store_true",
+        help="Include the editable core repoindex package in the install command.",
+    )
+    parser.add_argument(
+        "--core-extra",
+        dest="core_extras",
+        action="append",
+        default=[],
+        help="Optional extra requested on the editable core install. Repeat as needed.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the resolved command without executing it.",
@@ -118,7 +174,12 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code.
     """
     args = parse_args(argv)
-    command = build_install_argv(python=args.python, repo_root=REPO_ROOT)
+    command = build_install_argv(
+        python=args.python,
+        repo_root=REPO_ROOT,
+        include_core=args.include_core,
+        core_extras=tuple(args.core_extras),
+    )
     print(" ".join(command))
     if args.dry_run:
         return 0

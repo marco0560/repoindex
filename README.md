@@ -70,18 +70,17 @@ For an editable install into another repository with the current source tree:
 
 ```bash
 source .venv/bin/activate
-pip install -e ../repoindex[semantic]
-pip install -e ../repoindex/packages/repoindex-analyzer-python
-pip install -e ../repoindex/packages/repoindex-analyzer-json
-pip install -e ../repoindex/packages/repoindex-analyzer-c
-pip install -e ../repoindex/packages/repoindex-analyzer-bash
-pip install -e ../repoindex/packages/repoindex-backend-sqlite
+python ../repoindex/scripts/install_first_party_packages.py \
+  --python "$VIRTUAL_ENV/bin/python" \
+  --include-core \
+  --core-extra semantic
 ```
 
-The accepted published bundle name is `repoindex[bundle-official]`. Inside the
-current source tree, repository-local development still installs the extracted
-first-party analyzers and backend explicitly from `packages/`, with the local
-install set owned by `scripts/install_first_party_packages.py`.
+The accepted published umbrella name remains `repoindex[bundle-official]`, but
+that is a published-package contract, not a source-tree shortcut. Inside the
+current checkout, install the extracted first-party analyzers and backend from
+`packages/`, with the canonical local install set owned by
+`scripts/install_first_party_packages.py`.
 
 Use `repoindex plugins` to inspect discovery. The report marks each plugin as
 `origin=core`, `origin=first_party`, or `origin=third_party`.

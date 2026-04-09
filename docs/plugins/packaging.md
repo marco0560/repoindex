@@ -20,12 +20,9 @@ Typical local workflow:
 
 ```bash
 source .venv/bin/activate
-pip install -e ../repoindex
-pip install -e ../repoindex/packages/repoindex-analyzer-python
-pip install -e ../repoindex/packages/repoindex-analyzer-json
-pip install -e ../repoindex/packages/repoindex-analyzer-c
-pip install -e ../repoindex/packages/repoindex-analyzer-bash
-pip install -e ../repoindex/packages/repoindex-backend-sqlite
+python ../repoindex/scripts/install_first_party_packages.py \
+  --python "$VIRTUAL_ENV/bin/python" \
+  --include-core
 pip install -e /path/to/repoindex-demo-analyzer
 repoindex plugins
 ```
@@ -52,8 +49,9 @@ python scripts/install_first_party_packages.py
 ```
 
 The accepted published umbrella install name for the curated official set is
-`repoindex[bundle-official]`. During the current monorepo phase, repository
-contributors still install the extracted packages from `packages/`.
+`repoindex[bundle-official]`. During the current monorepo phase, that umbrella
+name is not a source-tree shortcut; repository contributors still install the
+extracted packages from `packages/` through the helper above.
 
 For optional dependencies inside a plugin package, declare them in the plugin's
 own `pyproject.toml`. The core package should not need to know about them.
