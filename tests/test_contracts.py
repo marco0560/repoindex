@@ -24,6 +24,8 @@ import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from repoindex_backend_sqlite import SQLiteIndexBackend
+
 import repoindex.registry as registry_module
 from repoindex.analyzers import BashAnalyzer, CAnalyzer, JsonAnalyzer, PythonAnalyzer
 from repoindex.analyzers.c import _disambiguate_function_stable_ids
@@ -36,7 +38,6 @@ from repoindex.contracts import (
     split_declared_retrieval_capabilities,
 )
 from repoindex.indexer import (
-    SQLiteIndexBackend,
     _collect_indexed_file_analyses,
     _select_language_analyzer,
     index_repo,

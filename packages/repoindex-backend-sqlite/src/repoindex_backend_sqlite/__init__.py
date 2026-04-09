@@ -3,13 +3,14 @@
 Responsibilities
 ----------------
 - Publish the canonical SQLite backend through the `repoindex.backends` entry-point group.
-- Reuse the compatibility implementation exported from `repoindex.indexer`.
+- Expose the concrete first-party SQLite backend class from the package boundary.
 - Keep the package-facing backend factory explicit and deterministic.
 
 Design principles
 -----------------
-The package owns distribution and plugin registration while the repository
-continues to preserve historical imports during the Phase 2 transition.
+The package owns distribution and the concrete runtime class while the
+repository continues to preserve historical imports during the Phase 2
+transition.
 
 Architectural role
 ------------------
@@ -21,12 +22,28 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from repoindex.indexer import SQLiteIndexBackend
+from repoindex.indexer import SQLiteIndexBackend as _CompatSQLiteIndexBackend
 
 if TYPE_CHECKING:
     from repoindex.contracts import IndexBackend
 
 __all__ = ["SQLiteIndexBackend", "build_backend"]
+
+
+class SQLiteIndexBackend(_CompatSQLiteIndexBackend):
+    """
+    First-party SQLite backend class exposed from the package boundary.
+
+    Parameters
+    ----------
+    None
+
+    Notes
+    -----
+    The current implementation still reuses the compatibility behavior exposed
+    by ``repoindex.indexer`` until the remaining Phase 2 extraction work moves
+    the lower-level helper logic fully behind the package boundary.
+    """
 
 
 def build_backend() -> IndexBackend:

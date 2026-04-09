@@ -26,6 +26,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from repoindex_backend_sqlite import SQLiteIndexBackend
+
 from repoindex.analyzers import PythonAnalyzer
 from repoindex.cli import (
     IndexRebuildRequest,
@@ -34,7 +36,7 @@ from repoindex.cli import (
     _write_index_metadata,
     main,
 )
-from repoindex.indexer import SQLiteIndexBackend, audit_repo_coverage, index_repo
+from repoindex.indexer import audit_repo_coverage, index_repo
 from repoindex.models import (
     AnalysisResult,
     CallableReference,

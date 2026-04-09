@@ -24,10 +24,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from repoindex_backend_sqlite import SQLiteIndexBackend
+
 import repoindex.registry as registry
 from repoindex.cli import main
 from repoindex.contracts import IndexBackend, LanguageAnalyzer
-from repoindex.indexer import SQLiteIndexBackend
 from repoindex.models import AnalysisResult, ModuleArtifact
 
 if TYPE_CHECKING:
@@ -443,6 +444,26 @@ def test_active_registry_uses_loaded_entry_point_plugins(
     assert "demo" in analyzer_names
     assert isinstance(backend, IndexBackend)
     assert backend.name == "demo-backend"
+
+
+def test_active_default_backend_comes_from_first_party_sqlite_package() -> None:
+    """
+    Keep the default backend runtime type owned by the first-party package.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the active default backend instance comes from the
+        extracted first-party SQLite package.
+    """
+    backend = registry.active_index_backend()
+
+    assert isinstance(backend, SQLiteIndexBackend)
+    assert backend.__class__.__module__ == "repoindex_backend_sqlite"
 
 
 def test_plugins_cli_emits_json_registration_diagnostics(
