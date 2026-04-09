@@ -67,11 +67,11 @@ Primary areas:
 
 Tasks:
 
-- [ ] Inventory every remaining compatibility shim for extracted optional
-  analyzers.
+- [x] Inventory every remaining compatibility shim for extracted optional
+  analyzers in `docs/process/issue-011-optional-plugin-shim-inventory.md`.
 - [x] Reconcile repository-local bootstrap with the accepted package boundary.
 - [x] Reconcile CI jobs with explicit first-party package installs.
-- [ ] Align package and install docs with `repoindex[bundle-official]` and the
+- [x] Align package and install docs with `repoindex[bundle-official]` and the
   package-owned analyzer model.
 - [ ] Validate optional analyzer discovery through package metadata and entry
   points, not only source-tree convenience imports.
