@@ -25,15 +25,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.first_party_packages import FIRST_PARTY_PACKAGE_DIRS, package_paths
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FIRST_PARTY_EDITABLE_PACKAGES: tuple[str, ...] = (
-    "packages/repoindex-analyzer-python",
-    "packages/repoindex-analyzer-json",
-    "packages/repoindex-analyzer-c",
-    "packages/repoindex-analyzer-bash",
-    "packages/repoindex-backend-sqlite",
-    "packages/repoindex-bundle-official",
-)
+FIRST_PARTY_EDITABLE_PACKAGES = FIRST_PARTY_PACKAGE_DIRS
 
 
 def editable_package_paths(repo_root: Path) -> tuple[Path, ...]:
@@ -50,7 +48,7 @@ def editable_package_paths(repo_root: Path) -> tuple[Path, ...]:
     tuple[pathlib.Path, ...]
         Editable package directories in deterministic install order.
     """
-    return tuple(repo_root / relative for relative in FIRST_PARTY_EDITABLE_PACKAGES)
+    return package_paths(repo_root)
 
 
 def build_install_argv(*, python: str, repo_root: Path) -> tuple[str, ...]:

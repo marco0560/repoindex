@@ -39,6 +39,30 @@ class _InstallHelperModule(Protocol):
         """Build the editable-install argv for first-party packages."""
 
 
+class _PackageInventoryModule(Protocol):
+    """Protocol for the shared first-party package inventory helper."""
+
+    FIRST_PARTY_PACKAGE_DIRS: tuple[str, ...]
+
+    def package_paths(self, repo_root: Path) -> tuple[Path, ...]:
+        """Return package paths in deterministic order."""
+
+
+class _BuildHelperModule(Protocol):
+    """Protocol for the standalone first-party build helper module."""
+
+    def build_build_argv(self, *, python: str, package_path: Path) -> tuple[str, ...]:
+        """Build the wheel+sdist argv for one package."""
+
+    def build_all_argv(
+        self,
+        *,
+        python: str,
+        repo_root: Path,
+    ) -> tuple[tuple[str, ...], ...]:
+        """Build the complete wheel+sdist command plan."""
+
+
 class _BootstrapHelperModule(Protocol):
     """Protocol for the standalone bootstrap helper module."""
 
@@ -50,6 +74,31 @@ class _BootstrapHelperModule(Protocol):
         skip_validation: bool,
     ) -> list[CommandSpec]:
         """Build the ordered bootstrap command plan."""
+
+
+def _load_first_party_package_inventory() -> _PackageInventoryModule:
+    """
+    Load the shared first-party package inventory helper.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    object
+        Loaded module object for the shared package inventory helper.
+    """
+    helper_path = (
+        Path(__file__).resolve().parents[1] / "scripts" / "first_party_packages.py"
+    )
+    spec = importlib.util.spec_from_file_location("first_party_packages", helper_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return cast("_PackageInventoryModule", module)
 
 
 def _load_install_helper() -> _InstallHelperModule:
@@ -70,6 +119,7 @@ def _load_install_helper() -> _InstallHelperModule:
         / "scripts"
         / "install_first_party_packages.py"
     )
+    sys.path.insert(0, str(helper_path.parent))
     spec = importlib.util.spec_from_file_location(
         "install_first_party_packages", helper_path
     )
@@ -79,6 +129,37 @@ def _load_install_helper() -> _InstallHelperModule:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return cast("_InstallHelperModule", module)
+
+
+def _load_build_helper() -> _BuildHelperModule:
+    """
+    Load the standalone build helper module from its repository path.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    object
+        Loaded module object for the build helper script.
+    """
+    helper_path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "build_first_party_packages.py"
+    )
+    sys.path.insert(0, str(helper_path.parent))
+    spec = importlib.util.spec_from_file_location(
+        "build_first_party_packages",
+        helper_path,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return cast("_BuildHelperModule", module)
 
 
 def _load_bootstrap_helper() -> _BootstrapHelperModule:
@@ -143,6 +224,41 @@ def test_editable_package_paths_follow_authoritative_first_party_order() -> None
     )
 
 
+def test_shared_first_party_package_inventory_stays_in_split_order() -> None:
+    """
+    Resolve the shared first-party package inventory in deterministic order.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the shared package inventory stays aligned with the
+        accepted split/package order.
+    """
+    helper = _load_first_party_package_inventory()
+    repo_root = Path("/tmp/repoindex")
+
+    assert helper.package_paths(repo_root) == (
+        repo_root / "packages/repoindex-analyzer-python",
+        repo_root / "packages/repoindex-analyzer-json",
+        repo_root / "packages/repoindex-analyzer-c",
+        repo_root / "packages/repoindex-analyzer-bash",
+        repo_root / "packages/repoindex-backend-sqlite",
+        repo_root / "packages/repoindex-bundle-official",
+    )
+    assert helper.FIRST_PARTY_PACKAGE_DIRS == (
+        "packages/repoindex-analyzer-python",
+        "packages/repoindex-analyzer-json",
+        "packages/repoindex-analyzer-c",
+        "packages/repoindex-analyzer-bash",
+        "packages/repoindex-backend-sqlite",
+        "packages/repoindex-bundle-official",
+    )
+
+
 def test_build_install_argv_installs_each_first_party_package_editably() -> None:
     """
     Build the exact editable-install command for first-party packages.
@@ -179,6 +295,78 @@ def test_build_install_argv_installs_each_first_party_package_editably() -> None
         "/tmp/repoindex/packages/repoindex-backend-sqlite",
         "-e",
         "/tmp/repoindex/packages/repoindex-bundle-official",
+    )
+
+
+def test_build_helper_rehearses_each_first_party_package_boundary() -> None:
+    """
+    Build the split-readiness command plan for every first-party package.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the build helper emits one explicit wheel+sdist
+        command per future package repository.
+    """
+    helper = _load_build_helper()
+    repo_root = Path("/tmp/repoindex")
+
+    assert helper.build_all_argv(
+        python="/tmp/repoindex/.venv/bin/python",
+        repo_root=repo_root,
+    ) == (
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "build",
+            "--sdist",
+            "--wheel",
+            "/tmp/repoindex/packages/repoindex-analyzer-python",
+        ),
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "build",
+            "--sdist",
+            "--wheel",
+            "/tmp/repoindex/packages/repoindex-analyzer-json",
+        ),
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "build",
+            "--sdist",
+            "--wheel",
+            "/tmp/repoindex/packages/repoindex-analyzer-c",
+        ),
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "build",
+            "--sdist",
+            "--wheel",
+            "/tmp/repoindex/packages/repoindex-analyzer-bash",
+        ),
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "build",
+            "--sdist",
+            "--wheel",
+            "/tmp/repoindex/packages/repoindex-backend-sqlite",
+        ),
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "build",
+            "--sdist",
+            "--wheel",
+            "/tmp/repoindex/packages/repoindex-bundle-official",
+        ),
     )
 
 
