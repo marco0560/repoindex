@@ -148,7 +148,8 @@ Tasks:
   - tooling tests in `tests/test_bootstrap_scripts.py`
   - a passing wheel-build validation run against
     `/tmp/repoindex-first-party-wheels`
-- [ ] Move code, tests, and package-local docs into their owning repositories.
+- [x] Move package-local tests and package-local docs into their owning
+  repository boundaries under `packages/`.
 - [ ] Recreate CI in each repository.
 - [x] Add integration testing in the core repository using installed package
   artifacts rather than sibling-source loading through

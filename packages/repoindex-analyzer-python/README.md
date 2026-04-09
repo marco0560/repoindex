@@ -16,3 +16,9 @@ After installation, verify discovery with:
 repoindex plugins
 repoindex coverage
 ```
+
+Package-local verification:
+
+```bash
+pytest -q packages/repoindex-analyzer-python/tests
+```

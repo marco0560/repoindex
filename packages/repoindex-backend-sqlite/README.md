@@ -16,3 +16,9 @@ After installation, verify discovery with:
 repoindex plugins
 repoindex embeddings "symbol lookup" --json
 ```
+
+Package-local verification:
+
+```bash
+pytest -q packages/repoindex-backend-sqlite/tests
+```

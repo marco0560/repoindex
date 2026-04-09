@@ -22,7 +22,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -562,66 +561,6 @@ def test_plugins_cli_emits_json_registration_diagnostics(
         and row["status"] == "loaded"
         for row in payload["results"]
     )
-
-
-def test_first_party_analyzer_packages_declare_entry_points() -> None:
-    """
-    Keep first-party optional analyzer package metadata aligned to discovery.
-
-    Parameters
-    ----------
-    None
-
-    Returns
-    -------
-    None
-        The test asserts the package metadata declares the expected analyzer
-        entry points.
-    """
-    python_pyproject = Path("packages/repoindex-analyzer-python/pyproject.toml")
-    json_pyproject = Path("packages/repoindex-analyzer-json/pyproject.toml")
-    c_pyproject = Path("packages/repoindex-analyzer-c/pyproject.toml")
-    bash_pyproject = Path("packages/repoindex-analyzer-bash/pyproject.toml")
-
-    python_project = tomllib.loads(python_pyproject.read_text(encoding="utf-8"))
-    json_project = tomllib.loads(json_pyproject.read_text(encoding="utf-8"))
-    c_project = tomllib.loads(c_pyproject.read_text(encoding="utf-8"))
-    bash_project = tomllib.loads(bash_pyproject.read_text(encoding="utf-8"))
-
-    assert python_project["project"]["entry-points"]["repoindex.analyzers"] == {
-        "python": "repoindex_analyzer_python:build_analyzer"
-    }
-    assert json_project["project"]["entry-points"]["repoindex.analyzers"] == {
-        "json": "repoindex_analyzer_json:build_analyzer"
-    }
-    assert c_project["project"]["entry-points"]["repoindex.analyzers"] == {
-        "c": "repoindex_analyzer_c:build_analyzer"
-    }
-    assert bash_project["project"]["entry-points"]["repoindex.analyzers"] == {
-        "bash": "repoindex_analyzer_bash:build_analyzer"
-    }
-
-
-def test_first_party_backend_package_declares_entry_point() -> None:
-    """
-    Keep the first-party SQLite backend package metadata aligned to discovery.
-
-    Parameters
-    ----------
-    None
-
-    Returns
-    -------
-    None
-        The test asserts the package metadata declares the expected backend
-        entry point.
-    """
-    sqlite_pyproject = Path("packages/repoindex-backend-sqlite/pyproject.toml")
-    sqlite_project = tomllib.loads(sqlite_pyproject.read_text(encoding="utf-8"))
-
-    assert sqlite_project["project"]["entry-points"]["repoindex.backends"] == {
-        "sqlite": "repoindex_backend_sqlite:build_backend"
-    }
 
 
 def test_core_can_discover_installed_first_party_packages_from_built_wheels(
