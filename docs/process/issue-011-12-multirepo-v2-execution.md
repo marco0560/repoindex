@@ -69,8 +69,8 @@ Tasks:
 
 - [ ] Inventory every remaining compatibility shim for extracted optional
   analyzers.
-- [ ] Reconcile repository-local bootstrap with the accepted package boundary.
-- [ ] Reconcile CI jobs with explicit first-party package installs.
+- [x] Reconcile repository-local bootstrap with the accepted package boundary.
+- [x] Reconcile CI jobs with explicit first-party package installs.
 - [ ] Align package and install docs with `repoindex[bundle-official]` and the
   package-owned analyzer model.
 - [ ] Validate optional analyzer discovery through package metadata and entry

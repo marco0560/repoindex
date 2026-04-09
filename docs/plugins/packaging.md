@@ -38,6 +38,13 @@ Repository-owned first-party distributions now live under:
 - `packages/repoindex-analyzer-bash`
 - `packages/repoindex-bundle-official`
 
+The authoritative repository-local editable install set for those packages is
+defined by:
+
+```bash
+python scripts/install_first_party_packages.py
+```
+
 The accepted published umbrella install name for the curated official set is
 `repoindex[bundle-official]`. During the current monorepo phase, repository
 contributors still install the extracted packages from `packages/`.

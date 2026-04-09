@@ -15,6 +15,12 @@ local model artifact used by the real embedding backend, so `repoindex index`
 can build persisted embeddings without ad hoc first-run downloads inside this
 repository.
 
+The repository-local first-party package set is owned by:
+
+```bash
+python scripts/install_first_party_packages.py
+```
+
 ## Install into another repository
 
 Install `repoindex` into the virtual environment of the repository you want to
@@ -36,7 +42,8 @@ The current source-tree install keeps the embedding stack in the core package
 while the extracted first-party analyzers are installed from `packages/`.
 The accepted published bundle name is `repoindex[bundle-official]`. Inside the
 current source tree, the extracted first-party packages are still installed
-explicitly from `packages/`.
+explicitly from `packages/`, and the canonical local package set is the one
+installed by `scripts/install_first_party_packages.py`.
 
 Use `repoindex plugins` after installation if you want to verify whether a
 capability came from the core package, an official extracted package, or a

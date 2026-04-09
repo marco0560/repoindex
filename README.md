@@ -58,7 +58,11 @@ this repository.
 
 Install optional analyzer packages only when needed. For repository-local
 development inside this repo, the bootstrap flow installs the official
-first-party packages automatically.
+first-party packages automatically through:
+
+```bash
+python scripts/install_first_party_packages.py
+```
 
 For an editable install into another repository with the current source tree:
 
@@ -71,7 +75,8 @@ pip install -e ../repoindex/packages/repoindex-analyzer-bash
 
 The accepted published bundle name is `repoindex[bundle-official]`. Inside the
 current source tree, repository-local development still installs the extracted
-first-party packages explicitly from `packages/`.
+first-party packages explicitly from `packages/`, with the local install set
+owned by `scripts/install_first_party_packages.py`.
 
 Use `repoindex plugins` to inspect discovery. The report marks each plugin as
 `origin=core`, `origin=first_party`, or `origin=third_party`.
