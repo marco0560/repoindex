@@ -38,6 +38,7 @@ class DemoAnalyzer:
             source_path=path,
             module=ModuleArtifact(
                 name=module_name,
+                stable_id=f"demo:module:{relative.as_posix()}",
                 docstring=None,
                 has_docstring=0,
             ),
@@ -65,7 +66,10 @@ Rules:
 - duplicate names are rejected deterministically
 - analyzers participate after built-ins in deterministic discovery order
 - analyzer discovery globs must be stable and sufficient for scanner
-  discovery
+  candidate discovery
+- scanner discovery confirms ownership through `supports_path(path)` before a
+  file enters the indexing set, so broad globs are allowed only when
+  `supports_path()` deterministically rejects unsupported files
 - uncovered tracked files under `src/`, `tests/`, and `scripts/` will be
   surfaced by the index coverage audit when no analyzer claims them
 - `repoindex coverage` is the operator-facing way to verify whether your

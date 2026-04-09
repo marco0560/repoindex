@@ -15,6 +15,8 @@ The current branch now indexes mixed-language repositories through registered
 language analyzers:
 
 - Python via `PythonAnalyzer`
+- JSON via the built-in `JsonAnalyzer` for JSON Schema, `package.json`, and
+  `.releaserc.json`
 - C-family `*.c` and `*.h` files via the first-party
   `repoindex-analyzer-c` plugin backed by `tree-sitter-c`
 
@@ -82,11 +84,21 @@ The current architecture after completed `ADR-004` migration work is:
   `repoindex.registry`
 - SQLite as the only current concrete backend
 - multiple language analyzers in one indexing run
-- deterministic mixed-language indexing for tracked `*.py`, `*.c`, and `*.h`
-  files
+- deterministic mixed-language indexing for tracked Python, supported JSON,
+  and C-family files
 - query-time retrieval planning with deterministic intent families for
   behavior, test, configuration, API-surface, and architecture/navigation
   queries
+
+The built-in JSON analyzer is intentionally family-based rather than generic.
+It currently supports:
+
+- JSON Schema documents
+- npm-style `package.json` manifests
+- semantic-release `.releaserc.json` files
+
+It intentionally does not claim lockfiles, VS Code JSONC settings, or generic
+unclassified JSON blobs.
 
 The detailed architecture and migration record live under:
 
@@ -122,6 +134,10 @@ Inspect canonical-directory analyzer coverage without building the index:
 repoindex coverage
 repoindex coverage --json
 ```
+
+Coverage checks tracked files under `src/`, `tests/`, and `scripts/`. A file is
+considered covered only when some active analyzer both discovers it and returns
+`True` from `supports_path()`.
 
 Require full canonical coverage before indexing:
 
