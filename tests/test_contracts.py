@@ -596,7 +596,7 @@ def test_registered_language_analyzer_factories_keep_core_scope_narrow() -> None
     """
     factories = registry_module._registered_language_analyzer_factories()
 
-    assert [factory().name for factory in factories] == ["json"]
+    assert [factory().name for factory in factories] == []
 
 
 def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
@@ -621,9 +621,15 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
         lambda group: [],
     )
 
-    analyzers = active_language_analyzers()
+    try:
+        active_language_analyzers()
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        msg = "expected ValueError when no analyzers are registered"
+        raise AssertionError(msg)
 
-    assert [analyzer.name for analyzer in analyzers] == ["json"]
+    assert message == "No language analyzers are registered for repoindex"
 
 
 def test_json_analyzer_extracts_module_metadata_from_json_schema(
@@ -897,7 +903,7 @@ def test_select_language_analyzer_reports_optional_extra_hint(
         lambda group: [],
     )
 
-    analyzers = active_language_analyzers()
+    analyzers: list[LanguageAnalyzer] = []
 
     try:
         _select_language_analyzer(Path("native/sample.c"), analyzers)
@@ -939,7 +945,7 @@ def test_select_language_analyzer_reports_python_package_hint(
         lambda group: [],
     )
 
-    analyzers = active_language_analyzers()
+    analyzers: list[LanguageAnalyzer] = []
 
     try:
         _select_language_analyzer(Path("pkg/sample.py"), analyzers)
@@ -952,6 +958,48 @@ def test_select_language_analyzer_reports_python_package_hint(
     assert "No language analyzer registered for path: pkg/sample.py" in message
     assert "repoindex-analyzer-python" in message
     assert missing_language_analyzer_hint(Path("pkg/sample.py")) is not None
+
+
+def test_select_language_analyzer_reports_json_package_hint(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """
+    Report the package install hint when a supported JSON file has no analyzer.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture used to patch entry-point discovery.
+
+    Returns
+    -------
+    None
+        The test asserts the failure message includes the JSON package hint.
+
+    Notes
+    -----
+    The test captures the ``ValueError`` internally, so it does not expose a
+    ``Raises`` contract to callers.
+    """
+    monkeypatch.setattr(
+        registry_module,
+        "_entry_points_for_group",
+        lambda group: [],
+    )
+
+    analyzers: list[LanguageAnalyzer] = []
+
+    try:
+        _select_language_analyzer(Path("package.json"), analyzers)
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        msg = "expected ValueError for missing JSON analyzer"
+        raise AssertionError(msg)
+
+    assert "No language analyzer registered for path: package.json" in message
+    assert "repoindex-analyzer-json" in message
+    assert missing_language_analyzer_hint(Path("package.json")) is not None
 
 
 def test_c_analyzer_normalizes_functions_and_includes(tmp_path: Path) -> None:

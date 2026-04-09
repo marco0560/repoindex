@@ -127,12 +127,14 @@ def test_editable_package_paths_follow_authoritative_first_party_order() -> None
 
     assert helper.editable_package_paths(repo_root) == (
         repo_root / "packages/repoindex-analyzer-python",
+        repo_root / "packages/repoindex-analyzer-json",
         repo_root / "packages/repoindex-analyzer-c",
         repo_root / "packages/repoindex-analyzer-bash",
         repo_root / "packages/repoindex-bundle-official",
     )
     assert helper.FIRST_PARTY_EDITABLE_PACKAGES == (
         "packages/repoindex-analyzer-python",
+        "packages/repoindex-analyzer-json",
         "packages/repoindex-analyzer-c",
         "packages/repoindex-analyzer-bash",
         "packages/repoindex-bundle-official",
@@ -165,6 +167,8 @@ def test_build_install_argv_installs_each_first_party_package_editably() -> None
         "install",
         "-e",
         "/tmp/repoindex/packages/repoindex-analyzer-python",
+        "-e",
+        "/tmp/repoindex/packages/repoindex-analyzer-json",
         "-e",
         "/tmp/repoindex/packages/repoindex-analyzer-c",
         "-e",

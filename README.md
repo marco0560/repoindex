@@ -14,9 +14,9 @@ deterministic context generation for natural-language queries.
 The current branch now indexes mixed-language repositories through registered
 language analyzers:
 
-- Python via `PythonAnalyzer`
-- JSON via the built-in `JsonAnalyzer` for JSON Schema, `package.json`, and
-  `.releaserc.json`
+- Python via the first-party `repoindex-analyzer-python` plugin
+- JSON via the first-party `repoindex-analyzer-json` plugin for JSON Schema,
+  `package.json`, and `.releaserc.json`
 - C-family `*.c` and `*.h` files via the first-party
   `repoindex-analyzer-c` plugin backed by `tree-sitter-c`
 
@@ -69,6 +69,8 @@ For an editable install into another repository with the current source tree:
 ```bash
 source .venv/bin/activate
 pip install -e ../repoindex[semantic]
+pip install -e ../repoindex/packages/repoindex-analyzer-python
+pip install -e ../repoindex/packages/repoindex-analyzer-json
 pip install -e ../repoindex/packages/repoindex-analyzer-c
 pip install -e ../repoindex/packages/repoindex-analyzer-bash
 ```
@@ -95,7 +97,7 @@ The current architecture after completed `ADR-004` migration work is:
   behavior, test, configuration, API-surface, and architecture/navigation
   queries
 
-The built-in JSON analyzer is intentionally family-based rather than generic.
+The first-party JSON analyzer is intentionally family-based rather than generic.
 It currently supports:
 
 - JSON Schema documents

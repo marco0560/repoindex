@@ -36,6 +36,7 @@ ANALYZER_ENTRY_POINT_GROUP = "repoindex.analyzers"
 BACKEND_ENTRY_POINT_GROUP = "repoindex.backends"
 OPTIONAL_ANALYZER_PACKAGE_BY_NAME: dict[str, str] = {
     "python": "repoindex-analyzer-python",
+    "json": "repoindex-analyzer-json",
     "c": "repoindex-analyzer-c",
     "bash": "repoindex-analyzer-bash",
 }
@@ -231,13 +232,7 @@ def _registered_language_analyzer_factories() -> (
     tuple[collections.abc.Callable[[], repoindex.contracts.LanguageAnalyzer], ...]
         Analyzer factories in deterministic first-match order.
     """
-    from repoindex.analyzers.json import JsonAnalyzer
-
-    factories: tuple[Callable[[], LanguageAnalyzer], ...] = (
-        cast("Callable[[], LanguageAnalyzer]", JsonAnalyzer),
-    )
-
-    return factories
+    return ()
 
 
 def _builtin_analyzer_plugins() -> list[_LoadedPlugin]:
@@ -709,6 +704,26 @@ def missing_language_analyzer_hint(path: Path) -> str | None:
             "files, or use `repoindex[bundle-official]` when the curated "
             "bundle is available."
         )
+
+    if suffix == ".json" and "json" not in analyzer_names:
+        package_name = OPTIONAL_ANALYZER_PACKAGE_BY_NAME["json"]
+        if path.name == "package.json":
+            return (
+                "Structured JSON indexing now ships through the first-party "
+                f"`{package_name}` package. Install that package to enable "
+                "`package.json` manifests, or use `repoindex[bundle-official]` "
+                "when the curated bundle is available."
+            )
+        if path.name == ".releaserc.json" or (
+            path.parent.name == "schema" or "schema" in path.stem.lower()
+        ):
+            return (
+                "Structured JSON indexing now ships through the first-party "
+                f"`{package_name}` package. Install that package to enable "
+                "supported JSON Schema and release-config files, or use "
+                "`repoindex[bundle-official]` when the curated bundle is "
+                "available."
+            )
 
     if suffix in {".c", ".h"} and "c" not in analyzer_names:
         package_name = OPTIONAL_ANALYZER_PACKAGE_BY_NAME["c"]

@@ -21,6 +21,8 @@ Typical local workflow:
 ```bash
 source .venv/bin/activate
 pip install -e ../repoindex
+pip install -e ../repoindex/packages/repoindex-analyzer-python
+pip install -e ../repoindex/packages/repoindex-analyzer-json
 pip install -e ../repoindex/packages/repoindex-analyzer-c
 pip install -e ../repoindex/packages/repoindex-analyzer-bash
 pip install -e /path/to/repoindex-demo-analyzer
@@ -34,6 +36,8 @@ Copyable example distributions live under:
 
 Repository-owned first-party distributions now live under:
 
+- `packages/repoindex-analyzer-python`
+- `packages/repoindex-analyzer-json`
 - `packages/repoindex-analyzer-c`
 - `packages/repoindex-analyzer-bash`
 - `packages/repoindex-bundle-official`

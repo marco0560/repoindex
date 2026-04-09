@@ -237,6 +237,22 @@ def _build_python_analyzer() -> LanguageAnalyzer:
     return _build_optional_first_party_analyzer("python")
 
 
+def _build_json_analyzer() -> LanguageAnalyzer:
+    """
+    Build one fake first-party JSON analyzer.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Deterministic JSON analyzer stub for registry tests.
+    """
+    return _build_optional_first_party_analyzer("json")
+
+
 class _DemoBackend(SQLiteIndexBackend):
     """Small backend plugin stub."""
 
@@ -307,12 +323,12 @@ def test_plugin_registrations_report_loaded_skipped_and_duplicate_plugins(
                 value="demo:dup",
                 dist=_FakeDistribution("dup-analyzer"),
                 loaded=type(
-                    "_DuplicateJsonAnalyzer",
+                    "_DuplicateDemoAnalyzer",
                     (),
                     {
-                        "name": "json",
+                        "name": "demo",
                         "version": "1",
-                        "discovery_globs": ("*.json",),
+                        "discovery_globs": ("*.demo",),
                         "supports_path": lambda self, path: False,
                         "analyze_file": lambda self, path, root: AnalysisResult(
                             source_path=path,
@@ -351,14 +367,6 @@ def test_plugin_registrations_report_loaded_skipped_and_duplicate_plugins(
 
     assert any(
         record.family == "analyzer"
-        and record.name == "json"
-        and record.source == "builtin"
-        and record.status == "loaded"
-        and record.origin == "core"
-        for record in registrations
-    )
-    assert any(
-        record.family == "analyzer"
         and record.name == "demo"
         and record.provider == "demo-analyzer"
         and record.status == "loaded"
@@ -367,7 +375,7 @@ def test_plugin_registrations_report_loaded_skipped_and_duplicate_plugins(
     )
     assert any(
         record.family == "analyzer"
-        and record.name == "json"
+        and record.name == "demo"
         and record.provider == "dup-analyzer"
         and record.status == "duplicate"
         for record in registrations
@@ -431,7 +439,7 @@ def test_active_registry_uses_loaded_entry_point_plugins(
 
     assert isinstance(analyzers[0], LanguageAnalyzer)
     analyzer_names = [analyzer.name for analyzer in analyzers]
-    assert analyzer_names[0] == "json"
+    assert analyzer_names[0] == "demo"
     assert "demo" in analyzer_names
     assert isinstance(backend, IndexBackend)
     assert backend.name == "demo-backend"
@@ -500,15 +508,20 @@ def test_first_party_analyzer_packages_declare_entry_points() -> None:
         entry points.
     """
     python_pyproject = Path("packages/repoindex-analyzer-python/pyproject.toml")
+    json_pyproject = Path("packages/repoindex-analyzer-json/pyproject.toml")
     c_pyproject = Path("packages/repoindex-analyzer-c/pyproject.toml")
     bash_pyproject = Path("packages/repoindex-analyzer-bash/pyproject.toml")
 
     python_project = tomllib.loads(python_pyproject.read_text(encoding="utf-8"))
+    json_project = tomllib.loads(json_pyproject.read_text(encoding="utf-8"))
     c_project = tomllib.loads(c_pyproject.read_text(encoding="utf-8"))
     bash_project = tomllib.loads(bash_pyproject.read_text(encoding="utf-8"))
 
     assert python_project["project"]["entry-points"]["repoindex.analyzers"] == {
         "python": "repoindex_analyzer_python:build_analyzer"
+    }
+    assert json_project["project"]["entry-points"]["repoindex.analyzers"] == {
+        "json": "repoindex_analyzer_json:build_analyzer"
     }
     assert c_project["project"]["entry-points"]["repoindex.analyzers"] == {
         "c": "repoindex_analyzer_c:build_analyzer"
@@ -532,8 +545,8 @@ def test_registry_orders_first_party_analyzers_across_sources(
     Returns
     -------
     None
-        The test asserts Python, C, and Bash load as first-party entry-point
-        plugins while JSON keeps its built-in slot in the final routing order.
+        The test asserts Python, JSON, C, and Bash load as first-party
+        entry-point plugins in the final routing order.
     """
     _patch_entry_points(
         monkeypatch,
@@ -543,6 +556,12 @@ def test_registry_orders_first_party_analyzers_across_sources(
                 value="repoindex_analyzer_python:build_analyzer",
                 dist=_FakeDistribution("repoindex-analyzer-python"),
                 loaded=_build_python_analyzer,
+            ),
+            _FakeEntryPoint(
+                name="json",
+                value="repoindex_analyzer_json:build_analyzer",
+                dist=_FakeDistribution("repoindex-analyzer-json"),
+                loaded=_build_json_analyzer,
             ),
             _FakeEntryPoint(
                 name="c",
@@ -570,6 +589,15 @@ def test_registry_orders_first_party_analyzers_across_sources(
         record.family == "analyzer"
         and record.name == "python"
         and record.provider == "repoindex-analyzer-python"
+        and record.source == "entry_point"
+        and record.origin == "first_party"
+        and record.status == "loaded"
+        for record in registrations
+    )
+    assert any(
+        record.family == "analyzer"
+        and record.name == "json"
+        and record.provider == "repoindex-analyzer-json"
         and record.source == "entry_point"
         and record.origin == "first_party"
         and record.status == "loaded"

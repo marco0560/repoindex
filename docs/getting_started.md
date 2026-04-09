@@ -31,6 +31,8 @@ Example:
 ```bash
 source .venv/bin/activate
 pip install -e ../repoindex[semantic]
+pip install -e ../repoindex/packages/repoindex-analyzer-python
+pip install -e ../repoindex/packages/repoindex-analyzer-json
 pip install -e ../repoindex/packages/repoindex-analyzer-c
 pip install -e ../repoindex/packages/repoindex-analyzer-bash
 ```
