@@ -37,9 +37,18 @@ Repository:
 
 Owned paths:
 
+* `.gitignore`
 * `.github/workflows/`
+* `.pre-commit-config.yaml`
+* `.releaserc.json`
+* `LICENSE`
+* `README.md`
 * `docs/`
 * `examples/`
+* `mkdocs.yml`
+* `package-lock.json`
+* `package.json`
+* `pyproject.toml`
 * `scripts/`
 * `src/repoindex/`
 * `tests/`
@@ -49,6 +58,8 @@ Notes:
 * The core repository retains the installed-wheel integration tests.
 * The core repository retains the compatibility surfaces until `#13` removes
   them after the split.
+* The core repository also retains the root files required by its kept CI,
+  docs, and release workflows.
 
 ## Analyzer Repositories
 

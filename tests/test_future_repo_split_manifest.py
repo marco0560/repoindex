@@ -93,17 +93,60 @@ def test_core_manifest_keeps_shared_repository_paths_in_core() -> None:
     )
 
     assert core_manifest.owned_paths == (
+        ".gitignore",
         ".github/workflows/ci.yml",
         ".github/workflows/commit-message-check.yml",
         ".github/workflows/docs.yml",
         ".github/workflows/release.yml",
+        ".pre-commit-config.yaml",
+        ".releaserc.json",
+        "LICENSE",
+        "README.md",
         "docs/",
         "examples/",
+        "mkdocs.yml",
+        "package-lock.json",
+        "package.json",
+        "pyproject.toml",
         "scripts/",
         "src/repoindex/",
         "tests/",
     )
     assert core_manifest.stays_in_core == ()
+
+
+def test_core_manifest_keeps_root_files_needed_by_retained_workflows() -> None:
+    """
+    Keep exported core repositories operational after the split rehearsal.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the core manifest retains the root files required by
+        the CI, docs, and release workflows that stay in the exported core
+        repository.
+    """
+    core_manifest = (
+        _load_future_repo_split_manifest_helper().future_repo_split_manifests()[0]
+    )
+
+    required_paths = {
+        ".gitignore",
+        ".pre-commit-config.yaml",
+        ".releaserc.json",
+        "LICENSE",
+        "README.md",
+        "mkdocs.yml",
+        "package-lock.json",
+        "package.json",
+        "pyproject.toml",
+    }
+
+    assert required_paths.issubset(set(core_manifest.owned_paths))
 
 
 def test_package_manifests_keep_package_paths_and_compatibility_surfaces_explicit() -> (
