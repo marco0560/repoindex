@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "repoindex[semantic]",
+    "repoindex-analyzer-python",
     "repoindex-analyzer-c",
     "repoindex-analyzer-bash",
 ]

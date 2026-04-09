@@ -596,7 +596,7 @@ def test_registered_language_analyzer_factories_keep_core_scope_narrow() -> None
     """
     factories = registry_module._registered_language_analyzer_factories()
 
-    assert [factory().name for factory in factories] == ["python", "json"]
+    assert [factory().name for factory in factories] == ["json"]
 
 
 def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
@@ -623,7 +623,7 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
 
     analyzers = active_language_analyzers()
 
-    assert [analyzer.name for analyzer in analyzers] == ["python", "json"]
+    assert [analyzer.name for analyzer in analyzers] == ["json"]
 
 
 def test_json_analyzer_extracts_module_metadata_from_json_schema(
@@ -910,6 +910,48 @@ def test_select_language_analyzer_reports_optional_extra_hint(
     assert "No language analyzer registered for path: native/sample.c" in message
     assert "repoindex-analyzer-c" in message
     assert missing_language_analyzer_hint(Path("native/sample.c")) is not None
+
+
+def test_select_language_analyzer_reports_python_package_hint(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """
+    Report the package install hint when a Python file has no available analyzer.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture used to patch entry-point discovery.
+
+    Returns
+    -------
+    None
+        The test asserts the failure message includes the Python package hint.
+
+    Notes
+    -----
+    The test captures the ``ValueError`` internally, so it does not expose a
+    ``Raises`` contract to callers.
+    """
+    monkeypatch.setattr(
+        registry_module,
+        "_entry_points_for_group",
+        lambda group: [],
+    )
+
+    analyzers = active_language_analyzers()
+
+    try:
+        _select_language_analyzer(Path("pkg/sample.py"), analyzers)
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        msg = "expected ValueError for missing Python analyzer"
+        raise AssertionError(msg)
+
+    assert "No language analyzer registered for path: pkg/sample.py" in message
+    assert "repoindex-analyzer-python" in message
+    assert missing_language_analyzer_hint(Path("pkg/sample.py")) is not None
 
 
 def test_c_analyzer_normalizes_functions_and_includes(tmp_path: Path) -> None:

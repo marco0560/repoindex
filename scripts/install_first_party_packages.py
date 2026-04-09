@@ -27,6 +27,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIRST_PARTY_EDITABLE_PACKAGES: tuple[str, ...] = (
+    "packages/repoindex-analyzer-python",
     "packages/repoindex-analyzer-c",
     "packages/repoindex-analyzer-bash",
     "packages/repoindex-bundle-official",

@@ -104,7 +104,7 @@ Tasks:
 - [x] Define the target first-party package set for default analyzers and the
   default backend in
   `docs/adr/ADR-012-phase-2-package-set-default-analyzers-backend.md`.
-- [ ] Extract the Python analyzer into its own official distribution.
+- [x] Extract the Python analyzer into its own official distribution.
 - [ ] Extract the JSON analyzer into its own official distribution.
 - [ ] Extract the SQLite backend into its own official distribution.
 - [ ] Keep compatibility and operator-facing errors explicit during the

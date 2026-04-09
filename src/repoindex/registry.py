@@ -35,10 +35,13 @@ INDEX_BACKEND_ENV_VAR = "REPOINDEX_INDEX_BACKEND"
 ANALYZER_ENTRY_POINT_GROUP = "repoindex.analyzers"
 BACKEND_ENTRY_POINT_GROUP = "repoindex.backends"
 OPTIONAL_ANALYZER_PACKAGE_BY_NAME: dict[str, str] = {
+    "python": "repoindex-analyzer-python",
     "c": "repoindex-analyzer-c",
     "bash": "repoindex-analyzer-bash",
 }
 PREFERRED_ANALYZER_ORDER: dict[str, int] = {
+    "python": 0,
+    "json": 5,
     "c": 10,
     "bash": 20,
 }
@@ -229,10 +232,8 @@ def _registered_language_analyzer_factories() -> (
         Analyzer factories in deterministic first-match order.
     """
     from repoindex.analyzers.json import JsonAnalyzer
-    from repoindex.analyzers.python import PythonAnalyzer
 
     factories: tuple[Callable[[], LanguageAnalyzer], ...] = (
-        cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
         cast("Callable[[], LanguageAnalyzer]", JsonAnalyzer),
     )
 
@@ -646,7 +647,21 @@ def _plugin_snapshot(
             group=BACKEND_ENTRY_POINT_GROUP,
         )
 
-    return _resolve_plugins(builtins, externals, external_registrations)
+    resolved, registrations = _resolve_plugins(
+        builtins,
+        externals,
+        external_registrations,
+    )
+    if family == "analyzer":
+        resolved.sort(
+            key=lambda plugin: (
+                PREFERRED_ANALYZER_ORDER.get(plugin.name, 1000),
+                plugin.name,
+                plugin.provider,
+                plugin.entry_point or "",
+            )
+        )
+    return resolved, registrations
 
 
 def plugin_registrations() -> list[PluginRegistration]:
@@ -685,6 +700,15 @@ def missing_language_analyzer_hint(path: Path) -> str | None:
     """
     suffix = path.suffix.lower()
     analyzer_names = {plugin.name for plugin in _plugin_snapshot("analyzer")[0]}
+
+    if suffix == ".py" and "python" not in analyzer_names:
+        package_name = OPTIONAL_ANALYZER_PACKAGE_BY_NAME["python"]
+        return (
+            "Python indexing support now ships through the first-party "
+            f"`{package_name}` package. Install that package to enable `*.py` "
+            "files, or use `repoindex[bundle-official]` when the curated "
+            "bundle is available."
+        )
 
     if suffix in {".c", ".h"} and "c" not in analyzer_names:
         package_name = OPTIONAL_ANALYZER_PACKAGE_BY_NAME["c"]

@@ -79,10 +79,52 @@ def _write_module(path: Path, source: str) -> None:
     path.write_text(source, encoding="utf-8")
 
 
-class _PythonAnalyzerV2(PythonAnalyzer):
-    """Python analyzer stub with a bumped version for staleness tests."""
+class _PythonAnalyzerV2:
+    """
+    Python analyzer stub with a bumped version for staleness tests.
 
+    Parameters
+    ----------
+    None
+    """
+
+    name = "python"
     version = "2"
+    discovery_globs: tuple[str, ...] = ("*.py",)
+
+    def supports_path(self, path: Path) -> bool:
+        """
+        Delegate Python path support to the installed Python analyzer.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Candidate repository path.
+
+        Returns
+        -------
+        bool
+            ``True`` when the path is accepted by the Python analyzer.
+        """
+        return PythonAnalyzer().supports_path(path)
+
+    def analyze_file(self, path: Path, root: Path) -> AnalysisResult:
+        """
+        Delegate Python analysis while exposing a bumped analyzer version.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Python source file to analyze.
+        root : pathlib.Path
+            Repository root used for module derivation.
+
+        Returns
+        -------
+        repoindex.models.AnalysisResult
+            Normalized analysis result from the installed Python analyzer.
+        """
+        return PythonAnalyzer().analyze_file(path, root)
 
 
 class _SQLiteBackendV12(SQLiteIndexBackend):
