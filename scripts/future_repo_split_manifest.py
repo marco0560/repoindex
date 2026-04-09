@@ -66,6 +66,7 @@ def future_repo_split_manifests() -> tuple[FutureRepoSplitManifest, ...]:
                 ".github/workflows/release.yml",
                 ".pre-commit-config.yaml",
                 ".releaserc.json",
+                "CHANGELOG.md",
                 "LICENSE",
                 "README.md",
                 "docs/",

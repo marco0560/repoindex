@@ -41,6 +41,7 @@ Owned paths:
 * `.github/workflows/`
 * `.pre-commit-config.yaml`
 * `.releaserc.json`
+* `CHANGELOG.md`
 * `LICENSE`
 * `README.md`
 * `docs/`

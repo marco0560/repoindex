@@ -122,6 +122,7 @@ def test_core_export_plan_preserves_repository_relative_paths() -> None:
         ".gitignore",
         ".pre-commit-config.yaml",
         ".releaserc.json",
+        "CHANGELOG.md",
         "LICENSE",
         "README.md",
         "mkdocs.yml",
