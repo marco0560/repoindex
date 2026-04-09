@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import repoindex.registry as registry
 from repoindex.cli import main
@@ -144,6 +145,80 @@ class _DemoAnalyzer:
             declarations=(),
             imports=(),
         )
+
+
+def _build_optional_first_party_analyzer(name: str) -> LanguageAnalyzer:
+    """
+    Build a deterministic first-party optional analyzer stub.
+
+    Parameters
+    ----------
+    name : str
+        Stable analyzer name exposed through the fake first-party entry point.
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Minimal analyzer instance compatible with registry validation.
+    """
+
+    class _OptionalFirstPartyAnalyzer(_DemoAnalyzer):
+        """Small analyzer stub carrying one first-party optional name."""
+
+        version = "1"
+        discovery_globs: tuple[str, ...] = (f"*.{name}",)
+
+        def supports_path(self, path: Path) -> bool:
+            """
+            Report support for the analyzer-specific suffix.
+
+            Parameters
+            ----------
+            path : pathlib.Path
+                Candidate repository path.
+
+            Returns
+            -------
+            bool
+                ``True`` when the suffix matches the analyzer name.
+            """
+            return path.suffix == f".{name}"
+
+    analyzer = _OptionalFirstPartyAnalyzer()
+    analyzer.name = name
+    return cast("LanguageAnalyzer", analyzer)
+
+
+def _build_c_analyzer() -> LanguageAnalyzer:
+    """
+    Build one fake first-party C analyzer.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Deterministic C analyzer stub for registry tests.
+    """
+    return _build_optional_first_party_analyzer("c")
+
+
+def _build_bash_analyzer() -> LanguageAnalyzer:
+    """
+    Build one fake first-party Bash analyzer.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Deterministic Bash analyzer stub for registry tests.
+    """
+    return _build_optional_first_party_analyzer("bash")
 
 
 class _DemoBackend(SQLiteIndexBackend):
@@ -391,4 +466,94 @@ def test_plugins_cli_emits_json_registration_diagnostics(
         and row["origin"] == "third_party"
         and row["status"] == "loaded"
         for row in payload["results"]
+    )
+
+
+def test_first_party_optional_analyzer_packages_declare_entry_points() -> None:
+    """
+    Keep first-party optional analyzer package metadata aligned to discovery.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the package metadata declares the expected analyzer
+        entry points.
+    """
+    c_pyproject = Path("packages/repoindex-analyzer-c/pyproject.toml")
+    bash_pyproject = Path("packages/repoindex-analyzer-bash/pyproject.toml")
+
+    c_project = tomllib.loads(c_pyproject.read_text(encoding="utf-8"))
+    bash_project = tomllib.loads(bash_pyproject.read_text(encoding="utf-8"))
+
+    assert c_project["project"]["entry-points"]["repoindex.analyzers"] == {
+        "c": "repoindex_analyzer_c:build_analyzer"
+    }
+    assert bash_project["project"]["entry-points"]["repoindex.analyzers"] == {
+        "bash": "repoindex_analyzer_bash:build_analyzer"
+    }
+
+
+def test_registry_loads_first_party_optional_analyzers_from_entry_points(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Load first-party optional analyzers through entry-point discovery only.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch registry entry-point discovery.
+
+    Returns
+    -------
+    None
+        The test asserts optional first-party analyzers are registered as
+        entry-point plugins rather than core built-ins.
+    """
+    _patch_entry_points(
+        monkeypatch,
+        analyzers=[
+            _FakeEntryPoint(
+                name="c",
+                value="repoindex_analyzer_c:build_analyzer",
+                dist=_FakeDistribution("repoindex-analyzer-c"),
+                loaded=_build_c_analyzer,
+            ),
+            _FakeEntryPoint(
+                name="bash",
+                value="repoindex_analyzer_bash:build_analyzer",
+                dist=_FakeDistribution("repoindex-analyzer-bash"),
+                loaded=_build_bash_analyzer,
+            ),
+        ],
+        backends=[],
+    )
+
+    analyzer_names = [
+        analyzer.name for analyzer in registry.active_language_analyzers()
+    ]
+    registrations = registry.plugin_registrations()
+
+    assert analyzer_names == ["python", "json", "c", "bash"]
+    assert any(
+        record.family == "analyzer"
+        and record.name == "c"
+        and record.provider == "repoindex-analyzer-c"
+        and record.source == "entry_point"
+        and record.origin == "first_party"
+        and record.status == "loaded"
+        for record in registrations
+    )
+    assert any(
+        record.family == "analyzer"
+        and record.name == "bash"
+        and record.provider == "repoindex-analyzer-bash"
+        and record.source == "entry_point"
+        and record.origin == "first_party"
+        and record.status == "loaded"
+        for record in registrations
     )

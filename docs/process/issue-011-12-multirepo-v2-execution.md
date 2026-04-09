@@ -73,7 +73,7 @@ Tasks:
 - [x] Reconcile CI jobs with explicit first-party package installs.
 - [x] Align package and install docs with `repoindex[bundle-official]` and the
   package-owned analyzer model.
-- [ ] Validate optional analyzer discovery through package metadata and entry
+- [x] Validate optional analyzer discovery through package metadata and entry
   points, not only source-tree convenience imports.
 - [ ] Check off the remaining `ADR-007` Phase 1 ledger items.
 

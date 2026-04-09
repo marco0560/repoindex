@@ -22,7 +22,7 @@ import sqlite3
 import subprocess
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import repoindex.registry as registry_module
 from repoindex.analyzers import BashAnalyzer, CAnalyzer, JsonAnalyzer, PythonAnalyzer
@@ -69,8 +69,6 @@ from repoindex.semantic.embeddings import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from pytest import MonkeyPatch
 from repoindex.scanner import (
     discovery_file_globs,
@@ -582,6 +580,25 @@ def test_active_phase_8_registries_expose_default_backend_and_analyzers() -> Non
     assert [analyzer.name for analyzer in analyzers] == ["python", "json", "c", "bash"]
 
 
+def test_registered_language_analyzer_factories_keep_core_scope_narrow() -> None:
+    """
+    Keep the built-in analyzer factory list limited to core-owned analyzers.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts optional first-party analyzers are not hard-wired into
+        the core factory list.
+    """
+    factories = registry_module._registered_language_analyzer_factories()
+
+    assert [factory().name for factory in factories] == ["python", "json"]
+
+
 def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -600,17 +617,13 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
     """
     monkeypatch.setattr(
         registry_module,
-        "_registered_language_analyzer_factories",
-        lambda: (
-            cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
-            cast("Callable[[], LanguageAnalyzer]", JsonAnalyzer),
-            cast("Callable[[], LanguageAnalyzer]", BashAnalyzer),
-        ),
+        "_entry_points_for_group",
+        lambda group: [],
     )
 
     analyzers = active_language_analyzers()
 
-    assert [analyzer.name for analyzer in analyzers] == ["python", "json", "bash"]
+    assert [analyzer.name for analyzer in analyzers] == ["python", "json"]
 
 
 def test_json_analyzer_extracts_module_metadata_from_json_schema(
@@ -880,11 +893,8 @@ def test_select_language_analyzer_reports_optional_extra_hint(
     """
     monkeypatch.setattr(
         registry_module,
-        "_registered_language_analyzer_factories",
-        lambda: (
-            cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
-            cast("Callable[[], LanguageAnalyzer]", BashAnalyzer),
-        ),
+        "_entry_points_for_group",
+        lambda group: [],
     )
 
     analyzers = active_language_analyzers()
