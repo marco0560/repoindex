@@ -112,6 +112,9 @@ Tasks:
 - [x] Update registry/discovery tests for externally replaceable defaults.
 - [x] Update install and architecture docs to reflect that defaults are now
   package-provided implementations.
+- [x] Remove the remaining core-owned SQLite backend implementation so
+  `repoindex.indexer.SQLiteIndexBackend` is only a compatibility re-export to
+  the package-owned class.
 
 Exit criteria:
 
@@ -139,8 +142,12 @@ Tasks:
   in `docs/adr/ADR-013-final-multirepo-repository-set-release-coordination-policy.md`.
 - [x] Define versioning and release coordination policy across repositories in
   `docs/adr/ADR-013-final-multirepo-repository-set-release-coordination-policy.md`.
-- [ ] Ensure each future repository builds and tests cleanly from local package
-  boundaries before splitting.
+- [x] Ensure each future repository builds and tests cleanly from local package
+  boundaries before splitting through:
+  - `scripts/build_first_party_packages.py`
+  - tooling tests in `tests/test_bootstrap_scripts.py`
+  - a passing wheel-build validation run against
+    `/tmp/repoindex-first-party-wheels`
 - [ ] Move code, tests, and package-local docs into their owning repositories.
 - [ ] Recreate CI in each repository.
 - [ ] Add integration testing in the core repository using installed package
@@ -224,7 +231,7 @@ Exit criteria:
 These items block the final `v2.0.0` publish until cleared:
 
 - [ ] `#11` complete
-- [ ] `#12` complete
+- [x] `#12` complete
 - [ ] multirepo split complete
 - [ ] `#13` complete
 - [ ] publish rehearsals complete

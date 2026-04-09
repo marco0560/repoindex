@@ -51,16 +51,26 @@ class _PackageInventoryModule(Protocol):
 class _BuildHelperModule(Protocol):
     """Protocol for the standalone first-party build helper module."""
 
-    def build_build_argv(self, *, python: str, package_path: Path) -> tuple[str, ...]:
-        """Build the wheel+sdist argv for one package."""
+    def build_build_argv(
+        self,
+        *,
+        python: str,
+        package_path: Path,
+        wheel_dir: Path,
+    ) -> tuple[str, ...]:
+        """Build the wheel-validation argv for one package."""
 
     def build_all_argv(
         self,
         *,
         python: str,
         repo_root: Path,
+        wheel_dir: Path,
     ) -> tuple[tuple[str, ...], ...]:
-        """Build the complete wheel+sdist command plan."""
+        """Build the complete wheel-validation command plan."""
+
+    def cleanup_build_artifacts(self, package_path: Path) -> None:
+        """Remove known package-local wheel-build artifacts."""
 
 
 class _BootstrapHelperModule(Protocol):
@@ -309,65 +319,106 @@ def test_build_helper_rehearses_each_first_party_package_boundary() -> None:
     Returns
     -------
     None
-        The test asserts the build helper emits one explicit wheel+sdist
+        The test asserts the build helper emits one explicit wheel-build
         command per future package repository.
     """
     helper = _load_build_helper()
     repo_root = Path("/tmp/repoindex")
+    wheel_dir = repo_root / ".artifacts" / "wheels"
 
     assert helper.build_all_argv(
         python="/tmp/repoindex/.venv/bin/python",
         repo_root=repo_root,
+        wheel_dir=wheel_dir,
     ) == (
         (
             "/tmp/repoindex/.venv/bin/python",
             "-m",
-            "build",
-            "--sdist",
-            "--wheel",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--wheel-dir",
+            "/tmp/repoindex/.artifacts/wheels",
             "/tmp/repoindex/packages/repoindex-analyzer-python",
         ),
         (
             "/tmp/repoindex/.venv/bin/python",
             "-m",
-            "build",
-            "--sdist",
-            "--wheel",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--wheel-dir",
+            "/tmp/repoindex/.artifacts/wheels",
             "/tmp/repoindex/packages/repoindex-analyzer-json",
         ),
         (
             "/tmp/repoindex/.venv/bin/python",
             "-m",
-            "build",
-            "--sdist",
-            "--wheel",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--wheel-dir",
+            "/tmp/repoindex/.artifacts/wheels",
             "/tmp/repoindex/packages/repoindex-analyzer-c",
         ),
         (
             "/tmp/repoindex/.venv/bin/python",
             "-m",
-            "build",
-            "--sdist",
-            "--wheel",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--wheel-dir",
+            "/tmp/repoindex/.artifacts/wheels",
             "/tmp/repoindex/packages/repoindex-analyzer-bash",
         ),
         (
             "/tmp/repoindex/.venv/bin/python",
             "-m",
-            "build",
-            "--sdist",
-            "--wheel",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--wheel-dir",
+            "/tmp/repoindex/.artifacts/wheels",
             "/tmp/repoindex/packages/repoindex-backend-sqlite",
         ),
         (
             "/tmp/repoindex/.venv/bin/python",
             "-m",
-            "build",
-            "--sdist",
-            "--wheel",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--wheel-dir",
+            "/tmp/repoindex/.artifacts/wheels",
             "/tmp/repoindex/packages/repoindex-bundle-official",
         ),
     )
+
+
+def test_build_helper_cleans_known_package_build_artifacts(tmp_path: Path) -> None:
+    """
+    Remove transient build artifacts created during local wheel validation.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory managed by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts the helper removes `build/` and `*.egg-info` outputs.
+    """
+    helper = _load_build_helper()
+    package_path = tmp_path / "packages" / "repoindex-analyzer-python"
+    build_dir = package_path / "build"
+    egg_info_dir = package_path / "src" / "repoindex_analyzer_python.egg-info"
+    build_dir.mkdir(parents=True)
+    egg_info_dir.mkdir(parents=True)
+
+    helper.cleanup_build_artifacts(package_path)
+
+    assert not build_dir.exists()
+    assert not egg_info_dir.exists()
 
 
 def test_build_bootstrap_commands_reuses_shared_first_party_install_command() -> None:
