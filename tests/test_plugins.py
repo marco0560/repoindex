@@ -18,6 +18,9 @@ This module belongs to the **registry verification layer** and safeguards plugin
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -33,6 +36,53 @@ from repoindex.models import AnalysisResult, ModuleArtifact
 
 if TYPE_CHECKING:
     import pytest
+
+
+def _root_build_artifact_paths(repo_root: Path) -> set[Path]:
+    """
+    Return transient root-package build artifacts created by wheel builds.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Repository root whose transient build artifacts should be tracked.
+
+    Returns
+    -------
+    set[pathlib.Path]
+        Build and egg-info paths currently present for the root package.
+    """
+    paths: set[Path] = set()
+    build_dir = repo_root / "build"
+    if build_dir.exists():
+        paths.add(build_dir)
+    for egg_info_dir in sorted((repo_root / "src").glob("*.egg-info")):
+        paths.add(egg_info_dir)
+    return paths
+
+
+def _cleanup_root_build_artifacts(
+    repo_root: Path,
+    *,
+    before_paths: set[Path],
+) -> None:
+    """
+    Remove transient root-package build artifacts created during one test run.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Repository root whose transient build artifacts should be cleaned.
+    before_paths : set[pathlib.Path]
+        Artifact paths that existed before the test started.
+
+    Returns
+    -------
+    None
+        Newly created build artifacts are removed in place.
+    """
+    for path in sorted(_root_build_artifact_paths(repo_root) - before_paths):
+        shutil.rmtree(path, ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -572,6 +622,111 @@ def test_first_party_backend_package_declares_entry_point() -> None:
     assert sqlite_project["project"]["entry-points"]["repoindex.backends"] == {
         "sqlite": "repoindex_backend_sqlite:build_backend"
     }
+
+
+def test_core_can_discover_installed_first_party_packages_from_built_wheels(
+    tmp_path: Path,
+) -> None:
+    """
+    Discover first-party plugins from installed wheel artifacts outside the repo.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory managed by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts core plugin discovery works from installed wheel
+        artifacts without relying on the repository checkout as `cwd`.
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    wheel_dir = tmp_path / "wheels"
+    install_dir = tmp_path / "site-packages"
+    build_artifacts_before = _root_build_artifact_paths(repo_root)
+
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "scripts/build_first_party_packages.py",
+                "--wheel-dir",
+                str(wheel_dir),
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "wheel",
+                "--no-deps",
+                "--wheel-dir",
+                str(wheel_dir),
+                str(repo_root),
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        _cleanup_root_build_artifacts(repo_root, before_paths=build_artifacts_before)
+
+    wheel_paths = sorted(str(path) for path in wheel_dir.glob("*.whl"))
+    assert wheel_paths
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--target",
+            str(install_dir),
+            *wheel_paths,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(install_dir)
+    env["PYTHONNOUSERSITE"] = "1"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json, repoindex, repoindex.registry as registry; "
+                "backend = registry.active_index_backend(); "
+                "analyzers = registry.active_language_analyzers(); "
+                "print(json.dumps({"
+                "'repoindex_file': repoindex.__file__, "
+                "'backend_module': type(backend).__module__, "
+                "'analyzers': [analyzer.name for analyzer in analyzers]"
+                "}))"
+            ),
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert Path(payload["repoindex_file"]).is_relative_to(install_dir)
+    assert payload["backend_module"] == "repoindex_backend_sqlite"
+    assert payload["analyzers"] == ["python", "json", "c", "bash"]
 
 
 def test_registry_orders_first_party_analyzers_across_sources(

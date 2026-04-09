@@ -150,8 +150,9 @@ Tasks:
     `/tmp/repoindex-first-party-wheels`
 - [ ] Move code, tests, and package-local docs into their owning repositories.
 - [ ] Recreate CI in each repository.
-- [ ] Add integration testing in the core repository using installed package
-  artifacts rather than sibling-source loading.
+- [x] Add integration testing in the core repository using installed package
+  artifacts rather than sibling-source loading through
+  `tests/test_plugins.py`.
 
 Exit criteria:
 
