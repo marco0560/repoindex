@@ -218,6 +218,9 @@ Tasks:
 - [ ] Define the `v2.0.0` breaking-change and migration notes.
 - [ ] Build wheel and sdist artifacts for every distribution.
 - [ ] Run artifact-level validation and fresh-environment install rehearsals.
+- [x] Add a wheel-based installed-artifact release rehearsal helper in:
+  - `scripts/rehearse_release_installs.py`
+  - `tests/test_bootstrap_scripts.py`
 - [ ] Publish in dependency order.
 - [ ] Verify install, plugin discovery, indexing, and coverage from published
   packages.

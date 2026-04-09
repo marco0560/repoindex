@@ -73,6 +73,43 @@ class _BuildHelperModule(Protocol):
         """Remove known package-local wheel-build artifacts."""
 
 
+class _ReleaseInstallRehearsalModule(Protocol):
+    """Protocol for the installed-wheel release rehearsal helper."""
+
+    def build_first_party_wheels_argv(
+        self,
+        *,
+        python: str,
+        repo_root: Path,
+        wheel_dir: Path,
+    ) -> tuple[str, ...]:
+        """Build the first-party wheel-rehearsal command."""
+
+    def build_root_wheel_argv(
+        self,
+        *,
+        python: str,
+        repo_root: Path,
+        wheel_dir: Path,
+    ) -> tuple[str, ...]:
+        """Build the core wheel-rehearsal command."""
+
+    def discover_wheel_paths(self, wheel_dir: Path) -> tuple[Path, ...]:
+        """Return built wheel paths in deterministic order."""
+
+    def build_install_wheels_argv(
+        self,
+        *,
+        python: str,
+        install_dir: Path,
+        wheel_paths: tuple[Path, ...],
+    ) -> tuple[str, ...]:
+        """Build the installed-wheel rehearsal install command."""
+
+    def build_probe_argv(self, *, python: str) -> tuple[str, ...]:
+        """Build the installed-wheel discovery probe command."""
+
+
 class _BootstrapHelperModule(Protocol):
     """Protocol for the standalone bootstrap helper module."""
 
@@ -198,6 +235,34 @@ def _load_bootstrap_helper() -> _BootstrapHelperModule:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return cast("_BootstrapHelperModule", module)
+
+
+def _load_release_install_rehearsal_helper() -> _ReleaseInstallRehearsalModule:
+    """
+    Load the installed-wheel release rehearsal helper from its repository path.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    object
+        Loaded module object for the installed-wheel rehearsal helper script.
+    """
+    helper_path = (
+        Path(__file__).resolve().parents[1] / "scripts" / "rehearse_release_installs.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "rehearse_release_installs",
+        helper_path,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return cast("_ReleaseInstallRehearsalModule", module)
 
 
 def test_editable_package_paths_follow_authoritative_first_party_order() -> None:
@@ -419,6 +484,124 @@ def test_build_helper_cleans_known_package_build_artifacts(tmp_path: Path) -> No
 
     assert not build_dir.exists()
     assert not egg_info_dir.exists()
+
+
+def test_release_install_rehearsal_builds_first_party_and_core_wheels() -> None:
+    """
+    Keep the release rehearsal explicit about first-party and core wheel builds.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the rehearsal builds the first-party package set before
+        the core wheel.
+    """
+    helper = _load_release_install_rehearsal_helper()
+    repo_root = Path("/tmp/repoindex")
+    wheel_dir = Path("/tmp/repoindex-wheels")
+
+    assert helper.build_first_party_wheels_argv(
+        python="python",
+        repo_root=repo_root,
+        wheel_dir=wheel_dir,
+    ) == (
+        "python",
+        str(repo_root / "scripts" / "build_first_party_packages.py"),
+        "--wheel-dir",
+        str(wheel_dir),
+    )
+    assert helper.build_root_wheel_argv(
+        python="python",
+        repo_root=repo_root,
+        wheel_dir=wheel_dir,
+    ) == (
+        "python",
+        "-m",
+        "pip",
+        "wheel",
+        "--no-deps",
+        "--wheel-dir",
+        str(wheel_dir),
+        str(repo_root),
+    )
+
+
+def test_release_install_rehearsal_installs_sorted_wheels_into_target_directory(
+    tmp_path: Path,
+) -> None:
+    """
+    Keep installed-wheel rehearsal deterministic across artifact build order.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory managed by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts discovered wheels are sorted and installed into the
+        requested target directory.
+    """
+    helper = _load_release_install_rehearsal_helper()
+    wheel_dir = tmp_path / "wheels"
+    install_dir = tmp_path / "site-packages"
+    wheel_dir.mkdir()
+    (wheel_dir / "repoindex_backend_sqlite-2.0.0-py3-none-any.whl").write_text(
+        "",
+        encoding="utf-8",
+    )
+    (wheel_dir / "repoindex-2.0.0-py3-none-any.whl").write_text("", encoding="utf-8")
+
+    wheel_paths = helper.discover_wheel_paths(wheel_dir)
+
+    assert wheel_paths == (
+        wheel_dir / "repoindex-2.0.0-py3-none-any.whl",
+        wheel_dir / "repoindex_backend_sqlite-2.0.0-py3-none-any.whl",
+    )
+    assert helper.build_install_wheels_argv(
+        python="python",
+        install_dir=install_dir,
+        wheel_paths=wheel_paths,
+    ) == (
+        "python",
+        "-m",
+        "pip",
+        "install",
+        "--no-deps",
+        "--target",
+        str(install_dir),
+        str(wheel_dir / "repoindex-2.0.0-py3-none-any.whl"),
+        str(wheel_dir / "repoindex_backend_sqlite-2.0.0-py3-none-any.whl"),
+    )
+
+
+def test_release_install_rehearsal_probe_stays_focused_on_discovery_contract() -> None:
+    """
+    Keep the release rehearsal probe aligned to the plugin discovery contract.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the release probe inspects the installed repoindex
+        location, backend module, and analyzer names.
+    """
+    helper = _load_release_install_rehearsal_helper()
+
+    probe_argv = helper.build_probe_argv(python="python")
+
+    assert probe_argv[0] == "python"
+    assert probe_argv[1] == "-c"
+    assert "'backend_module': type(backend).__module__" in probe_argv[2]
+    assert "'analyzers': [analyzer.name for analyzer in analyzers]" in probe_argv[2]
 
 
 def test_build_bootstrap_commands_reuses_shared_first_party_install_command() -> None:
