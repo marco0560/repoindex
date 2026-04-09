@@ -22,8 +22,11 @@ import sqlite3
 import subprocess
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
+from repoindex_backend_sqlite import SQLiteIndexBackend
+
+import repoindex.indexer as indexer_module
 import repoindex.registry as registry_module
 from repoindex.analyzers import BashAnalyzer, CAnalyzer, JsonAnalyzer, PythonAnalyzer
 from repoindex.analyzers.c import _disambiguate_function_stable_ids
@@ -36,7 +39,6 @@ from repoindex.contracts import (
     split_declared_retrieval_capabilities,
 )
 from repoindex.indexer import (
-    SQLiteIndexBackend,
     _collect_indexed_file_analyses,
     _select_language_analyzer,
     index_repo,
@@ -69,8 +71,6 @@ from repoindex.semantic.embeddings import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from pytest import MonkeyPatch
 from repoindex.scanner import (
     discovery_file_globs,
@@ -129,6 +129,71 @@ class _FakeBackend:
     name = "fake-backend"
     version = "1"
 
+    def open_connection(self, root: Path) -> sqlite3.Connection:
+        """
+        Open an in-memory SQLite connection for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+
+        Returns
+        -------
+        sqlite3.Connection
+            In-memory SQLite connection handle.
+        """
+        del root
+        return sqlite3.connect(":memory:")
+
+    def load_runtime_inventory(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> tuple[str, str, int] | None:
+        """
+        Return no persisted runtime inventory for the fake backend.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        tuple[str, str, int] | None
+            ``None`` for protocol validation.
+        """
+        del root, conn
+        return None
+
+    def load_analyzer_inventory(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str]]:
+        """
+        Return no persisted analyzer inventory for the fake backend.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str]]
+            Empty analyzer inventory for protocol validation.
+        """
+        del root, conn
+        return []
+
     def initialize(self, root: Path) -> None:
         """
         Perform no-op initialization for the fake backend.
@@ -145,7 +210,12 @@ class _FakeBackend:
         """
         return
 
-    def load_existing_file_hashes(self, root: Path) -> dict[str, str]:
+    def load_existing_file_hashes(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, str]:
         """
         Return an empty file-hash mapping.
 
@@ -159,9 +229,40 @@ class _FakeBackend:
         dict[str, str]
             Empty mapping for protocol validation.
         """
+        del conn
         return {}
 
-    def delete_paths(self, root: Path, *, paths: list[str]) -> None:
+    def load_existing_file_ownership(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, tuple[str, str]]:
+        """
+        Return an empty analyzer-ownership mapping.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        dict[str, tuple[str, str]]
+            Empty ownership mapping for protocol validation.
+        """
+        del root, conn
+        return {}
+
+    def delete_paths(
+        self,
+        root: Path,
+        *,
+        paths: list[str],
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
         """
         Perform no-op path deletion for the fake backend.
 
@@ -177,6 +278,7 @@ class _FakeBackend:
         None
             This fake backend keeps no state.
         """
+        del conn
         return
 
     def persist_analysis(
@@ -185,6 +287,9 @@ class _FakeBackend:
         *,
         file_metadata: FileMetadataSnapshot,
         analysis: AnalysisResult,
+        embedding_backend: object | None = None,
+        previous_embeddings: dict[str, object] | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> tuple[int, int]:
         """
         Count normalized functions as a stand-in for persisted artifacts.
@@ -203,10 +308,16 @@ class _FakeBackend:
         tuple[int, int]
             Recomputed and reused semantic-artifact counts.
         """
-        del root, file_metadata
+        del root, file_metadata, embedding_backend, previous_embeddings, conn
         return (len(analysis.iter_functions()), 0)
 
-    def count_reusable_embeddings(self, root: Path, *, paths: list[str]) -> int:
+    def count_reusable_embeddings(
+        self,
+        root: Path,
+        *,
+        paths: list[str],
+        conn: sqlite3.Connection | None = None,
+    ) -> int:
         """
         Count supplied paths as a stand-in reusable-artifact metric.
 
@@ -222,9 +333,15 @@ class _FakeBackend:
         int
             Number of reusable paths.
         """
+        del root, conn
         return len(paths)
 
-    def rebuild_derived_indexes(self, root: Path) -> None:
+    def rebuild_derived_indexes(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
         """
         Perform no-op derived-index rebuilding.
 
@@ -238,7 +355,170 @@ class _FakeBackend:
         None
             This fake backend keeps no state.
         """
+        del conn
         return
+
+    def list_symbols_in_module(
+        self,
+        root: Path,
+        module: str,
+        *,
+        prefix: str | None = None,
+        limit: int = 20,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str, str, int]]:
+        """
+        Return no symbol rows for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        module : str
+            Dotted module name.
+        prefix : str | None, optional
+            Optional path filter.
+        limit : int, optional
+            Maximum result count.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str, str, int]]
+            Empty symbol rows for protocol validation.
+        """
+        del root, module, prefix, limit, conn
+        return []
+
+    def find_symbol(
+        self,
+        root: Path,
+        name: str,
+        *,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str, str, int]]:
+        """
+        Return no symbol matches for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        name : str
+            Exact symbol name.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str, str, int]]
+            Empty symbol rows for protocol validation.
+        """
+        del root, name, prefix, conn
+        return []
+
+    def docstring_issues(
+        self,
+        root: Path,
+        *,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str, str, str, str, str, int, int | None]]:
+        """
+        Return no docstring issues for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str, str, str, str, str, int, int | None]]
+            Empty docstring issue rows for protocol validation.
+        """
+        del root, prefix, conn
+        return []
+
+    def find_call_edges(
+        self,
+        root: Path,
+        name: str,
+        *,
+        module: str | None = None,
+        incoming: bool = False,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str | None, str | None, int]]:
+        """
+        Return no call edges for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        name : str
+            Logical caller or callee.
+        module : str | None, optional
+            Optional module filter.
+        incoming : bool, optional
+            Whether incoming edges would be requested.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str | None, str | None, int]]
+            Empty call-edge rows for protocol validation.
+        """
+        del root, name, module, incoming, prefix, conn
+        return []
+
+    def find_callable_refs(
+        self,
+        root: Path,
+        name: str,
+        *,
+        module: str | None = None,
+        incoming: bool = False,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str | None, str | None, int]]:
+        """
+        Return no callable references for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        name : str
+            Logical owner or target.
+        module : str | None, optional
+            Optional module filter.
+        incoming : bool, optional
+            Whether incoming references would be requested.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str | None, str | None, int]]
+            Empty callable-reference rows for protocol validation.
+        """
+        del root, name, module, incoming, prefix, conn
+        return []
 
     def find_include_edges(
         self,
@@ -275,6 +555,177 @@ class _FakeBackend:
         """
         del root, name, module, incoming, prefix, conn
         return []
+
+    def find_logical_symbols(
+        self,
+        root: Path,
+        module_name: str,
+        logical_name: str,
+        *,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, str, str, int]]:
+        """
+        Return no logical-symbol rows for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        module_name : str
+            Owning module name.
+        logical_name : str
+            Logical callable name.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, str, str, int]]
+            Empty symbol rows for protocol validation.
+        """
+        del root, module_name, logical_name, prefix, conn
+        return []
+
+    def logical_symbol_name(
+        self,
+        root: Path,
+        symbol: tuple[str, str, str, str, int],
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> str:
+        """
+        Return the symbol name as a stand-in logical identity.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        symbol : tuple[str, str, str, str, int]
+            Indexed symbol row.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        str
+            Symbol name extracted from the supplied row.
+        """
+        del root, conn
+        return symbol[2]
+
+    def embedding_inventory(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[str, str, int, int]]:
+        """
+        Return no embedding inventory rows for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[str, str, int, int]]
+            Empty inventory rows for protocol validation.
+        """
+        del root, conn
+        return []
+
+    def embedding_candidates(
+        self,
+        root: Path,
+        query: str,
+        *,
+        limit: int,
+        min_score: float,
+        prefix: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[tuple[float, tuple[str, str, str, str, int]]]:
+        """
+        Return no embedding candidates for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        query : str
+            Query string.
+        limit : int
+            Maximum result count.
+        min_score : float
+            Minimum similarity threshold.
+        prefix : str | None, optional
+            Optional path filter.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        list[tuple[float, tuple[str, str, str, str, int]]]
+            Empty candidate rows for protocol validation.
+        """
+        del root, query, limit, min_score, prefix, conn
+        return []
+
+    def prune_orphaned_embeddings(
+        self,
+        root: Path,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        """
+        Perform no-op orphaned-embedding cleanup for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        None
+            This fake backend keeps no state.
+        """
+        del root, conn
+        return
+
+    def current_embedding_state_matches(
+        self,
+        root: Path,
+        *,
+        embedding_backend: object,
+        conn: sqlite3.Connection | None = None,
+    ) -> bool:
+        """
+        Report a matching embedding state for protocol validation.
+
+        Parameters
+        ----------
+        root : pathlib.Path
+            Repository root.
+        embedding_backend : object
+            Backend metadata placeholder.
+        conn : sqlite3.Connection | None, optional
+            Optional SQLite connection.
+
+        Returns
+        -------
+        bool
+            Always ``True`` for protocol validation.
+        """
+        del root, embedding_backend, conn
+        return True
 
 
 class _FakeRetrievalProducer:
@@ -582,6 +1033,60 @@ def test_active_phase_8_registries_expose_default_backend_and_analyzers() -> Non
     assert [analyzer.name for analyzer in analyzers] == ["python", "json", "c", "bash"]
 
 
+def test_indexer_sqlite_backend_symbol_reexports_package_backend() -> None:
+    """
+    Keep the historical indexer backend symbol as a package-backed re-export.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts core no longer owns a separate SQLite backend class.
+    """
+    assert indexer_module.SQLiteIndexBackend is SQLiteIndexBackend
+
+
+def test_registered_index_backends_keep_core_scope_narrow() -> None:
+    """
+    Keep the built-in backend factory list limited to core-owned implementations.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the default SQLite backend now loads through the
+        first-party backend package rather than a core factory list.
+    """
+    backends = registry_module._registered_index_backends()
+
+    assert backends == {}
+
+
+def test_registered_language_analyzer_factories_keep_core_scope_narrow() -> None:
+    """
+    Keep the built-in analyzer factory list limited to core-owned analyzers.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts optional first-party analyzers are not hard-wired into
+        the core factory list.
+    """
+    factories = registry_module._registered_language_analyzer_factories()
+
+    assert [factory().name for factory in factories] == []
+
+
 def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -600,17 +1105,19 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
     """
     monkeypatch.setattr(
         registry_module,
-        "_registered_language_analyzer_factories",
-        lambda: (
-            cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
-            cast("Callable[[], LanguageAnalyzer]", JsonAnalyzer),
-            cast("Callable[[], LanguageAnalyzer]", BashAnalyzer),
-        ),
+        "_entry_points_for_group",
+        lambda group: [],
     )
 
-    analyzers = active_language_analyzers()
+    try:
+        active_language_analyzers()
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        msg = "expected ValueError when no analyzers are registered"
+        raise AssertionError(msg)
 
-    assert [analyzer.name for analyzer in analyzers] == ["python", "json", "bash"]
+    assert message == "No language analyzers are registered for repoindex"
 
 
 def test_json_analyzer_extracts_module_metadata_from_json_schema(
@@ -880,14 +1387,11 @@ def test_select_language_analyzer_reports_optional_extra_hint(
     """
     monkeypatch.setattr(
         registry_module,
-        "_registered_language_analyzer_factories",
-        lambda: (
-            cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
-            cast("Callable[[], LanguageAnalyzer]", BashAnalyzer),
-        ),
+        "_entry_points_for_group",
+        lambda group: [],
     )
 
-    analyzers = active_language_analyzers()
+    analyzers: list[LanguageAnalyzer] = []
 
     try:
         _select_language_analyzer(Path("native/sample.c"), analyzers)
@@ -900,6 +1404,90 @@ def test_select_language_analyzer_reports_optional_extra_hint(
     assert "No language analyzer registered for path: native/sample.c" in message
     assert "repoindex-analyzer-c" in message
     assert missing_language_analyzer_hint(Path("native/sample.c")) is not None
+
+
+def test_select_language_analyzer_reports_python_package_hint(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """
+    Report the package install hint when a Python file has no available analyzer.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture used to patch entry-point discovery.
+
+    Returns
+    -------
+    None
+        The test asserts the failure message includes the Python package hint.
+
+    Notes
+    -----
+    The test captures the ``ValueError`` internally, so it does not expose a
+    ``Raises`` contract to callers.
+    """
+    monkeypatch.setattr(
+        registry_module,
+        "_entry_points_for_group",
+        lambda group: [],
+    )
+
+    analyzers: list[LanguageAnalyzer] = []
+
+    try:
+        _select_language_analyzer(Path("pkg/sample.py"), analyzers)
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        msg = "expected ValueError for missing Python analyzer"
+        raise AssertionError(msg)
+
+    assert "No language analyzer registered for path: pkg/sample.py" in message
+    assert "repoindex-analyzer-python" in message
+    assert missing_language_analyzer_hint(Path("pkg/sample.py")) is not None
+
+
+def test_select_language_analyzer_reports_json_package_hint(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """
+    Report the package install hint when a supported JSON file has no analyzer.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture used to patch entry-point discovery.
+
+    Returns
+    -------
+    None
+        The test asserts the failure message includes the JSON package hint.
+
+    Notes
+    -----
+    The test captures the ``ValueError`` internally, so it does not expose a
+    ``Raises`` contract to callers.
+    """
+    monkeypatch.setattr(
+        registry_module,
+        "_entry_points_for_group",
+        lambda group: [],
+    )
+
+    analyzers: list[LanguageAnalyzer] = []
+
+    try:
+        _select_language_analyzer(Path("package.json"), analyzers)
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        msg = "expected ValueError for missing JSON analyzer"
+        raise AssertionError(msg)
+
+    assert "No language analyzer registered for path: package.json" in message
+    assert "repoindex-analyzer-json" in message
+    assert missing_language_analyzer_hint(Path("package.json")) is not None
 
 
 def test_c_analyzer_normalizes_functions_and_includes(tmp_path: Path) -> None:
@@ -2015,6 +2603,42 @@ def test_active_index_backend_rejects_unknown_configured_backend(
 
     assert "Unsupported repoindex backend 'unknown'" in message
     assert "sqlite" in message
+
+
+def test_active_index_backend_mentions_first_party_sqlite_package_when_missing(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """
+    Mention the extracted SQLite backend package when no backend is available.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to remove backend entry-point discovery.
+
+    Returns
+    -------
+    None
+        The test asserts the default backend error includes the installation
+        hint for the first-party SQLite package.
+    """
+    monkeypatch.setenv(registry_module.INDEX_BACKEND_ENV_VAR, "sqlite")
+    monkeypatch.setattr(
+        registry_module,
+        "_entry_points_for_group",
+        lambda group: [],
+    )
+
+    try:
+        active_index_backend()
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        msg = "expected ValueError when no backend plugins are registered"
+        raise AssertionError(msg)
+
+    assert "repoindex-backend-sqlite" in message
+    assert "repoindex-bundle-official" in message
 
 
 def test_instantiating_language_analyzers_requires_a_non_empty_registry() -> None:

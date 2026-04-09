@@ -1,8 +1,0 @@
-# type(scope): summary
-#
-# Allowed types:
-# feat, fix, docs, perf, refactor, test, chore, style
-#
-# Examples:
-# docs(repo): add docs skeleton
-# fix(query): preserve deterministic symbol ordering

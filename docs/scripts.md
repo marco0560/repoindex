@@ -3,8 +3,13 @@
 ## `scripts/bootstrap_dev_environment.py`
 
 Create `.venv`, install development and documentation dependencies, install
-repo-local Git configuration, install the extracted first-party analyzer
-packages, and optionally run the validation surface.
+repo-local Git configuration, install the extracted first-party analyzer and
+backend packages, and optionally run the validation surface.
+
+## `scripts/install_first_party_packages.py`
+
+Install the repository-local first-party analyzer/backend package set from one
+authoritative package list shared by bootstrap and CI.
 
 ## `scripts/install_repo_git_config.py`
 

@@ -28,17 +28,22 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from repoindex.indexer import SQLiteIndexBackend
-
 DEFAULT_INDEX_BACKEND = "sqlite"
 INDEX_BACKEND_ENV_VAR = "REPOINDEX_INDEX_BACKEND"
 ANALYZER_ENTRY_POINT_GROUP = "repoindex.analyzers"
 BACKEND_ENTRY_POINT_GROUP = "repoindex.backends"
+OPTIONAL_BACKEND_PACKAGE_BY_NAME: dict[str, str] = {
+    "sqlite": "repoindex-backend-sqlite",
+}
 OPTIONAL_ANALYZER_PACKAGE_BY_NAME: dict[str, str] = {
+    "python": "repoindex-analyzer-python",
+    "json": "repoindex-analyzer-json",
     "c": "repoindex-analyzer-c",
     "bash": "repoindex-analyzer-bash",
 }
 PREFERRED_ANALYZER_ORDER: dict[str, int] = {
+    "python": 0,
+    "json": 5,
     "c": 10,
     "bash": 20,
 }
@@ -139,7 +144,7 @@ class _LoadedPlugin:
     entry_point: str | None = None
 
 
-def _registered_index_backends() -> dict[str, type[SQLiteIndexBackend]]:
+def _registered_index_backends() -> dict[str, type[IndexBackend]]:
     """
     Return the backend factory registry keyed by backend name.
 
@@ -149,12 +154,10 @@ def _registered_index_backends() -> dict[str, type[SQLiteIndexBackend]]:
 
     Returns
     -------
-    dict[str, type[repoindex.indexer.SQLiteIndexBackend]]
+    dict[str, type[repoindex.contracts.IndexBackend]]
         Deterministic backend factories keyed by stable backend name.
     """
-    from repoindex.indexer import SQLiteIndexBackend
-
-    return {"sqlite": SQLiteIndexBackend}
+    return {}
 
 
 def _plugin_origin(*, provider: str, source: PluginSource) -> PluginOrigin:
@@ -193,24 +196,7 @@ def _builtin_backend_plugins() -> list[_LoadedPlugin]:
     list[repoindex.registry._LoadedPlugin]
         Built-in backend plugins in deterministic order.
     """
-    backends = _registered_index_backends()
-    loaded: list[_LoadedPlugin] = []
-
-    for name in sorted(backends):
-        factory = backends[name]
-        instance = factory()
-        loaded.append(
-            _LoadedPlugin(
-                family="backend",
-                name=name,
-                provider="repoindex",
-                source="builtin",
-                version=str(instance.version),
-                factory=factory,
-            )
-        )
-
-    return loaded
+    return []
 
 
 def _registered_language_analyzer_factories() -> (
@@ -228,29 +214,7 @@ def _registered_language_analyzer_factories() -> (
     tuple[collections.abc.Callable[[], repoindex.contracts.LanguageAnalyzer], ...]
         Analyzer factories in deterministic first-match order.
     """
-    import importlib
-
-    from repoindex.analyzers.json import JsonAnalyzer
-    from repoindex.analyzers.python import PythonAnalyzer
-
-    factories: list[Callable[[], LanguageAnalyzer]] = [
-        cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
-        cast("Callable[[], LanguageAnalyzer]", JsonAnalyzer),
-    ]
-
-    for module_name, analyzer_name in (
-        ("repoindex.analyzers.c", "CAnalyzer"),
-        ("repoindex.analyzers.bash", "BashAnalyzer"),
-    ):
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError:
-            continue
-        factories.append(
-            cast("Callable[[], LanguageAnalyzer]", getattr(module, analyzer_name))
-        )
-
-    return tuple(factories)
+    return ()
 
 
 def _builtin_analyzer_plugins() -> list[_LoadedPlugin]:
@@ -660,7 +624,21 @@ def _plugin_snapshot(
             group=BACKEND_ENTRY_POINT_GROUP,
         )
 
-    return _resolve_plugins(builtins, externals, external_registrations)
+    resolved, registrations = _resolve_plugins(
+        builtins,
+        externals,
+        external_registrations,
+    )
+    if family == "analyzer":
+        resolved.sort(
+            key=lambda plugin: (
+                PREFERRED_ANALYZER_ORDER.get(plugin.name, 1000),
+                plugin.name,
+                plugin.provider,
+                plugin.entry_point or "",
+            )
+        )
+    return resolved, registrations
 
 
 def plugin_registrations() -> list[PluginRegistration]:
@@ -700,6 +678,35 @@ def missing_language_analyzer_hint(path: Path) -> str | None:
     suffix = path.suffix.lower()
     analyzer_names = {plugin.name for plugin in _plugin_snapshot("analyzer")[0]}
 
+    if suffix == ".py" and "python" not in analyzer_names:
+        package_name = OPTIONAL_ANALYZER_PACKAGE_BY_NAME["python"]
+        return (
+            "Python indexing support now ships through the first-party "
+            f"`{package_name}` package. Install that package to enable `*.py` "
+            "files, or use `repoindex[bundle-official]` when the curated "
+            "bundle is available."
+        )
+
+    if suffix == ".json" and "json" not in analyzer_names:
+        package_name = OPTIONAL_ANALYZER_PACKAGE_BY_NAME["json"]
+        if path.name == "package.json":
+            return (
+                "Structured JSON indexing now ships through the first-party "
+                f"`{package_name}` package. Install that package to enable "
+                "`package.json` manifests, or use `repoindex[bundle-official]` "
+                "when the curated bundle is available."
+            )
+        if path.name == ".releaserc.json" or (
+            path.parent.name == "schema" or "schema" in path.stem.lower()
+        ):
+            return (
+                "Structured JSON indexing now ships through the first-party "
+                f"`{package_name}` package. Install that package to enable "
+                "supported JSON Schema and release-config files, or use "
+                "`repoindex[bundle-official]` when the curated bundle is "
+                "available."
+            )
+
     if suffix in {".c", ".h"} and "c" not in analyzer_names:
         package_name = OPTIONAL_ANALYZER_PACKAGE_BY_NAME["c"]
         return (
@@ -738,7 +745,7 @@ def configured_index_backend_name() -> str:
     return DEFAULT_INDEX_BACKEND
 
 
-def active_index_backend() -> SQLiteIndexBackend:
+def active_index_backend() -> IndexBackend:
     """
     Instantiate the configured index backend.
 
@@ -748,7 +755,7 @@ def active_index_backend() -> SQLiteIndexBackend:
 
     Returns
     -------
-    repoindex.indexer.SQLiteIndexBackend
+    repoindex.contracts.IndexBackend
         Active backend implementation for indexing and querying.
 
     Raises
@@ -759,16 +766,25 @@ def active_index_backend() -> SQLiteIndexBackend:
     configured_name = configured_index_backend_name()
     plugins, _registrations = _plugin_snapshot("backend")
     registry = {
-        plugin.name: cast("type[SQLiteIndexBackend]", plugin.factory)
+        plugin.name: cast("Callable[[], IndexBackend]", plugin.factory)
         for plugin in plugins
     }
     factory = registry.get(configured_name)
 
     if factory is None:
         available = ", ".join(sorted(registry))
+        package_hint = ""
+        if configured_name in OPTIONAL_BACKEND_PACKAGE_BY_NAME:
+            package_name = OPTIONAL_BACKEND_PACKAGE_BY_NAME[configured_name]
+            package_hint = (
+                " Install the first-party "
+                f"`{package_name}` package, or use "
+                "`repoindex-bundle-official` when the curated bundle is available."
+            )
         msg = (
             f"Unsupported repoindex backend '{configured_name}'. "
             f"Available backends: {available}"
+            f"{package_hint}"
         )
         raise ValueError(msg)
 

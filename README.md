@@ -14,9 +14,11 @@ deterministic context generation for natural-language queries.
 The current branch now indexes mixed-language repositories through registered
 language analyzers:
 
-- Python via `PythonAnalyzer`
-- JSON via the built-in `JsonAnalyzer` for JSON Schema, `package.json`, and
-  `.releaserc.json`
+- Python via the first-party `repoindex-analyzer-python` plugin
+- JSON via the first-party `repoindex-analyzer-json` plugin for JSON Schema,
+  `package.json`, and `.releaserc.json`
+- SQLite persistence via the first-party `repoindex-backend-sqlite` backend
+  plugin
 - C-family `*.c` and `*.h` files via the first-party
   `repoindex-analyzer-c` plugin backed by `tree-sitter-c`
 
@@ -58,20 +60,27 @@ this repository.
 
 Install optional analyzer packages only when needed. For repository-local
 development inside this repo, the bootstrap flow installs the official
-first-party packages automatically.
+first-party packages automatically through:
+
+```bash
+python scripts/install_first_party_packages.py
+```
 
 For an editable install into another repository with the current source tree:
 
 ```bash
 source .venv/bin/activate
-pip install -e ../repoindex[semantic]
-pip install -e ../repoindex/packages/repoindex-analyzer-c
-pip install -e ../repoindex/packages/repoindex-analyzer-bash
+python ../repoindex/scripts/install_first_party_packages.py \
+  --python "$VIRTUAL_ENV/bin/python" \
+  --include-core \
+  --core-extra semantic
 ```
 
-The accepted published bundle name is `repoindex[bundle-official]`. Inside the
-current source tree, repository-local development still installs the extracted
-first-party packages explicitly from `packages/`.
+The accepted published umbrella name remains `repoindex[bundle-official]`, but
+that is a published-package contract, not a source-tree shortcut. Inside the
+current checkout, install the extracted first-party analyzers and backend from
+`packages/`, with the canonical local install set owned by
+`scripts/install_first_party_packages.py`.
 
 Use `repoindex plugins` to inspect discovery. The report marks each plugin as
 `origin=core`, `origin=first_party`, or `origin=third_party`.
@@ -82,7 +91,8 @@ The current architecture after completed `ADR-004` migration work is:
 
 - one active backend per repository instance, selected through
   `repoindex.registry`
-- SQLite as the only current concrete backend
+- SQLite as the default first-party backend distributed through
+  `repoindex-backend-sqlite`
 - multiple language analyzers in one indexing run
 - deterministic mixed-language indexing for tracked Python, supported JSON,
   and C-family files
@@ -90,7 +100,7 @@ The current architecture after completed `ADR-004` migration work is:
   behavior, test, configuration, API-surface, and architecture/navigation
   queries
 
-The built-in JSON analyzer is intentionally family-based rather than generic.
+The first-party JSON analyzer is intentionally family-based rather than generic.
 It currently supports:
 
 - JSON Schema documents

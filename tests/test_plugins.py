@@ -18,19 +18,70 @@ This module belongs to the **registry verification layer** and safeguards plugin
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from repoindex_backend_sqlite import SQLiteIndexBackend
 
 import repoindex.registry as registry
 from repoindex.cli import main
 from repoindex.contracts import IndexBackend, LanguageAnalyzer
-from repoindex.indexer import SQLiteIndexBackend
 from repoindex.models import AnalysisResult, ModuleArtifact
 
 if TYPE_CHECKING:
     import pytest
+
+
+def _root_build_artifact_paths(repo_root: Path) -> set[Path]:
+    """
+    Return transient root-package build artifacts created by wheel builds.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Repository root whose transient build artifacts should be tracked.
+
+    Returns
+    -------
+    set[pathlib.Path]
+        Build and egg-info paths currently present for the root package.
+    """
+    paths: set[Path] = set()
+    build_dir = repo_root / "build"
+    if build_dir.exists():
+        paths.add(build_dir)
+    for egg_info_dir in sorted((repo_root / "src").glob("*.egg-info")):
+        paths.add(egg_info_dir)
+    return paths
+
+
+def _cleanup_root_build_artifacts(
+    repo_root: Path,
+    *,
+    before_paths: set[Path],
+) -> None:
+    """
+    Remove transient root-package build artifacts created during one test run.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Repository root whose transient build artifacts should be cleaned.
+    before_paths : set[pathlib.Path]
+        Artifact paths that existed before the test started.
+
+    Returns
+    -------
+    None
+        Newly created build artifacts are removed in place.
+    """
+    for path in sorted(_root_build_artifact_paths(repo_root) - before_paths):
+        shutil.rmtree(path, ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -146,6 +197,112 @@ class _DemoAnalyzer:
         )
 
 
+def _build_optional_first_party_analyzer(name: str) -> LanguageAnalyzer:
+    """
+    Build a deterministic first-party optional analyzer stub.
+
+    Parameters
+    ----------
+    name : str
+        Stable analyzer name exposed through the fake first-party entry point.
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Minimal analyzer instance compatible with registry validation.
+    """
+
+    class _OptionalFirstPartyAnalyzer(_DemoAnalyzer):
+        """Small analyzer stub carrying one first-party optional name."""
+
+        version = "1"
+        discovery_globs: tuple[str, ...] = (f"*.{name}",)
+
+        def supports_path(self, path: Path) -> bool:
+            """
+            Report support for the analyzer-specific suffix.
+
+            Parameters
+            ----------
+            path : pathlib.Path
+                Candidate repository path.
+
+            Returns
+            -------
+            bool
+                ``True`` when the suffix matches the analyzer name.
+            """
+            return path.suffix == f".{name}"
+
+    analyzer = _OptionalFirstPartyAnalyzer()
+    analyzer.name = name
+    return cast("LanguageAnalyzer", analyzer)
+
+
+def _build_c_analyzer() -> LanguageAnalyzer:
+    """
+    Build one fake first-party C analyzer.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Deterministic C analyzer stub for registry tests.
+    """
+    return _build_optional_first_party_analyzer("c")
+
+
+def _build_bash_analyzer() -> LanguageAnalyzer:
+    """
+    Build one fake first-party Bash analyzer.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Deterministic Bash analyzer stub for registry tests.
+    """
+    return _build_optional_first_party_analyzer("bash")
+
+
+def _build_python_analyzer() -> LanguageAnalyzer:
+    """
+    Build one fake first-party Python analyzer.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Deterministic Python analyzer stub for registry tests.
+    """
+    return _build_optional_first_party_analyzer("python")
+
+
+def _build_json_analyzer() -> LanguageAnalyzer:
+    """
+    Build one fake first-party JSON analyzer.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    repoindex.contracts.LanguageAnalyzer
+        Deterministic JSON analyzer stub for registry tests.
+    """
+    return _build_optional_first_party_analyzer("json")
+
+
 class _DemoBackend(SQLiteIndexBackend):
     """Small backend plugin stub."""
 
@@ -212,16 +369,16 @@ def test_plugin_registrations_report_loaded_skipped_and_duplicate_plugins(
                 loaded=_DemoAnalyzer,
             ),
             _FakeEntryPoint(
-                name="dup-python",
+                name="dup-json",
                 value="demo:dup",
                 dist=_FakeDistribution("dup-analyzer"),
                 loaded=type(
-                    "_DuplicatePythonAnalyzer",
+                    "_DuplicateDemoAnalyzer",
                     (),
                     {
-                        "name": "python",
+                        "name": "demo",
                         "version": "1",
-                        "discovery_globs": ("*.py",),
+                        "discovery_globs": ("*.demo",),
                         "supports_path": lambda self, path: False,
                         "analyze_file": lambda self, path, root: AnalysisResult(
                             source_path=path,
@@ -260,14 +417,6 @@ def test_plugin_registrations_report_loaded_skipped_and_duplicate_plugins(
 
     assert any(
         record.family == "analyzer"
-        and record.name == "python"
-        and record.source == "builtin"
-        and record.status == "loaded"
-        and record.origin == "core"
-        for record in registrations
-    )
-    assert any(
-        record.family == "analyzer"
         and record.name == "demo"
         and record.provider == "demo-analyzer"
         and record.status == "loaded"
@@ -276,7 +425,7 @@ def test_plugin_registrations_report_loaded_skipped_and_duplicate_plugins(
     )
     assert any(
         record.family == "analyzer"
-        and record.name == "python"
+        and record.name == "demo"
         and record.provider == "dup-analyzer"
         and record.status == "duplicate"
         for record in registrations
@@ -340,10 +489,30 @@ def test_active_registry_uses_loaded_entry_point_plugins(
 
     assert isinstance(analyzers[0], LanguageAnalyzer)
     analyzer_names = [analyzer.name for analyzer in analyzers]
-    assert analyzer_names[0] == "python"
+    assert analyzer_names[0] == "demo"
     assert "demo" in analyzer_names
     assert isinstance(backend, IndexBackend)
     assert backend.name == "demo-backend"
+
+
+def test_active_default_backend_comes_from_first_party_sqlite_package() -> None:
+    """
+    Keep the default backend runtime type owned by the first-party package.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the active default backend instance comes from the
+        extracted first-party SQLite package.
+    """
+    backend = registry.active_index_backend()
+
+    assert isinstance(backend, SQLiteIndexBackend)
+    assert backend.__class__.__module__ == "repoindex_backend_sqlite"
 
 
 def test_plugins_cli_emits_json_registration_diagnostics(
@@ -391,4 +560,201 @@ def test_plugins_cli_emits_json_registration_diagnostics(
         and row["origin"] == "third_party"
         and row["status"] == "loaded"
         for row in payload["results"]
+    )
+
+
+def test_core_can_discover_installed_first_party_packages_from_built_wheels(
+    tmp_path: Path,
+) -> None:
+    """
+    Discover first-party plugins from installed wheel artifacts outside the repo.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory managed by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts core plugin discovery works from installed wheel
+        artifacts without relying on the repository checkout as `cwd`.
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    wheel_dir = tmp_path / "wheels"
+    install_dir = tmp_path / "site-packages"
+    build_artifacts_before = _root_build_artifact_paths(repo_root)
+
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "scripts/build_first_party_packages.py",
+                "--wheel-dir",
+                str(wheel_dir),
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "wheel",
+                "--no-deps",
+                "--wheel-dir",
+                str(wheel_dir),
+                str(repo_root),
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        _cleanup_root_build_artifacts(repo_root, before_paths=build_artifacts_before)
+
+    wheel_paths = sorted(str(path) for path in wheel_dir.glob("*.whl"))
+    assert wheel_paths
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--target",
+            str(install_dir),
+            *wheel_paths,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(install_dir)
+    env["PYTHONNOUSERSITE"] = "1"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json, repoindex, repoindex.registry as registry; "
+                "backend = registry.active_index_backend(); "
+                "analyzers = registry.active_language_analyzers(); "
+                "print(json.dumps({"
+                "'repoindex_file': repoindex.__file__, "
+                "'backend_module': type(backend).__module__, "
+                "'analyzers': [analyzer.name for analyzer in analyzers]"
+                "}))"
+            ),
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert Path(payload["repoindex_file"]).is_relative_to(install_dir)
+    assert payload["backend_module"] == "repoindex_backend_sqlite"
+    assert payload["analyzers"] == ["python", "json", "c", "bash"]
+
+
+def test_registry_orders_first_party_analyzers_across_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Keep analyzer order stable across built-in and entry-point sources.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch registry entry-point discovery.
+
+    Returns
+    -------
+    None
+        The test asserts Python, JSON, C, and Bash load as first-party
+        entry-point plugins in the final routing order.
+    """
+    _patch_entry_points(
+        monkeypatch,
+        analyzers=[
+            _FakeEntryPoint(
+                name="python",
+                value="repoindex_analyzer_python:build_analyzer",
+                dist=_FakeDistribution("repoindex-analyzer-python"),
+                loaded=_build_python_analyzer,
+            ),
+            _FakeEntryPoint(
+                name="json",
+                value="repoindex_analyzer_json:build_analyzer",
+                dist=_FakeDistribution("repoindex-analyzer-json"),
+                loaded=_build_json_analyzer,
+            ),
+            _FakeEntryPoint(
+                name="c",
+                value="repoindex_analyzer_c:build_analyzer",
+                dist=_FakeDistribution("repoindex-analyzer-c"),
+                loaded=_build_c_analyzer,
+            ),
+            _FakeEntryPoint(
+                name="bash",
+                value="repoindex_analyzer_bash:build_analyzer",
+                dist=_FakeDistribution("repoindex-analyzer-bash"),
+                loaded=_build_bash_analyzer,
+            ),
+        ],
+        backends=[],
+    )
+
+    analyzer_names = [
+        analyzer.name for analyzer in registry.active_language_analyzers()
+    ]
+    registrations = registry.plugin_registrations()
+
+    assert analyzer_names == ["python", "json", "c", "bash"]
+    assert any(
+        record.family == "analyzer"
+        and record.name == "python"
+        and record.provider == "repoindex-analyzer-python"
+        and record.source == "entry_point"
+        and record.origin == "first_party"
+        and record.status == "loaded"
+        for record in registrations
+    )
+    assert any(
+        record.family == "analyzer"
+        and record.name == "json"
+        and record.provider == "repoindex-analyzer-json"
+        and record.source == "entry_point"
+        and record.origin == "first_party"
+        and record.status == "loaded"
+        for record in registrations
+    )
+    assert any(
+        record.family == "analyzer"
+        and record.name == "c"
+        and record.provider == "repoindex-analyzer-c"
+        and record.source == "entry_point"
+        and record.origin == "first_party"
+        and record.status == "loaded"
+        for record in registrations
+    )
+    assert any(
+        record.family == "analyzer"
+        and record.name == "bash"
+        and record.provider == "repoindex-analyzer-bash"
+        and record.source == "entry_point"
+        and record.origin == "first_party"
+        and record.status == "loaded"
+        for record in registrations
     )
