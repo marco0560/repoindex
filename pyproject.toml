@@ -268,6 +268,9 @@ unfixable = [
 "src/repoindex/indexer.py" = [
     "PLR0913", # persistence helpers and backend methods preserve stable indexing contracts
 ]
+"packages/repoindex-backend-sqlite/src/repoindex_backend_sqlite/__init__.py" = [
+    "PLR0913", # backend method arity mirrors the stable backend query and persistence contracts
+]
 "src/repoindex/parser_ast.py" = [
     "PLR0912", # parser normalization branches mirror Python AST node families
 ]
