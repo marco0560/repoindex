@@ -156,6 +156,22 @@ class _ReleaseArtifactBuildModule(Protocol):
         """Build the ordered release-artifact plan."""
 
 
+class _SplitRepoVerificationModule(Protocol):
+    """Protocol for the exported split-repo verification helper."""
+
+    def split_repo_names(self) -> tuple[str, ...]:
+        """Return split repository names in deterministic validation order."""
+
+    def build_repo_validation_commands(
+        self,
+        *,
+        python: str,
+        exported_repo_root: Path,
+        core_repo_root: Path,
+    ) -> tuple[tuple[str, ...], ...]:
+        """Build the validation command plan for one exported split repository."""
+
+
 class _BootstrapHelperModule(Protocol):
     """Protocol for the standalone bootstrap helper module."""
 
@@ -337,6 +353,36 @@ def _load_release_artifact_build_helper() -> _ReleaseArtifactBuildModule:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return cast("_ReleaseArtifactBuildModule", module)
+
+
+def _load_split_repo_verification_helper() -> _SplitRepoVerificationModule:
+    """
+    Load the exported split-repo verification helper from its repository path.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    object
+        Loaded module object for the split-repo verification helper script.
+    """
+    helper_path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "verify_exported_split_repos.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "verify_exported_split_repos",
+        helper_path,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return cast("_SplitRepoVerificationModule", module)
 
 
 def test_editable_package_paths_follow_authoritative_first_party_order() -> None:
@@ -824,6 +870,134 @@ def test_release_artifact_helper_builds_build_and_twine_commands() -> None:
             "twine",
             "check",
             "/tmp/repoindex/packages/repoindex-bundle-official/dist/*",
+        ),
+    )
+
+
+def test_split_repo_verification_uses_local_core_checkout_before_package_install() -> (
+    None
+):
+    """
+    Keep split-repo rehearsal pinned to the local core checkout before publish.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts exported package repos install the local core checkout
+        before their own test extra.
+    """
+    helper = _load_split_repo_verification_helper()
+    export_root = Path("/tmp/newrepos/split")
+    repo_root = export_root / "repoindex-analyzer-python"
+    core_root = Path("/tmp/repoindex")
+
+    assert helper.split_repo_names() == (
+        "repoindex-analyzer-python",
+        "repoindex-analyzer-json",
+        "repoindex-analyzer-c",
+        "repoindex-analyzer-bash",
+        "repoindex-backend-sqlite",
+        "repoindex-bundle-official",
+    )
+    assert helper.build_repo_validation_commands(
+        python="python",
+        exported_repo_root=repo_root,
+        core_repo_root=core_root,
+    )[:3] == (
+        ("python", "-m", "pip", "install", "--upgrade", "pip"),
+        ("python", "-m", "pip", "install", "-e", "/tmp/repoindex[semantic]"),
+        (
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/newrepos/split/repoindex-analyzer-python[test]",
+        ),
+    )
+
+
+def test_split_repo_verification_installs_local_first_party_packages_for_bundle() -> (
+    None
+):
+    """
+    Keep bundle split-repo rehearsal independent from unpublished package indexes.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts exported bundle validation installs the local first-party
+        package repos before validating the bundle repo itself.
+    """
+    helper = _load_split_repo_verification_helper()
+    export_root = Path("/tmp/newrepos/split")
+    bundle_root = export_root / "repoindex-bundle-official"
+    core_root = Path("/tmp/repoindex")
+
+    commands = helper.build_repo_validation_commands(
+        python="python",
+        exported_repo_root=bundle_root,
+        core_repo_root=core_root,
+    )
+
+    assert commands[:8] == (
+        ("python", "-m", "pip", "install", "--upgrade", "pip"),
+        ("python", "-m", "pip", "install", "-e", "/tmp/repoindex[semantic]"),
+        (
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/newrepos/split/repoindex-analyzer-python",
+        ),
+        (
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/newrepos/split/repoindex-analyzer-json",
+        ),
+        (
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/newrepos/split/repoindex-analyzer-c",
+        ),
+        (
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/newrepos/split/repoindex-analyzer-bash",
+        ),
+        (
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/newrepos/split/repoindex-backend-sqlite",
+        ),
+        (
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/newrepos/split/repoindex-bundle-official[test]",
         ),
     )
 

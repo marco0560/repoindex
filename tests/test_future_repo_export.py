@@ -110,12 +110,26 @@ def test_core_export_plan_preserves_repository_relative_paths() -> None:
         repository="repoindex",
     )
 
-    assert [str(entry.target_relative) for entry in plan[:4]] == [
+    target_paths = [str(entry.target_relative) for entry in plan]
+
+    assert target_paths[1:5] == [
         ".github/workflows/ci.yml",
         ".github/workflows/commit-message-check.yml",
         ".github/workflows/docs.yml",
         ".github/workflows/release.yml",
     ]
+    assert {
+        ".gitignore",
+        ".pre-commit-config.yaml",
+        ".releaserc.json",
+        "CHANGELOG.md",
+        "LICENSE",
+        "README.md",
+        "mkdocs.yml",
+        "package-lock.json",
+        "package.json",
+        "pyproject.toml",
+    }.issubset(set(target_paths))
 
 
 def test_materialize_future_repo_copies_owned_paths_into_empty_destination(
