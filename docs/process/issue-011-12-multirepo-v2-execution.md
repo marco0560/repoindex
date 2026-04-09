@@ -215,7 +215,9 @@ Primary areas:
 
 Tasks:
 
-- [ ] Define the `v2.0.0` breaking-change and migration notes.
+- [x] Define the `v2.0.0` breaking-change and migration notes in:
+  - `docs/process/v2-0-0-migration-notes.md`
+  - `docs/process/python-package-publishing-walkthrough.md`
 - [ ] Build wheel and sdist artifacts for every distribution.
 - [ ] Run artifact-level validation and fresh-environment install rehearsals.
 - [x] Add a wheel-based installed-artifact release rehearsal helper in:
@@ -246,7 +248,7 @@ Exit criteria:
 
 These items block the final `v2.0.0` publish until cleared:
 
-- [ ] `#11` complete
+- [x] `#11` complete
 - [x] `#12` complete
 - [ ] multirepo split complete
 - [ ] `#13` complete
