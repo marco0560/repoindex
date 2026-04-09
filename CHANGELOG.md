@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/marco0560/repoindex/compare/v1.9.0...v1.10.0) (2026-04-09)
+
+
+### Features
+
+* **json:** add initial schema analyzer ([1bc0d6b](https://github.com/marco0560/repoindex/commit/1bc0d6b87f979052b12831dcb9802e8ebf6f6084))
+
 # [1.9.0](https://github.com/marco0560/repoindex/compare/v1.8.0...v1.9.0) (2026-04-05)
 
 
