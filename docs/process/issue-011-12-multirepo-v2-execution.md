@@ -150,7 +150,10 @@ Tasks:
     `/tmp/repoindex-first-party-wheels`
 - [x] Move package-local tests and package-local docs into their owning
   repository boundaries under `packages/`.
-- [ ] Recreate CI in each repository.
+- [x] Recreate CI in each repository as an explicit split-ready contract in:
+  - `scripts/future_repo_ci.py`
+  - `tests/test_future_repo_ci.py`
+  - `docs/process/multirepo-ci-decomposition.md`
 - [x] Add integration testing in the core repository using installed package
   artifacts rather than sibling-source loading through
   `tests/test_plugins.py`.
