@@ -10,10 +10,10 @@ python3 scripts/bootstrap_dev_environment.py
 ```
 
 The bootstrap script installs the core package, the extracted first-party
-analyzer packages, and the local embedding dependencies. It also provisions the
-local model artifact used by the real embedding backend, so `repoindex index`
-can build persisted embeddings without ad hoc first-run downloads inside this
-repository.
+analyzer/backend packages, and the local embedding dependencies. It also
+provisions the local model artifact used by the real embedding backend, so
+`repoindex index` can build persisted embeddings without ad hoc first-run
+downloads inside this repository.
 
 The repository-local first-party package set is owned by:
 
@@ -35,13 +35,15 @@ pip install -e ../repoindex/packages/repoindex-analyzer-python
 pip install -e ../repoindex/packages/repoindex-analyzer-json
 pip install -e ../repoindex/packages/repoindex-analyzer-c
 pip install -e ../repoindex/packages/repoindex-analyzer-bash
+pip install -e ../repoindex/packages/repoindex-backend-sqlite
 ```
 
 This keeps the `repoindex` CLI available in the target repository while using
 the live source tree from this repository.
 
 The current source-tree install keeps the embedding stack in the core package
-while the extracted first-party analyzers are installed from `packages/`.
+while the extracted first-party analyzers and backend are installed from
+`packages/`.
 The accepted published bundle name is `repoindex[bundle-official]`. Inside the
 current source tree, the extracted first-party packages are still installed
 explicitly from `packages/`, and the canonical local package set is the one

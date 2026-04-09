@@ -17,6 +17,8 @@ language analyzers:
 - Python via the first-party `repoindex-analyzer-python` plugin
 - JSON via the first-party `repoindex-analyzer-json` plugin for JSON Schema,
   `package.json`, and `.releaserc.json`
+- SQLite persistence via the first-party `repoindex-backend-sqlite` backend
+  plugin
 - C-family `*.c` and `*.h` files via the first-party
   `repoindex-analyzer-c` plugin backed by `tree-sitter-c`
 
@@ -73,12 +75,13 @@ pip install -e ../repoindex/packages/repoindex-analyzer-python
 pip install -e ../repoindex/packages/repoindex-analyzer-json
 pip install -e ../repoindex/packages/repoindex-analyzer-c
 pip install -e ../repoindex/packages/repoindex-analyzer-bash
+pip install -e ../repoindex/packages/repoindex-backend-sqlite
 ```
 
 The accepted published bundle name is `repoindex[bundle-official]`. Inside the
 current source tree, repository-local development still installs the extracted
-first-party packages explicitly from `packages/`, with the local install set
-owned by `scripts/install_first_party_packages.py`.
+first-party analyzers and backend explicitly from `packages/`, with the local
+install set owned by `scripts/install_first_party_packages.py`.
 
 Use `repoindex plugins` to inspect discovery. The report marks each plugin as
 `origin=core`, `origin=first_party`, or `origin=third_party`.
@@ -89,7 +92,8 @@ The current architecture after completed `ADR-004` migration work is:
 
 - one active backend per repository instance, selected through
   `repoindex.registry`
-- SQLite as the only current concrete backend
+- SQLite as the default first-party backend distributed through
+  `repoindex-backend-sqlite`
 - multiple language analyzers in one indexing run
 - deterministic mixed-language indexing for tracked Python, supported JSON,
   and C-family files

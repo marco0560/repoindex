@@ -34,6 +34,9 @@ DEFAULT_INDEX_BACKEND = "sqlite"
 INDEX_BACKEND_ENV_VAR = "REPOINDEX_INDEX_BACKEND"
 ANALYZER_ENTRY_POINT_GROUP = "repoindex.analyzers"
 BACKEND_ENTRY_POINT_GROUP = "repoindex.backends"
+OPTIONAL_BACKEND_PACKAGE_BY_NAME: dict[str, str] = {
+    "sqlite": "repoindex-backend-sqlite",
+}
 OPTIONAL_ANALYZER_PACKAGE_BY_NAME: dict[str, str] = {
     "python": "repoindex-analyzer-python",
     "json": "repoindex-analyzer-json",
@@ -156,9 +159,7 @@ def _registered_index_backends() -> dict[str, type[SQLiteIndexBackend]]:
     dict[str, type[repoindex.indexer.SQLiteIndexBackend]]
         Deterministic backend factories keyed by stable backend name.
     """
-    from repoindex.indexer import SQLiteIndexBackend
-
-    return {"sqlite": SQLiteIndexBackend}
+    return {}
 
 
 def _plugin_origin(*, provider: str, source: PluginSource) -> PluginOrigin:
@@ -197,24 +198,7 @@ def _builtin_backend_plugins() -> list[_LoadedPlugin]:
     list[repoindex.registry._LoadedPlugin]
         Built-in backend plugins in deterministic order.
     """
-    backends = _registered_index_backends()
-    loaded: list[_LoadedPlugin] = []
-
-    for name in sorted(backends):
-        factory = backends[name]
-        instance = factory()
-        loaded.append(
-            _LoadedPlugin(
-                family="backend",
-                name=name,
-                provider="repoindex",
-                source="builtin",
-                version=str(instance.version),
-                factory=factory,
-            )
-        )
-
-    return loaded
+    return []
 
 
 def _registered_language_analyzer_factories() -> (
@@ -791,9 +775,18 @@ def active_index_backend() -> SQLiteIndexBackend:
 
     if factory is None:
         available = ", ".join(sorted(registry))
+        package_hint = ""
+        if configured_name in OPTIONAL_BACKEND_PACKAGE_BY_NAME:
+            package_name = OPTIONAL_BACKEND_PACKAGE_BY_NAME[configured_name]
+            package_hint = (
+                " Install the first-party "
+                f"`{package_name}` package, or use "
+                "`repoindex-bundle-official` when the curated bundle is available."
+            )
         msg = (
             f"Unsupported repoindex backend '{configured_name}'. "
             f"Available backends: {available}"
+            f"{package_hint}"
         )
         raise ValueError(msg)
 

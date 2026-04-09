@@ -106,11 +106,11 @@ Tasks:
   `docs/adr/ADR-012-phase-2-package-set-default-analyzers-backend.md`.
 - [x] Extract the Python analyzer into its own official distribution.
 - [x] Extract the JSON analyzer into its own official distribution.
-- [ ] Extract the SQLite backend into its own official distribution.
-- [ ] Keep compatibility and operator-facing errors explicit during the
+- [x] Extract the SQLite backend into its own official distribution.
+- [x] Keep compatibility and operator-facing errors explicit during the
   transition.
-- [ ] Update registry/discovery tests for externally replaceable defaults.
-- [ ] Update install and architecture docs to reflect that defaults are now
+- [x] Update registry/discovery tests for externally replaceable defaults.
+- [x] Update install and architecture docs to reflect that defaults are now
   package-provided implementations.
 
 Exit criteria:

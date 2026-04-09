@@ -25,6 +25,7 @@ pip install -e ../repoindex/packages/repoindex-analyzer-python
 pip install -e ../repoindex/packages/repoindex-analyzer-json
 pip install -e ../repoindex/packages/repoindex-analyzer-c
 pip install -e ../repoindex/packages/repoindex-analyzer-bash
+pip install -e ../repoindex/packages/repoindex-backend-sqlite
 pip install -e /path/to/repoindex-demo-analyzer
 repoindex plugins
 ```
@@ -40,6 +41,7 @@ Repository-owned first-party distributions now live under:
 - `packages/repoindex-analyzer-json`
 - `packages/repoindex-analyzer-c`
 - `packages/repoindex-analyzer-bash`
+- `packages/repoindex-backend-sqlite`
 - `packages/repoindex-bundle-official`
 
 The authoritative repository-local editable install set for those packages is

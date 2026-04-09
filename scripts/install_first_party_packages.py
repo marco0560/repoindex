@@ -31,6 +31,7 @@ FIRST_PARTY_EDITABLE_PACKAGES: tuple[str, ...] = (
     "packages/repoindex-analyzer-json",
     "packages/repoindex-analyzer-c",
     "packages/repoindex-analyzer-bash",
+    "packages/repoindex-backend-sqlite",
     "packages/repoindex-bundle-official",
 )
 

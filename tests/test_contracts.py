@@ -580,6 +580,25 @@ def test_active_phase_8_registries_expose_default_backend_and_analyzers() -> Non
     assert [analyzer.name for analyzer in analyzers] == ["python", "json", "c", "bash"]
 
 
+def test_registered_index_backends_keep_core_scope_narrow() -> None:
+    """
+    Keep the built-in backend factory list limited to core-owned implementations.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the default SQLite backend now loads through the
+        first-party backend package rather than a core factory list.
+    """
+    backends = registry_module._registered_index_backends()
+
+    assert backends == {}
+
+
 def test_registered_language_analyzer_factories_keep_core_scope_narrow() -> None:
     """
     Keep the built-in analyzer factory list limited to core-owned analyzers.
@@ -2115,6 +2134,42 @@ def test_active_index_backend_rejects_unknown_configured_backend(
 
     assert "Unsupported repoindex backend 'unknown'" in message
     assert "sqlite" in message
+
+
+def test_active_index_backend_mentions_first_party_sqlite_package_when_missing(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """
+    Mention the extracted SQLite backend package when no backend is available.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to remove backend entry-point discovery.
+
+    Returns
+    -------
+    None
+        The test asserts the default backend error includes the installation
+        hint for the first-party SQLite package.
+    """
+    monkeypatch.setenv(registry_module.INDEX_BACKEND_ENV_VAR, "sqlite")
+    monkeypatch.setattr(
+        registry_module,
+        "_entry_points_for_group",
+        lambda group: [],
+    )
+
+    try:
+        active_index_backend()
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        msg = "expected ValueError when no backend plugins are registered"
+        raise AssertionError(msg)
+
+    assert "repoindex-backend-sqlite" in message
+    assert "repoindex-bundle-official" in message
 
 
 def test_instantiating_language_analyzers_requires_a_non_empty_registry() -> None:

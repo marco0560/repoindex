@@ -130,6 +130,7 @@ def test_editable_package_paths_follow_authoritative_first_party_order() -> None
         repo_root / "packages/repoindex-analyzer-json",
         repo_root / "packages/repoindex-analyzer-c",
         repo_root / "packages/repoindex-analyzer-bash",
+        repo_root / "packages/repoindex-backend-sqlite",
         repo_root / "packages/repoindex-bundle-official",
     )
     assert helper.FIRST_PARTY_EDITABLE_PACKAGES == (
@@ -137,6 +138,7 @@ def test_editable_package_paths_follow_authoritative_first_party_order() -> None
         "packages/repoindex-analyzer-json",
         "packages/repoindex-analyzer-c",
         "packages/repoindex-analyzer-bash",
+        "packages/repoindex-backend-sqlite",
         "packages/repoindex-bundle-official",
     )
 
@@ -174,6 +176,8 @@ def test_build_install_argv_installs_each_first_party_package_editably() -> None
         "-e",
         "/tmp/repoindex/packages/repoindex-analyzer-bash",
         "-e",
+        "/tmp/repoindex/packages/repoindex-backend-sqlite",
+        "-e",
         "/tmp/repoindex/packages/repoindex-bundle-official",
     )
 
@@ -202,7 +206,8 @@ def test_build_bootstrap_commands_reuses_shared_first_party_install_command() ->
     install_command = next(
         command
         for command in commands
-        if command.description == "Install extracted first-party analyzer packages"
+        if command.description
+        == "Install extracted first-party analyzer and backend packages"
     )
 
     assert install_command.argv == (
