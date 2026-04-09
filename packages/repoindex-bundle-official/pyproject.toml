@@ -4,17 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "repoindex-bundle-official"
-version = "0.1.0"
+version = "0.1.1"
 description = "Curated first-party plugin bundle for repoindex"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "repoindex[semantic]",
-    "repoindex-analyzer-python",
-    "repoindex-analyzer-json",
-    "repoindex-analyzer-c",
-    "repoindex-analyzer-bash",
-    "repoindex-backend-sqlite",
+    "repoindex[semantic]==1.11.0.post1.dev35",
+    "repoindex-analyzer-python==0.1.0",
+    "repoindex-analyzer-json==0.1.0",
+    "repoindex-analyzer-c==0.1.0",
+    "repoindex-analyzer-bash==0.1.0",
+    "repoindex-backend-sqlite==0.1.0",
 ]
 
 [project.optional-dependencies]
