@@ -132,6 +132,11 @@ replaceable through external distributions.
 * [x] Accept `packages/` as the first-party plugin area
 * [x] Accept `repoindex[bundle-official]` as the umbrella install name
 * [x] Select `CAnalyzer` and `BashAnalyzer` as the first extraction targets
-* [ ] Reconcile repository-local bootstrap, CI, and user docs with the new
+* [x] Reconcile repository-local bootstrap, CI, and user docs with the new
   package boundary
 * [ ] Finish the Phase 1 extraction branch and merge it through issue `#11`
+
+At the current branch state, the remaining unchecked Phase 1 item is the
+integration close-out for issue `#11` itself. Bootstrap, CI, docs, package
+metadata, and entry-point discovery have been reconciled on the long-lived
+migration branch.
