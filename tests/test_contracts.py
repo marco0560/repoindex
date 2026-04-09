@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import repoindex.registry as registry_module
-from repoindex.analyzers import BashAnalyzer, CAnalyzer, PythonAnalyzer
+from repoindex.analyzers import BashAnalyzer, CAnalyzer, JsonAnalyzer, PythonAnalyzer
 from repoindex.analyzers.c import _disambiguate_function_stable_ids
 from repoindex.contracts import (
     KNOWN_RETRIEVAL_CAPABILITIES,
@@ -579,7 +579,7 @@ def test_active_phase_8_registries_expose_default_backend_and_analyzers() -> Non
 
     assert isinstance(backend, IndexBackend)
     assert isinstance(backend, SQLiteIndexBackend)
-    assert [analyzer.name for analyzer in analyzers] == ["python", "c", "bash"]
+    assert [analyzer.name for analyzer in analyzers] == ["python", "json", "c", "bash"]
 
 
 def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
@@ -603,13 +603,82 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
         "_registered_language_analyzer_factories",
         lambda: (
             cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
+            cast("Callable[[], LanguageAnalyzer]", JsonAnalyzer),
             cast("Callable[[], LanguageAnalyzer]", BashAnalyzer),
         ),
     )
 
     analyzers = active_language_analyzers()
 
-    assert [analyzer.name for analyzer in analyzers] == ["python", "bash"]
+    assert [analyzer.name for analyzer in analyzers] == ["python", "json", "bash"]
+
+
+def test_json_analyzer_extracts_module_metadata_from_json_schema(
+    tmp_path: Path,
+) -> None:
+    """
+    Analyze one JSON Schema document into a module-only artifact.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts schema documents become stable module artifacts.
+    """
+    source = tmp_path / "src" / "repoindex" / "schema" / "context.schema.json"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        json.dumps(
+            {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "title": "repoindex context output",
+                "description": "Validate context-for JSON output.",
+                "type": "object",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = JsonAnalyzer().analyze_file(source, tmp_path)
+
+    assert result.module.name == "src.repoindex.schema.context_schema"
+    assert (
+        result.module.stable_id
+        == "json:module:src/repoindex/schema/context.schema.json"
+    )
+    assert (
+        result.module.docstring
+        == "JSON Schema: repoindex context output. Validate context-for JSON output."
+    )
+    assert result.classes == ()
+    assert result.functions == ()
+    assert result.declarations == ()
+    assert result.imports == ()
+
+
+def test_json_analyzer_rejects_unclassified_json_documents(tmp_path: Path) -> None:
+    """
+    Leave generic JSON blobs unclaimed by the JSON analyzer.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary repository root for the fixture.
+
+    Returns
+    -------
+    None
+        The test asserts unsupported JSON files remain outside analyzer scope.
+    """
+    source = tmp_path / "scripts" / "build.json"
+    source.parent.mkdir(parents=True)
+    source.write_text('{"task": "build"}\n', encoding="utf-8")
+
+    assert JsonAnalyzer().supports_path(source) is False
 
 
 def test_select_language_analyzer_reports_optional_extra_hint(

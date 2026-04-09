@@ -921,6 +921,51 @@ def test_index_repo_reports_uncovered_canonical_files(tmp_path: Path) -> None:
     ]
 
 
+def test_index_repo_covers_json_schema_documents_in_canonical_directories(
+    tmp_path: Path,
+) -> None:
+    """
+    Treat recognized JSON Schema documents as covered canonical sources.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory provided by pytest.
+
+    Returns
+    -------
+    None
+        The test asserts supported JSON Schema files index cleanly.
+    """
+    schema_file = tmp_path / "src" / "repoindex" / "schema" / "context.schema.json"
+    schema_file.parent.mkdir(parents=True, exist_ok=True)
+    schema_file.write_text(
+        json.dumps(
+            {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "title": "demo schema",
+                "type": "object",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    init_db(tmp_path)
+    report = index_repo(tmp_path)
+
+    assert report.coverage_issues == []
+    assert report.indexed == 1
+    assert find_symbol(tmp_path, "src.repoindex.schema.context_schema") == [
+        (
+            "module",
+            "src.repoindex.schema.context_schema",
+            "src.repoindex.schema.context_schema",
+            str(schema_file),
+            1,
+        )
+    ]
+
+
 def test_index_cli_prints_coverage_issues(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

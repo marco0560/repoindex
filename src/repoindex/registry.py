@@ -230,10 +230,12 @@ def _registered_language_analyzer_factories() -> (
     """
     import importlib
 
+    from repoindex.analyzers.json import JsonAnalyzer
     from repoindex.analyzers.python import PythonAnalyzer
 
     factories: list[Callable[[], LanguageAnalyzer]] = [
-        cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer)
+        cast("Callable[[], LanguageAnalyzer]", PythonAnalyzer),
+        cast("Callable[[], LanguageAnalyzer]", JsonAnalyzer),
     ]
 
     for module_name, analyzer_name in (

@@ -2,7 +2,7 @@
 
 Responsibilities
 ----------------
-- Re-export the built-in Python analyzer.
+- Re-export the built-in Python and JSON analyzers.
 - Preserve transitional imports for extracted first-party analyzers when their
   packages are installed.
 - Keep analyzer imports lightweight for registry and test callers.
@@ -19,9 +19,10 @@ This module belongs to the **language analyzer registration layer** of ADR-004.
 
 import importlib
 
+from repoindex.analyzers.json import JsonAnalyzer
 from repoindex.analyzers.python import PythonAnalyzer
 
-__all__ = ["PythonAnalyzer"]
+__all__ = ["PythonAnalyzer", "JsonAnalyzer"]
 
 try:
     c_module = importlib.import_module("repoindex.analyzers.c")
