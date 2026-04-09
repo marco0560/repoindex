@@ -187,13 +187,13 @@ Primary areas:
 
 Tasks:
 
-- [ ] Remove sibling-source or checkout-local fallback for first-party analyzer
+- [x] Remove sibling-source or checkout-local fallback for first-party analyzer
   loading.
-- [ ] Remove equivalent fallback for default analyzer/backend loading where it
+- [x] Remove equivalent fallback for default analyzer/backend loading where it
   still exists after `#12`.
-- [ ] Tighten tests so packages are absent unless installed.
-- [ ] Align `bundle-official` with the final published package set.
-- [ ] Update docs to reflect installed-package-only discovery.
+- [x] Tighten tests so packages are absent unless installed.
+- [x] Align `bundle-official` with the final published package set.
+- [x] Update docs to reflect installed-package-only discovery.
 
 Exit criteria:
 
@@ -254,5 +254,5 @@ These items block the final `v2.0.0` publish until cleared:
 - [x] `#11` complete
 - [x] `#12` complete
 - [ ] multirepo split complete
-- [ ] `#13` complete
+- [x] `#13` complete
 - [ ] publish rehearsals complete

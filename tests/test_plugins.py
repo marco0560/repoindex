@@ -17,6 +17,8 @@ This module belongs to the **registry verification layer** and safeguards plugin
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 import os
 import shutil
@@ -26,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import pytest
 from repoindex_backend_sqlite import SQLiteIndexBackend
 
 import repoindex.registry as registry
@@ -34,7 +37,7 @@ from repoindex.contracts import IndexBackend, LanguageAnalyzer
 from repoindex.models import AnalysisResult, ModuleArtifact
 
 if TYPE_CHECKING:
-    import pytest
+    from collections.abc import Callable
 
 
 def _root_build_artifact_paths(repo_root: Path) -> set[Path]:
@@ -758,3 +761,82 @@ def test_registry_orders_first_party_analyzers_across_sources(
         and record.status == "loaded"
         for record in registrations
     )
+
+
+def test_compatibility_shims_do_not_fall_back_to_checkout_local_package_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Keep analyzer compatibility imports limited to installed distributions.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to force shim imports to behave as if first-party packages
+        are not installed.
+
+    Returns
+    -------
+    None
+        The test asserts the shims raise operator-facing install hints without
+        probing monorepo-local `packages/.../src` paths.
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    shim_cases = (
+        (
+            "src/repoindex/analyzers/python.py",
+            "repoindex_analyzer_python",
+            "repoindex-analyzer-python",
+        ),
+        (
+            "src/repoindex/analyzers/json.py",
+            "repoindex_analyzer_json",
+            "repoindex-analyzer-json",
+        ),
+        (
+            "src/repoindex/analyzers/c.py",
+            "repoindex_analyzer_c",
+            "repoindex-analyzer-c",
+        ),
+        (
+            "src/repoindex/analyzers/bash.py",
+            "repoindex_analyzer_bash",
+            "repoindex-analyzer-bash",
+        ),
+    )
+
+    for relative_path, package_module, package_distribution in shim_cases:
+        source_path = repo_root / relative_path
+        original_import_module = cast(
+            "Callable[[str, str | None], object]",
+            importlib.import_module,
+        )
+
+        def _reject_first_party_import(
+            name: str,
+            package: str | None = None,
+            *,
+            _package_module: str = package_module,
+            _original_import_module: Callable[[str, str | None], object] = (
+                original_import_module
+            ),
+        ) -> object:
+            if name == _package_module:
+                raise ModuleNotFoundError(name=name)
+            return _original_import_module(name, package)
+
+        monkeypatch.setattr(importlib, "import_module", _reject_first_party_import)
+        spec = importlib.util.spec_from_file_location(
+            f"test_{package_module}_shim",
+            source_path,
+        )
+        assert spec is not None
+        assert spec.loader is not None
+        shim_module = importlib.util.module_from_spec(spec)
+
+        with pytest.raises(ModuleNotFoundError) as exc_info:
+            spec.loader.exec_module(shim_module)
+
+        assert package_distribution in str(exc_info.value)
+        assert (repo_root / "packages" / package_distribution / "src").is_dir()
+        monkeypatch.undo()

@@ -6,8 +6,8 @@ This note records the remaining compatibility surfaces for the extracted
 first-party optional analyzer packages during Phase 1 of the package-boundary
 migration.
 
-It exists to make the transition explicit: the current shims are accepted for
-the monorepo contributor workflow, but they are not the intended end state.
+It exists to record the transitional shim shape that remained during the
+monorepo phase and the cleanup target that issue `#13` completes.
 
 ## Scope
 
@@ -27,13 +27,11 @@ Role:
 
 - preserves historical imports from `repoindex.analyzers.c`
 - attempts to import `repoindex_analyzer_c`
-- falls back to prepending `packages/repoindex-analyzer-c/src` to `sys.path`
-  when running inside the current monorepo checkout
 - raises a deterministic install hint when the extracted package is absent
 
 Status:
 
-- accepted as a Phase 1 compatibility shim
+- retained as an import-only compatibility shim after `#13`
 - must not regain implementation ownership
 
 ### `src/repoindex/analyzers/bash.py`
@@ -42,13 +40,11 @@ Role:
 
 - preserves historical imports from `repoindex.analyzers.bash`
 - attempts to import `repoindex_analyzer_bash`
-- falls back to prepending `packages/repoindex-analyzer-bash/src` to `sys.path`
-  when running inside the current monorepo checkout
 - raises a deterministic install hint when the extracted package is absent
 
 Status:
 
-- accepted as a Phase 1 compatibility shim
+- retained as an import-only compatibility shim after `#13`
 - must not regain implementation ownership
 
 ### `src/repoindex/analyzers/__init__.py`
@@ -75,14 +71,13 @@ Role:
 
 Status:
 
-- accepted for Phase 1 because it keeps registry behavior stable while package
-  ownership moves out of core
-- should stop depending on monorepo-local bridging once issue `#13` lands
+- retained because it preserves historical import names without restoring
+  implementation ownership in core
+- no longer depends on monorepo-local bridging after issue `#13`
 
 ## Accepted Phase 1 Rule
 
-These shims are allowed only to preserve compatibility and contributor
-ergonomics during the monorepo transition.
+These shims are allowed only to preserve compatibility imports after the split.
 
 They must remain:
 
@@ -107,5 +102,5 @@ That cleanup should happen only after:
 - issue `#12` completes the default-implementation extraction
 - the multirepo split removes the need for sibling-source loading
 
-At that point, installed package metadata and entry points become the only
-supported discovery path for the extracted first-party analyzers.
+Installed package metadata and entry points are now the only supported
+discovery path for the extracted first-party analyzers.
