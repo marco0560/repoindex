@@ -125,6 +125,37 @@ class _ReleaseInstallRehearsalModule(Protocol):
         """Build the installed-wheel discovery probe command."""
 
 
+class _ReleaseArtifactBuildModule(Protocol):
+    """Protocol for the release-artifact build helper."""
+
+    def release_package_paths(self, repo_root: Path) -> tuple[Path, ...]:
+        """Return release package roots in deterministic order."""
+
+    def build_artifact_argv(
+        self,
+        *,
+        python: str,
+        package_path: Path,
+    ) -> tuple[str, ...]:
+        """Build the release artifact command for one package root."""
+
+    def artifact_check_argv(
+        self,
+        *,
+        python: str,
+        package_path: Path,
+    ) -> tuple[str, ...]:
+        """Build the twine-check command for one package root."""
+
+    def build_release_plan(
+        self,
+        *,
+        python: str,
+        repo_root: Path,
+    ) -> tuple[tuple[str, ...], ...]:
+        """Build the ordered release-artifact plan."""
+
+
 class _BootstrapHelperModule(Protocol):
     """Protocol for the standalone bootstrap helper module."""
 
@@ -278,6 +309,34 @@ def _load_release_install_rehearsal_helper() -> _ReleaseInstallRehearsalModule:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return cast("_ReleaseInstallRehearsalModule", module)
+
+
+def _load_release_artifact_build_helper() -> _ReleaseArtifactBuildModule:
+    """
+    Load the release-artifact build helper from its repository path.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    object
+        Loaded module object for the release-artifact build helper script.
+    """
+    helper_path = (
+        Path(__file__).resolve().parents[1] / "scripts" / "build_release_artifacts.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "build_release_artifacts",
+        helper_path,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return cast("_ReleaseArtifactBuildModule", module)
 
 
 def test_editable_package_paths_follow_authoritative_first_party_order() -> None:
@@ -669,6 +728,104 @@ def test_release_install_rehearsal_probe_stays_focused_on_discovery_contract() -
     assert probe_argv[1] == "-c"
     assert "'backend_module': type(backend).__module__" in probe_argv[2]
     assert "'analyzers': [analyzer.name for analyzer in analyzers]" in probe_argv[2]
+
+
+def test_release_artifact_helper_covers_core_and_all_first_party_packages() -> None:
+    """
+    Keep the release build plan aligned to the accepted distribution set.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the release helper covers core plus every first-party
+        distribution in deterministic order.
+    """
+    helper = _load_release_artifact_build_helper()
+    repo_root = Path("/tmp/repoindex")
+
+    assert helper.release_package_paths(repo_root) == (
+        repo_root,
+        repo_root / "packages/repoindex-analyzer-python",
+        repo_root / "packages/repoindex-analyzer-json",
+        repo_root / "packages/repoindex-analyzer-c",
+        repo_root / "packages/repoindex-analyzer-bash",
+        repo_root / "packages/repoindex-backend-sqlite",
+        repo_root / "packages/repoindex-bundle-official",
+    )
+
+
+def test_release_artifact_helper_builds_build_and_twine_commands() -> None:
+    """
+    Keep release-artifact command construction explicit and deterministic.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts build and twine-check commands use the expected tool
+        surfaces and package order.
+    """
+    helper = _load_release_artifact_build_helper()
+    repo_root = Path("/tmp/repoindex")
+
+    assert helper.build_artifact_argv(
+        python="python",
+        package_path=repo_root / "packages/repoindex-backend-sqlite",
+    ) == (
+        "python",
+        "-m",
+        "build",
+        "--wheel",
+        "--sdist",
+        "/tmp/repoindex/packages/repoindex-backend-sqlite",
+    )
+    assert helper.artifact_check_argv(
+        python="python",
+        package_path=repo_root / "packages/repoindex-backend-sqlite",
+    ) == (
+        "python",
+        "-m",
+        "twine",
+        "check",
+        "/tmp/repoindex/packages/repoindex-backend-sqlite/dist/*",
+    )
+
+    release_plan = helper.build_release_plan(python="python", repo_root=repo_root)
+
+    assert release_plan[:2] == (
+        ("python", "-m", "build", "--wheel", "--sdist", "/tmp/repoindex"),
+        (
+            "python",
+            "-m",
+            "build",
+            "--wheel",
+            "--sdist",
+            "/tmp/repoindex/packages/repoindex-analyzer-python",
+        ),
+    )
+    assert release_plan[-2:] == (
+        (
+            "python",
+            "-m",
+            "twine",
+            "check",
+            "/tmp/repoindex/packages/repoindex-backend-sqlite/dist/*",
+        ),
+        (
+            "python",
+            "-m",
+            "twine",
+            "check",
+            "/tmp/repoindex/packages/repoindex-bundle-official/dist/*",
+        ),
+    )
 
 
 def test_build_bootstrap_commands_reuses_shared_first_party_install_command() -> None:

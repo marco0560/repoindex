@@ -218,6 +218,9 @@ Tasks:
 - [x] Define the `v2.0.0` breaking-change and migration notes in:
   - `docs/process/v2-0-0-migration-notes.md`
   - `docs/process/python-package-publishing-walkthrough.md`
+- [x] Add a deterministic wheel+sdist build and `twine check` plan in:
+  - `scripts/build_release_artifacts.py`
+  - `tests/test_bootstrap_scripts.py`
 - [ ] Build wheel and sdist artifacts for every distribution.
 - [ ] Run artifact-level validation and fresh-environment install rehearsals.
 - [x] Add a wheel-based installed-artifact release rehearsal helper in:
