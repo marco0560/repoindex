@@ -16,7 +16,12 @@ to publish packages in.
 
 ## Packaging Model
 
-The current repository contains these installable distributions:
+The `v2.0.0` publish is a coordinated multirepo release train. The current
+monorepo remains the staging source for the split, but the final PyPI upload
+must be built from the split repositories, not from a transitional monorepo
+checkout.
+
+The final repository set contains these installable distributions:
 
 * `repoindex`
 * `repoindex-analyzer-python`
@@ -77,18 +82,15 @@ compatible secondary surface.
 
 ## Version Policy
 
-Current policy while the repository stays a monorepo:
+The initial `v2.0.0` publish is coordinated:
 
-* `repoindex` uses SCM-managed versioning
-* `repoindex-analyzer-python` uses a manually managed version
-* `repoindex-analyzer-json` uses a manually managed version
-* `repoindex-analyzer-c` uses a manually managed version
-* `repoindex-analyzer-bash` uses a manually managed version
-* `repoindex-backend-sqlite` uses a manually managed version
-* `repoindex-bundle-official` uses a manually managed version
+* every first-party distribution publishes `2.0.0`
+* `repoindex-bundle-official` pins the matching `2.0.0` package set
+* release notes are coordinated across repositories
+* artifacts are built from the split repositories
 
-Independent SCM-managed analyzer versioning is deferred until each analyzer
-has its own repository and therefore its own tag stream.
+After the initial `2.0.0` train, split repositories may evolve independently.
+Repository-local tags become the source of truth for future package versions.
 
 ## Build Concepts
 
@@ -130,9 +132,22 @@ Before publishing:
 3. build every distribution
 4. run `twine check` on every generated artifact
 
+## Split-First Release Gate
+
+Before building release artifacts:
+
+1. export the accepted repository set from the monorepo split manifest
+2. create or update the real split repositories from those exports
+3. remove monorepo-only package paths from the final core repository
+4. ensure every split repository builds and tests in isolation
+5. ensure the core repository keeps installed-package integration coverage
+6. tag each repository for the coordinated `v2.0.0` release
+
+Do not publish `v2.0.0` directly from the monorepo staging checkout.
+
 ## Build Steps
 
-From the repository root:
+From each split repository root:
 
 Build `repoindex`:
 
@@ -143,49 +158,37 @@ python -m build
 Build `repoindex-analyzer-c`:
 
 ```bash
-cd packages/repoindex-analyzer-c
 python -m build
-cd ../..
 ```
 
 Build `repoindex-analyzer-python`:
 
 ```bash
-cd packages/repoindex-analyzer-python
 python -m build
-cd ../..
 ```
 
 Build `repoindex-analyzer-json`:
 
 ```bash
-cd packages/repoindex-analyzer-json
 python -m build
-cd ../..
 ```
 
 Build `repoindex-analyzer-bash`:
 
 ```bash
-cd packages/repoindex-analyzer-bash
 python -m build
-cd ../..
 ```
 
 Build `repoindex-backend-sqlite`:
 
 ```bash
-cd packages/repoindex-backend-sqlite
 python -m build
-cd ../..
 ```
 
 Build `repoindex-bundle-official`:
 
 ```bash
-cd packages/repoindex-bundle-official
 python -m build
-cd ../..
 ```
 
 ## Artifact Validation
@@ -194,12 +197,6 @@ Validate built artifacts before upload:
 
 ```bash
 python -m twine check dist/*
-python -m twine check packages/repoindex-analyzer-python/dist/*
-python -m twine check packages/repoindex-analyzer-json/dist/*
-python -m twine check packages/repoindex-analyzer-c/dist/*
-python -m twine check packages/repoindex-analyzer-bash/dist/*
-python -m twine check packages/repoindex-backend-sqlite/dist/*
-python -m twine check packages/repoindex-bundle-official/dist/*
 ```
 
 ## Recommended Release Order
@@ -222,13 +219,7 @@ the analyzer distributions already exist in the package index.
 Upload to TestPyPI first:
 
 ```bash
-python -m twine upload --repository testpypi packages/repoindex-analyzer-c/dist/*
-python -m twine upload --repository testpypi packages/repoindex-analyzer-python/dist/*
-python -m twine upload --repository testpypi packages/repoindex-analyzer-json/dist/*
-python -m twine upload --repository testpypi packages/repoindex-analyzer-bash/dist/*
-python -m twine upload --repository testpypi packages/repoindex-backend-sqlite/dist/*
 python -m twine upload --repository testpypi dist/*
-python -m twine upload --repository testpypi packages/repoindex-bundle-official/dist/*
 ```
 
 Then test installation from a fresh environment:
@@ -251,13 +242,7 @@ third-party dependencies such as `sentence-transformers`.
 Once TestPyPI works, upload to PyPI:
 
 ```bash
-python -m twine upload packages/repoindex-analyzer-c/dist/*
-python -m twine upload packages/repoindex-analyzer-python/dist/*
-python -m twine upload packages/repoindex-analyzer-json/dist/*
-python -m twine upload packages/repoindex-analyzer-bash/dist/*
-python -m twine upload packages/repoindex-backend-sqlite/dist/*
 python -m twine upload dist/*
-python -m twine upload packages/repoindex-bundle-official/dist/*
 ```
 
 ## Final End-User Verification
@@ -278,7 +263,8 @@ Verify that the expected official analyzers and the SQLite backend are discovera
 * Use API tokens instead of account passwords for upload.
 * Once a version is published on PyPI, that exact version cannot be replaced
   with different contents.
-* Treat editable local installs under `packages/` as contributor workflow, not
-  as end-user documentation.
-* Revisit analyzer versioning only after repository splits make independent
-  SCM-managed version streams worthwhile.
+* Treat editable local installs under `packages/` as monorepo staging workflow,
+  not as end-user documentation.
+* Publish in the recommended package order across repositories.
+* Use one final TestPyPI smoke test for the bundle after every repository has
+  uploaded its `2.0.0` artifacts.

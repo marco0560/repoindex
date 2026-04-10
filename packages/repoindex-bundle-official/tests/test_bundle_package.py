@@ -12,10 +12,10 @@ def test_bundle_package_declares_expected_first_party_dependencies() -> None:
     project = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
 
     assert project["project"]["dependencies"] == [
-        "repoindex[semantic]==1.12.1",
-        "repoindex-analyzer-python==0.1.0",
-        "repoindex-analyzer-json==0.1.0",
-        "repoindex-analyzer-c==0.1.0",
-        "repoindex-analyzer-bash==0.1.0",
-        "repoindex-backend-sqlite==0.1.0",
+        "repoindex[semantic]==2.0.0",
+        "repoindex-analyzer-python==2.0.0",
+        "repoindex-analyzer-json==2.0.0",
+        "repoindex-analyzer-c==2.0.0",
+        "repoindex-analyzer-bash==2.0.0",
+        "repoindex-backend-sqlite==2.0.0",
     ]

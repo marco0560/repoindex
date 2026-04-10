@@ -134,6 +134,15 @@ Before treating an environment as migrated, verify:
 
 ## Maintainer Notes
 
-This document should be updated again immediately before the final `v2.0.0`
-publish so the migration notes describe the actual published package metadata,
-not only the accepted target architecture.
+The final `v2.0.0` publish must happen from the split repositories. The
+monorepo is only the staging/export source for the package set.
+
+Before publication, maintainers must verify:
+
+* every split repository owns exactly one distribution
+* every first-party distribution publishes `2.0.0`
+* `repoindex-bundle-official` pins the matching `2.0.0` package set
+* TestPyPI installation of `repoindex-bundle-official` works in a fresh
+  environment
+* `repoindex -V` reports the core version and installed first-party plugin
+  distribution versions

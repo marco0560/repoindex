@@ -990,9 +990,8 @@ def test_root_optional_dependencies_support_monorepo_bundle_install() -> None:
     Returns
     -------
     None
-        The test asserts the root package keeps the curated bundle limited to
-        resolver-safe parser dependencies and preserves the canonical docs
-        extra.
+        The test asserts the root package keeps the curated bundle aligned to
+        the first-party distribution set and preserves the canonical docs extra.
     """
     with Path("pyproject.toml").open("rb") as pyproject_file:
         project = tomllib.load(pyproject_file)["project"]
@@ -1006,9 +1005,11 @@ def test_root_optional_dependencies_support_monorepo_bundle_install() -> None:
     ]
     assert optional_dependencies["bundle-official"] == [
         "sentence-transformers>=3.0",
-        "tree-sitter>=0.25.2",
-        "tree-sitter-c>=0.24.1",
-        "tree-sitter-bash>=0.25.1",
+        "repoindex-analyzer-python==2.0.0",
+        "repoindex-analyzer-json==2.0.0",
+        "repoindex-analyzer-c==2.0.0",
+        "repoindex-analyzer-bash==2.0.0",
+        "repoindex-backend-sqlite==2.0.0",
     ]
 
 
