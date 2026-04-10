@@ -1,3 +1,15 @@
+# [2.0.0](https://github.com/marco0560/repoindex/compare/v1.13.1...v2.0.0) (2026-04-10)
+
+
+### Features
+
+* **release:** prepare coordinated v2 multirepo release train ([47f707d](https://github.com/marco0560/repoindex/commit/47f707dd69b568af95bbcfe70b7e23e241d0d232))
+
+
+### BREAKING CHANGES
+
+* **release:** repoindex v2 publishes the official analyzers and SQLite backend as separate first-party distributions and resolves the official runtime through installed package metadata.
+
 ## [1.13.1](https://github.com/marco0560/repoindex/compare/v1.13.0...v1.13.1) (2026-04-10)
 
 
