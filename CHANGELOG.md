@@ -1,3 +1,30 @@
+# [1.12.0](https://github.com/marco0560/repoindex/compare/v1.11.0...v1.12.0) (2026-04-10)
+
+
+### Bug Fixes
+
+* **packaging:** add explicit source-tree install helper flow ([b3872e6](https://github.com/marco0560/repoindex/commit/b3872e663fd5dc578d54cef50b22bd662ffc5545))
+* **packaging:** align bundle TestPyPI rehearsal metadata ([08c0618](https://github.com/marco0560/repoindex/commit/08c06189cd026f84b431ed59743a5b940af9f9d5))
+* **packaging:** declare root package readme metadata ([189bab6](https://github.com/marco0560/repoindex/commit/189bab6a4e1218e77e98dca702c9e465840f0220))
+* **packaging:** mark core repoindex package as typed ([87475db](https://github.com/marco0560/repoindex/commit/87475dbf4ababc706845d98bf7b20872e40799e1))
+* **packaging:** pin bundle first-party dependencies ([3466f56](https://github.com/marco0560/repoindex/commit/3466f56f7973f3ba70c7222ada92ecdf14355044))
+* **split:** add pre-publish split repo validation contract ([f3d726a](https://github.com/marco0560/repoindex/commit/f3d726a223dce488e726a2eca13e616a0e343315))
+* **split:** keep core repo root metadata and workflow files ([293db4b](https://github.com/marco0560/repoindex/commit/293db4b0d71c475d558f451d3c039da21011a3e6))
+* **split:** retain core changelog in exported repo ([7a3635a](https://github.com/marco0560/repoindex/commit/7a3635a4fcf2094881fe5e48d9859d80d2fad2e1))
+
+
+### Features
+
+* **packaging:** extract json analyzer package ([f759122](https://github.com/marco0560/repoindex/commit/f75912210a2ef390bb061d63910b927e5bb05973)), closes [#12](https://github.com/marco0560/repoindex/issues/12)
+* **packaging:** extract python analyzer package ([2d0920a](https://github.com/marco0560/repoindex/commit/2d0920abbed2715171238f592131606160fb0b84)), closes [#12](https://github.com/marco0560/repoindex/issues/12)
+* **packaging:** extract sqlite backend package ([f0d0a26](https://github.com/marco0560/repoindex/commit/f0d0a2698a9eeba516ad07b4f2e2afe61babfc13))
+* **packaging:** move sqlite backend implementation into package ([c99477e](https://github.com/marco0560/repoindex/commit/c99477ee016e8ecfc52794e021f7746d61255e53))
+* **release:** add artifact build plan helper ([b20e396](https://github.com/marco0560/repoindex/commit/b20e396a306cb378f107e71a0f40b5384f0f8cb0))
+* **release:** add installed-wheel rehearsal helper ([9ceefde](https://github.com/marco0560/repoindex/commit/9ceefde8013fd83b83386a8c5e615fa9ee4c2615))
+* **tooling:** add first-party package build rehearsal ([52ad6f6](https://github.com/marco0560/repoindex/commit/52ad6f641004315da6a3fe8dd974922ed218838b))
+* **tooling:** add future repository export rehearsal ([23bd422](https://github.com/marco0560/repoindex/commit/23bd422924d29a14cdb31520fccdb760ba8ecd9d))
+* **tooling:** validate package boundaries with wheel builds ([04e6f4d](https://github.com/marco0560/repoindex/commit/04e6f4d5b7e631044c394d9e83fd6750f3740a9b))
+
 # [1.11.0](https://github.com/marco0560/repoindex/compare/v1.10.0...v1.11.0) (2026-04-09)
 
 
