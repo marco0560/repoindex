@@ -4,7 +4,7 @@
 Responsibilities
 ----------------
 - Define the authoritative editable install set for first-party package-owned components.
-- Run one deterministic `pip install -e ...` command for the current repository checkout.
+- Run a deterministic editable-install plan for the current repository checkout.
 - Keep bootstrap, CI, and maintainer workflows aligned to the same package list.
 
 Design principles
@@ -32,6 +32,7 @@ from scripts.first_party_packages import FIRST_PARTY_PACKAGE_DIRS, package_paths
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIRST_PARTY_EDITABLE_PACKAGES = FIRST_PARTY_PACKAGE_DIRS
+BUNDLE_PACKAGE_DIR = "packages/repoindex-bundle-official"
 
 
 def editable_core_requirement(
@@ -77,15 +78,53 @@ def editable_package_paths(repo_root: Path) -> tuple[Path, ...]:
     return package_paths(repo_root)
 
 
-def build_install_argv(
+def bundle_package_path(repo_root: Path) -> Path:
+    """
+    Return the editable bundle package path for the repository.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Repository root that owns the first-party packages.
+
+    Returns
+    -------
+    pathlib.Path
+        Bundle package directory resolved from ``repo_root``.
+    """
+    return repo_root / BUNDLE_PACKAGE_DIR
+
+
+def non_bundle_package_paths(repo_root: Path) -> tuple[Path, ...]:
+    """
+    Return editable first-party package paths excluding the bundle package.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Repository root that owns the first-party packages.
+
+    Returns
+    -------
+    tuple[pathlib.Path, ...]
+        Editable package directories except the curated bundle package.
+    """
+    return tuple(
+        package_path
+        for package_path in editable_package_paths(repo_root)
+        if package_path != bundle_package_path(repo_root)
+    )
+
+
+def build_install_commands(
     *,
     python: str,
     repo_root: Path,
     include_core: bool = False,
     core_extras: tuple[str, ...] = (),
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], ...]:
     """
-    Build the exact pip-install command for first-party packages.
+    Build the exact pip-install command plan for first-party packages.
 
     Parameters
     ----------
@@ -101,20 +140,30 @@ def build_install_argv(
 
     Returns
     -------
-    tuple[str, ...]
-        Deterministic command arguments for the install step.
+    tuple[tuple[str, ...], ...]
+        Deterministic install commands for the source-tree package set.
     """
-    argv: list[str] = [python, "-m", "pip", "install"]
+    editable_install_argv: list[str] = [python, "-m", "pip", "install"]
     if include_core:
-        argv.extend(
+        editable_install_argv.extend(
             (
                 "-e",
                 editable_core_requirement(repo_root, extras=core_extras),
             )
         )
-    for package_path in editable_package_paths(repo_root):
-        argv.extend(("-e", str(package_path)))
-    return tuple(argv)
+    for package_path in non_bundle_package_paths(repo_root):
+        editable_install_argv.extend(("-e", str(package_path)))
+
+    bundle_install_argv = (
+        python,
+        "-m",
+        "pip",
+        "install",
+        "--no-deps",
+        "-e",
+        str(bundle_package_path(repo_root)),
+    )
+    return (tuple(editable_install_argv), bundle_install_argv)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -174,16 +223,18 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code.
     """
     args = parse_args(argv)
-    command = build_install_argv(
+    commands = build_install_commands(
         python=args.python,
         repo_root=REPO_ROOT,
         include_core=args.include_core,
         core_extras=tuple(args.core_extras),
     )
-    print(" ".join(command))
+    for command in commands:
+        print(" ".join(command))
     if args.dry_run:
         return 0
-    subprocess.run(command, cwd=REPO_ROOT, check=True)
+    for command in commands:
+        subprocess.run(command, cwd=REPO_ROOT, check=True)
     return 0
 
 

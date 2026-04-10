@@ -43,15 +43,21 @@ class _InstallHelperModule(Protocol):
     def editable_package_paths(self, repo_root: Path) -> tuple[Path, ...]:
         """Return package paths in deterministic order."""
 
-    def build_install_argv(
+    def bundle_package_path(self, repo_root: Path) -> Path:
+        """Return the bundle package path."""
+
+    def non_bundle_package_paths(self, repo_root: Path) -> tuple[Path, ...]:
+        """Return first-party package paths excluding the bundle package."""
+
+    def build_install_commands(
         self,
         *,
         python: str,
         repo_root: Path,
         include_core: bool = False,
         core_extras: tuple[str, ...] = (),
-    ) -> tuple[str, ...]:
-        """Build the editable-install argv for first-party packages."""
+    ) -> tuple[tuple[str, ...], ...]:
+        """Build the editable-install command plan for first-party packages."""
 
 
 class _PackageInventoryModule(Protocol):
@@ -470,26 +476,45 @@ def test_build_install_argv_installs_each_first_party_package_editably() -> None
     helper = _load_install_helper()
     repo_root = Path("/tmp/repoindex")
 
-    assert helper.build_install_argv(
+    assert helper.bundle_package_path(repo_root) == (
+        repo_root / "packages/repoindex-bundle-official"
+    )
+    assert helper.non_bundle_package_paths(repo_root) == (
+        repo_root / "packages/repoindex-analyzer-python",
+        repo_root / "packages/repoindex-analyzer-json",
+        repo_root / "packages/repoindex-analyzer-c",
+        repo_root / "packages/repoindex-analyzer-bash",
+        repo_root / "packages/repoindex-backend-sqlite",
+    )
+    assert helper.build_install_commands(
         python="/tmp/repoindex/.venv/bin/python",
         repo_root=repo_root,
     ) == (
-        "/tmp/repoindex/.venv/bin/python",
-        "-m",
-        "pip",
-        "install",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-analyzer-python",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-analyzer-json",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-analyzer-c",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-analyzer-bash",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-backend-sqlite",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-bundle-official",
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-python",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-json",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-c",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-bash",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-backend-sqlite",
+        ),
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-bundle-official",
+        ),
     )
 
 
@@ -518,30 +543,39 @@ def test_install_helper_can_include_core_repo_with_requested_extras() -> None:
         )
         == "/tmp/repoindex[semantic]"
     )
-    assert helper.build_install_argv(
+    assert helper.build_install_commands(
         python="/tmp/repoindex/.venv/bin/python",
         repo_root=repo_root,
         include_core=True,
         core_extras=("semantic",),
     ) == (
-        "/tmp/repoindex/.venv/bin/python",
-        "-m",
-        "pip",
-        "install",
-        "-e",
-        "/tmp/repoindex[semantic]",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-analyzer-python",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-analyzer-json",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-analyzer-c",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-analyzer-bash",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-backend-sqlite",
-        "-e",
-        "/tmp/repoindex/packages/repoindex-bundle-official",
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/repoindex[semantic]",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-python",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-json",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-c",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-bash",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-backend-sqlite",
+        ),
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-bundle-official",
+        ),
     )
 
 

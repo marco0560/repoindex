@@ -9,7 +9,7 @@ description = "Curated first-party plugin bundle for repoindex"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "repoindex[semantic]==1.11.0.post1.dev36",
+    "repoindex[semantic]==1.12.1",
     "repoindex-analyzer-python==0.1.0",
     "repoindex-analyzer-json==0.1.0",
     "repoindex-analyzer-c==0.1.0",
