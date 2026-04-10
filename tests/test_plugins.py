@@ -566,6 +566,114 @@ def test_plugins_cli_emits_json_registration_diagnostics(
     )
 
 
+def test_version_cli_groups_curated_bundle_plugins(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Print core and curated first-party plugin versions through ``repoindex -V``.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture used to patch CLI metadata lookups and argv.
+    capsys : pytest.CaptureFixture[str]
+        Pytest fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts the version report groups first-party plugins under
+        the installed curated bundle marker.
+    """
+    monkeypatch.setattr("repoindex.cli.__version__", "9.9.9")
+    monkeypatch.setattr(
+        "repoindex.cli.installed_distribution_version",
+        lambda name: "0.9.0" if name == "repoindex-bundle-official" else None,
+    )
+    monkeypatch.setattr(
+        "repoindex.cli.plugin_registrations",
+        lambda: [
+            registry.PluginRegistration(
+                family="analyzer",
+                name="python",
+                provider="repoindex-analyzer-python",
+                source="entry_point",
+                status="loaded",
+                version="0.1.0",
+                origin="first_party",
+            ),
+            registry.PluginRegistration(
+                family="backend",
+                name="sqlite",
+                provider="repoindex-backend-sqlite",
+                source="entry_point",
+                status="loaded",
+                version="0.1.0",
+                origin="first_party",
+            ),
+        ],
+    )
+    monkeypatch.setattr(sys, "argv", ["repoindex", "-V"])
+
+    assert main() == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "repoindex 9.9.9",
+        "bundle-official 0.9.0",
+        "  analyzer python 0.1.0",
+        "  backend sqlite 0.1.0",
+    ]
+
+
+def test_version_cli_lists_third_party_plugins_when_bundle_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Print third-party plugin versions when no curated bundle is installed.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture used to patch CLI metadata lookups and argv.
+    capsys : pytest.CaptureFixture[str]
+        Pytest fixture used to capture CLI output.
+
+    Returns
+    -------
+    None
+        The test asserts the version report stays concise when only third-party
+        plugins are loaded.
+    """
+    monkeypatch.setattr("repoindex.cli.__version__", "9.9.9")
+    monkeypatch.setattr(
+        "repoindex.cli.installed_distribution_version",
+        lambda _name: None,
+    )
+    monkeypatch.setattr(
+        "repoindex.cli.plugin_registrations",
+        lambda: [
+            registry.PluginRegistration(
+                family="analyzer",
+                name="demo",
+                provider="demo-analyzer",
+                source="entry_point",
+                status="loaded",
+                version="1",
+                origin="third_party",
+            )
+        ],
+    )
+    monkeypatch.setattr(sys, "argv", ["repoindex", "--version"])
+
+    assert main() == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "repoindex 9.9.9",
+        "third-party plugins:",
+        "  analyzer demo 1",
+    ]
+
+
 def test_core_can_discover_installed_first_party_packages_from_built_wheels(
     tmp_path: Path,
 ) -> None:

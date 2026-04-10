@@ -66,7 +66,7 @@ from repoindex.storage import (
     get_metadata_path,
     init_db,
 )
-from repoindex.version import package_version
+from repoindex.version import installed_distribution_version, package_version
 
 if TYPE_CHECKING:
     import repoindex.indexer as indexer_types
@@ -124,6 +124,105 @@ def _current_analyzer_inventory() -> list[tuple[str, str, str]]:
     ]
 
 
+def _loaded_plugin_registrations() -> list[tuple[str, str, str, str]]:
+    """
+    Return loaded plugin registrations in deterministic display order.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    list[tuple[str, str, str, str]]
+        Loaded plugin rows as ``(origin, family, name, version)`` ordered for
+        operator-facing version reports. The reported version prefers the
+        installed provider distribution version and falls back to the plugin's
+        own implementation version when package metadata is unavailable.
+    """
+    return sorted(
+        [
+            (
+                registration.origin,
+                registration.family,
+                registration.name,
+                installed_distribution_version(registration.provider)
+                or registration.version,
+            )
+            for registration in plugin_registrations()
+            if registration.status == "loaded"
+        ],
+        key=lambda item: (
+            {"first_party": 0, "third_party": 1, "core": 2}.get(item[0], 99),
+            {"analyzer": 0, "backend": 1}.get(item[1], 99),
+            item[2],
+            item[3],
+        ),
+    )
+
+
+def _render_version_report() -> str:
+    """
+    Return the multi-line CLI version report.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    str
+        Human-readable version report including the core package and installed
+        plugins discovered in the current environment.
+    """
+    lines = [f"repoindex {__version__}"]
+    bundle_version = installed_distribution_version("repoindex-bundle-official")
+    registrations = _loaded_plugin_registrations()
+    first_party_plugins = [
+        registration
+        for registration in registrations
+        if registration[0] == "first_party"
+    ]
+    third_party_plugins = [
+        registration
+        for registration in registrations
+        if registration[0] == "third_party"
+    ]
+
+    if bundle_version is not None:
+        lines.append(f"bundle-official {bundle_version}")
+        for _origin, family, name, version in first_party_plugins:
+            lines.append(f"  {family} {name} {version}")
+    elif first_party_plugins:
+        lines.append("first-party plugins:")
+        for _origin, family, name, version in first_party_plugins:
+            lines.append(f"  {family} {name} {version}")
+
+    if third_party_plugins:
+        lines.append("third-party plugins:")
+        for _origin, family, name, version in third_party_plugins:
+            lines.append(f"  {family} {name} {version}")
+
+    return "\n".join(lines)
+
+
+def _run_version() -> int:
+    """
+    Print the runtime version report.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    int
+        Zero after printing version information.
+    """
+    print(_render_version_report())
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """
     Build the top-level command-line parser.
@@ -161,8 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-V",
         "--version",
-        action="version",
-        version=f"%(prog)s {__version__}",
+        action="store_true",
+        help="Show repoindex and installed plugin versions",
     )
     sub = parser.add_subparsers(
         dest="command",
@@ -2376,6 +2475,8 @@ def main() -> int:
     """
     parser = build_parser()
     args = parser.parse_args()
+    if args.version:
+        return _run_version()
     root = Path.cwd()
     raw_prefix = getattr(args, "prefix", None)
     prefix = _resolve_prefix_argument(parser, root, raw_prefix)
