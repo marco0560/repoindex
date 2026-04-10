@@ -15,6 +15,7 @@ The repository currently tracks these architecture decision records:
 - [ADR-011 — Packaging and release migration sequence for v2.0.0](ADR-011-packaging-release-migration-sequence-v2-0-0.md)
 - [ADR-012 — Phase 2 package set for default analyzers and backend](ADR-012-phase-2-package-set-default-analyzers-backend.md)
 - [ADR-013 — Final multirepo repository set and release coordination policy](ADR-013-final-multirepo-repository-set-release-coordination-policy.md)
+- [ADR-014 — Canonical monorepo with generated distribution repositories](ADR-014-canonical-monorepo-generated-distribution-repositories.md)
 
 `ADR-004` is the active migration record for the current architecture branch
 and should be read together with the documents under `docs/architecture/`.
