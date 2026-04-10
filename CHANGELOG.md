@@ -1,3 +1,11 @@
+## [1.12.1](https://github.com/marco0560/repoindex/compare/v1.12.0...v1.12.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **tooling:** ignore generated artifacts in mypy checks ([d792173](https://github.com/marco0560/repoindex/commit/d792173bc910b50b3b316f228bb646349ccdef09))
+* **version:** stop tracking generated scm version file ([071ab0e](https://github.com/marco0560/repoindex/commit/071ab0eaebf40e6ff419888967fcc9140211d0ee))
+
 # [1.12.0](https://github.com/marco0560/repoindex/compare/v1.11.0...v1.12.0) (2026-04-10)
 
 
