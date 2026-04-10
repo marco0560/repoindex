@@ -1,3 +1,15 @@
+# [1.13.0](https://github.com/marco0560/repoindex/compare/v1.12.1...v1.13.0) (2026-04-10)
+
+
+### Bug Fixes
+
+* **packaging:** decouple local installs from curated bundle pins ([151c38c](https://github.com/marco0560/repoindex/commit/151c38c9ddb39c4d2916c4f37e897a80a86fcfb8))
+
+
+### Features
+
+* **cli:** report installed plugin versions in -V output ([4bdc265](https://github.com/marco0560/repoindex/commit/4bdc265971d5dd201cf9534dab9454f06a87ac4b))
+
 ## [1.12.1](https://github.com/marco0560/repoindex/compare/v1.12.0...v1.12.1) (2026-04-10)
 
 
