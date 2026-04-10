@@ -1,3 +1,10 @@
+## [1.13.1](https://github.com/marco0560/repoindex/compare/v1.13.0...v1.13.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **dev:** skip curated bundle in local source installs by default ([bbfd0bc](https://github.com/marco0560/repoindex/commit/bbfd0bc3b672d474a65c1c896caf54701df9302e))
+
 # [1.13.0](https://github.com/marco0560/repoindex/compare/v1.12.1...v1.13.0) (2026-04-10)
 
 
