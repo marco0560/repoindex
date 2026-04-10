@@ -1,81 +1,43 @@
-"""Python language analyzer for ADR-004.
+"""Compatibility shim for the extracted first-party Python analyzer package.
 
 Responsibilities
 ----------------
-- Declare analyzer metadata such as name, version, and discovery globs.
-- Parse Python files via `repoindex.parser_ast` and normalize them into `AnalysisResult` objects.
-- Expose interface methods used for analyzer selection and path support by the indexer.
+- Preserve historical imports from `repoindex.analyzers.python`.
+- Redirect callers to the extracted `repoindex_analyzer_python` package.
+- Raise a deterministic operator-facing error when the package is absent.
 
 Design principles
 -----------------
-The analyzer isolates language-specific parsing from storage concerns while staying deterministic.
+The shim stays intentionally narrow so the extracted package owns the real
+implementation logic.
 
 Architectural role
 ------------------
-This module belongs to the **language analyzer layer** of ADR-004 and provides the Python analysis implementation.
+This module belongs to the **compatibility layer** of the Phase 2 package
+boundary migration.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from importlib import import_module
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from repoindex_analyzer_python import PythonAnalyzer as _PythonAnalyzerType
 
-    from repoindex.models import AnalysisResult
-
-from repoindex.normalization import analysis_result_from_parsed
-from repoindex.parser_ast import parse_file
+__all__ = ["PythonAnalyzer"]
 
 
-class PythonAnalyzer:
-    """
-    Concrete Python analyzer for repository indexing.
+try:
+    python_module = import_module("repoindex_analyzer_python")
+except ModuleNotFoundError as exc:
+    if exc.name != "repoindex_analyzer_python":
+        raise
+    msg = (
+        "The first-party Python analyzer now lives in the separate "
+        "`repoindex-analyzer-python` package. Install that package to keep "
+        "using `repoindex.analyzers.python` compatibility imports."
+    )
+    raise ModuleNotFoundError(msg, name=exc.name) from exc
 
-    Parameters
-    ----------
-    None
-
-    Notes
-    -----
-    This analyzer owns Python-specific parsing and normalization only. It does
-    not own backend persistence or indexing policy.
-    """
-
-    name = "python"
-    version = "1"
-    discovery_globs: tuple[str, ...] = ("*.py",)
-
-    def supports_path(self, path: Path) -> bool:
-        """
-        Decide whether the analyzer accepts a source path.
-
-        Parameters
-        ----------
-        path : pathlib.Path
-            Candidate repository file.
-
-        Returns
-        -------
-        bool
-            ``True`` when the file is a Python source file.
-        """
-        return path.suffix == ".py"
-
-    def analyze_file(self, path: Path, root: Path) -> AnalysisResult:
-        """
-        Analyze one Python source file into normalized artifacts.
-
-        Parameters
-        ----------
-        path : pathlib.Path
-            Python source file to analyze.
-        root : pathlib.Path
-            Repository root used for module-name derivation.
-
-        Returns
-        -------
-        repoindex.models.AnalysisResult
-            Normalized analysis result for the file.
-        """
-        return analysis_result_from_parsed(path, parse_file(path, root))
+PythonAnalyzer = cast("type[_PythonAnalyzerType]", python_module.PythonAnalyzer)

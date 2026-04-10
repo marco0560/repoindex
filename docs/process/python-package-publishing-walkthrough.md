@@ -19,8 +19,11 @@ to publish packages in.
 The current repository contains these installable distributions:
 
 * `repoindex`
+* `repoindex-analyzer-python`
+* `repoindex-analyzer-json`
 * `repoindex-analyzer-c`
 * `repoindex-analyzer-bash`
+* `repoindex-backend-sqlite`
 * `repoindex-bundle-official`
 
 The intended end-user install target is:
@@ -62,8 +65,11 @@ For the official bundle experience to work without local-path knowledge,
 publish at least:
 
 * `repoindex`
+* `repoindex-analyzer-python`
+* `repoindex-analyzer-json`
 * `repoindex-analyzer-c`
 * `repoindex-analyzer-bash`
+* `repoindex-backend-sqlite`
 * `repoindex-bundle-official`
 
 The bundle package is the primary end-user target. The root extra remains a
@@ -74,8 +80,11 @@ compatible secondary surface.
 Current policy while the repository stays a monorepo:
 
 * `repoindex` uses SCM-managed versioning
+* `repoindex-analyzer-python` uses a manually managed version
+* `repoindex-analyzer-json` uses a manually managed version
 * `repoindex-analyzer-c` uses a manually managed version
 * `repoindex-analyzer-bash` uses a manually managed version
+* `repoindex-backend-sqlite` uses a manually managed version
 * `repoindex-bundle-official` uses a manually managed version
 
 Independent SCM-managed analyzer versioning is deferred until each analyzer
@@ -139,10 +148,34 @@ python -m build
 cd ../..
 ```
 
+Build `repoindex-analyzer-python`:
+
+```bash
+cd packages/repoindex-analyzer-python
+python -m build
+cd ../..
+```
+
+Build `repoindex-analyzer-json`:
+
+```bash
+cd packages/repoindex-analyzer-json
+python -m build
+cd ../..
+```
+
 Build `repoindex-analyzer-bash`:
 
 ```bash
 cd packages/repoindex-analyzer-bash
+python -m build
+cd ../..
+```
+
+Build `repoindex-backend-sqlite`:
+
+```bash
+cd packages/repoindex-backend-sqlite
 python -m build
 cd ../..
 ```
@@ -161,8 +194,11 @@ Validate built artifacts before upload:
 
 ```bash
 python -m twine check dist/*
+python -m twine check packages/repoindex-analyzer-python/dist/*
+python -m twine check packages/repoindex-analyzer-json/dist/*
 python -m twine check packages/repoindex-analyzer-c/dist/*
 python -m twine check packages/repoindex-analyzer-bash/dist/*
+python -m twine check packages/repoindex-backend-sqlite/dist/*
 python -m twine check packages/repoindex-bundle-official/dist/*
 ```
 
@@ -170,10 +206,13 @@ python -m twine check packages/repoindex-bundle-official/dist/*
 
 Publish in this order:
 
-1. `repoindex-analyzer-c`
-2. `repoindex-analyzer-bash`
-3. `repoindex`
-4. `repoindex-bundle-official`
+1. `repoindex-analyzer-python`
+2. `repoindex-analyzer-json`
+3. `repoindex-analyzer-c`
+4. `repoindex-analyzer-bash`
+5. `repoindex-backend-sqlite`
+6. `repoindex`
+7. `repoindex-bundle-official`
 
 This ensures that when the root package or bundle resolves dependency names,
 the analyzer distributions already exist in the package index.
@@ -184,7 +223,10 @@ Upload to TestPyPI first:
 
 ```bash
 python -m twine upload --repository testpypi packages/repoindex-analyzer-c/dist/*
+python -m twine upload --repository testpypi packages/repoindex-analyzer-python/dist/*
+python -m twine upload --repository testpypi packages/repoindex-analyzer-json/dist/*
 python -m twine upload --repository testpypi packages/repoindex-analyzer-bash/dist/*
+python -m twine upload --repository testpypi packages/repoindex-backend-sqlite/dist/*
 python -m twine upload --repository testpypi dist/*
 python -m twine upload --repository testpypi packages/repoindex-bundle-official/dist/*
 ```
@@ -210,7 +252,10 @@ Once TestPyPI works, upload to PyPI:
 
 ```bash
 python -m twine upload packages/repoindex-analyzer-c/dist/*
+python -m twine upload packages/repoindex-analyzer-python/dist/*
+python -m twine upload packages/repoindex-analyzer-json/dist/*
 python -m twine upload packages/repoindex-analyzer-bash/dist/*
+python -m twine upload packages/repoindex-backend-sqlite/dist/*
 python -m twine upload dist/*
 python -m twine upload packages/repoindex-bundle-official/dist/*
 ```
@@ -226,7 +271,7 @@ pip install repoindex-bundle-official
 repoindex plugins
 ```
 
-Verify that the expected official analyzers are discoverable.
+Verify that the expected official analyzers and the SQLite backend are discoverable.
 
 ## Operational Notes
 

@@ -1,10 +1,11 @@
 # Language Analyzers
 
-The current repository now has three built-in analyzers plus optional
-first-party plugin analyzers:
+The current repository now has one built-in analyzer plus first-party plugin
+analyzers:
 
-- Python for the existing AST-driven index surface
-- JSON for deterministic structured document families such as JSON Schema,
+- Python through the extracted `repoindex-analyzer-python` first-party package
+- JSON through the extracted `repoindex-analyzer-json` first-party package for
+  deterministic structured document families such as JSON Schema,
   `package.json`, and `.releaserc.json`
 - C for the first non-Python proof required by `ADR-004`, installed through
   the extracted `repoindex-analyzer-c` first-party package
@@ -51,7 +52,7 @@ active analyzer claims them yet.
 The retrieval-capability migration does not currently widen analyzer
 responsibilities.
 
-Built-in analyzers still own:
+Analyzer packages still own:
 
 - language-specific parsing
 - normalized artifact extraction
@@ -94,7 +95,7 @@ Phase 8 moves analyzer registration into `src/repoindex/registry.py`.
 
 ## Current JSON Family Boundary
 
-The built-in JSON analyzer is intentionally family-based rather than generic.
+The first-party JSON analyzer is intentionally family-based rather than generic.
 
 Supported families:
 
