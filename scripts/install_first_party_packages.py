@@ -122,6 +122,7 @@ def build_install_commands(
     repo_root: Path,
     include_core: bool = False,
     core_extras: tuple[str, ...] = (),
+    include_bundle: bool = False,
 ) -> tuple[tuple[str, ...], ...]:
     """
     Build the exact pip-install command plan for first-party packages.
@@ -137,6 +138,9 @@ def build_install_commands(
         first-party package set.
     core_extras : tuple[str, ...], optional
         Optional extras requested on the editable core install.
+    include_bundle : bool, optional
+        Whether to install the curated bundle meta-package in addition to the
+        first-party analyzer and backend packages.
 
     Returns
     -------
@@ -154,16 +158,20 @@ def build_install_commands(
     for package_path in non_bundle_package_paths(repo_root):
         editable_install_argv.extend(("-e", str(package_path)))
 
-    bundle_install_argv = (
-        python,
-        "-m",
-        "pip",
-        "install",
-        "--no-deps",
-        "-e",
-        str(bundle_package_path(repo_root)),
-    )
-    return (tuple(editable_install_argv), bundle_install_argv)
+    commands: list[tuple[str, ...]] = [tuple(editable_install_argv)]
+    if include_bundle:
+        commands.append(
+            (
+                python,
+                "-m",
+                "pip",
+                "install",
+                "--no-deps",
+                "-e",
+                str(bundle_package_path(repo_root)),
+            )
+        )
+    return tuple(commands)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -201,6 +209,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Optional extra requested on the editable core install. Repeat as needed.",
     )
     parser.add_argument(
+        "--include-bundle",
+        action="store_true",
+        help="Also install the curated bundle meta-package without its pinned deps.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the resolved command without executing it.",
@@ -228,6 +241,7 @@ def main(argv: list[str] | None = None) -> int:
         repo_root=REPO_ROOT,
         include_core=args.include_core,
         core_extras=tuple(args.core_extras),
+        include_bundle=args.include_bundle,
     )
     for command in commands:
         print(" ".join(command))

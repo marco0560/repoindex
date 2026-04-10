@@ -56,6 +56,7 @@ class _InstallHelperModule(Protocol):
         repo_root: Path,
         include_core: bool = False,
         core_extras: tuple[str, ...] = (),
+        include_bundle: bool = False,
     ) -> tuple[tuple[str, ...], ...]:
         """Build the editable-install command plan for first-party packages."""
 
@@ -471,7 +472,8 @@ def test_build_install_argv_installs_each_first_party_package_editably() -> None
     Returns
     -------
     None
-        The test asserts the helper emits the expected pip command arguments.
+        The test asserts the helper emits the expected pip command arguments
+        without installing the curated bundle by default.
     """
     helper = _load_install_helper()
     repo_root = Path("/tmp/repoindex")
@@ -505,15 +507,6 @@ def test_build_install_argv_installs_each_first_party_package_editably() -> None
             "/tmp/repoindex/packages/repoindex-analyzer-bash",
             "-e",
             "/tmp/repoindex/packages/repoindex-backend-sqlite",
-        ),
-        (
-            "/tmp/repoindex/.venv/bin/python",
-            "-m",
-            "pip",
-            "install",
-            "--no-deps",
-            "-e",
-            "/tmp/repoindex/packages/repoindex-bundle-official",
         ),
     )
 
@@ -556,6 +549,47 @@ def test_install_helper_can_include_core_repo_with_requested_extras() -> None:
             "install",
             "-e",
             "/tmp/repoindex[semantic]",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-python",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-json",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-c",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-analyzer-bash",
+            "-e",
+            "/tmp/repoindex/packages/repoindex-backend-sqlite",
+        ),
+    )
+
+
+def test_install_helper_can_opt_into_bundle_package() -> None:
+    """
+    Build the local install plan with an explicit curated bundle step.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts the helper only adds the bundle meta-package when it
+        is requested explicitly.
+    """
+    helper = _load_install_helper()
+    repo_root = Path("/tmp/repoindex")
+
+    assert helper.build_install_commands(
+        python="/tmp/repoindex/.venv/bin/python",
+        repo_root=repo_root,
+        include_bundle=True,
+    ) == (
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "pip",
+            "install",
             "-e",
             "/tmp/repoindex/packages/repoindex-analyzer-python",
             "-e",
