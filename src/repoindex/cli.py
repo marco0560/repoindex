@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from repoindex._version import version as __version__
 from repoindex.indexer import (
     CoverageIssue,
     IndexFailure,
@@ -67,11 +66,13 @@ from repoindex.storage import (
     get_metadata_path,
     init_db,
 )
+from repoindex.version import package_version
 
 if TYPE_CHECKING:
     import repoindex.indexer as indexer_types
 
 GIT_EXE = shutil.which("git") or "git"
+__version__ = package_version()
 
 QUERY_JSON_SCHEMA_VERSION = "1.0"
 

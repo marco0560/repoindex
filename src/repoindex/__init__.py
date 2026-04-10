@@ -14,7 +14,6 @@ Architectural role
 This module belongs to the **package infrastructure layer** and anchors repoindex versioning and exports.
 """
 
-try:
-    from ._version import version as __version__
-except ImportError:
-    __version__ = "0.0.0"
+from .version import package_version
+
+__version__ = package_version()

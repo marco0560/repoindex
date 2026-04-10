@@ -26,7 +26,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from repoindex._version import version as __version__
 from repoindex.contracts import (
     split_declared_retrieval_capabilities,
 )
@@ -66,6 +65,7 @@ from repoindex.types import (
     ReferenceRow,
     SymbolRow,
 )
+from repoindex.version import package_version
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -4690,3 +4690,6 @@ def context_for(
     )
     conn.close()
     return result
+
+
+__version__ = package_version()
