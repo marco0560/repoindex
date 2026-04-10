@@ -77,6 +77,14 @@ line-ending = "lf"
 [tool.mypy]
 python_version = "3.13"
 strict = true
+exclude = """(?x)(
+    ^build/
+  | ^dist/
+  | ^src/repoindex\\.egg-info/
+  | ^packages/[^/]+/build/
+  | ^packages/[^/]+/dist/
+  | ^packages/[^/]+/src/[^/]+\\.egg-info/
+)"""
 
 [[tool.mypy.overrides]]
 module = ["tree_sitter", "tree_sitter_c", "tree_sitter_bash", "sentence_transformers"]

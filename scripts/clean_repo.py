@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 # Paths that should never be removed, even if ignored by git
 PROTECTED_PATHS = {
+    Path(".codex"),
     Path(".venv"),
     Path(".vscode"),
     Path("node_modules"),
