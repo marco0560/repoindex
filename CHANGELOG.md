@@ -1,3 +1,10 @@
+## [2.0.1](https://github.com/marco0560/repoindex/compare/v2.0.0...v2.0.1) (2026-04-11)
+
+
+### Bug Fixes
+
+* **dev:** support split package install roots ([8a9d4d3](https://github.com/marco0560/repoindex/commit/8a9d4d382e5128022493999c8bb0e65dd5ab6284))
+
 # [2.0.0](https://github.com/marco0560/repoindex/compare/v1.13.1...v2.0.0) (2026-04-10)
 
 
