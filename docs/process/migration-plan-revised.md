@@ -2,7 +2,7 @@
 
 ## Version
 
-Document version: `0.1.3`
+Document version: `0.1.4`
 
 Status: accepted working plan, not yet executed.
 
@@ -23,6 +23,8 @@ This document supersedes the root-level draft `migration-plan.md` for the
   PyPI namespace status for the old and new package names.
 - `0.1.3`: Complete Phase 2 issue classification and defer actual issue
   transfer to Phase 9, after the new `codira` repository exists.
+- `0.1.4`: Clarify that cleanup-tool protected paths remain `repoindex`
+  only until the local rebrand slice, then must move to `codira`.
 
 ## Purpose
 
@@ -232,6 +234,10 @@ Phase 1 audit record:
 - [x] Protected ignored runtime/generated state remains by repository policy:
   - [x] `.repoindex/`
   - [x] `src/repoindex/_version.py`
+- [x] These protected paths are intentionally still `repoindex` before the
+  rebrand implementation. They must become `.codira/` and
+  `src/codira/_version.py` when `scripts/clean_repo.py` is updated in
+  Phase 4.
 - [x] PyPI JSON endpoint status for target names on 2026-04-11:
   - [x] `codira`: 404
   - [x] `codira-analyzer-python`: 404
@@ -353,6 +359,8 @@ Tasks:
   `codira.backends`.
 - [ ] Update registry/discovery code and error messages.
 - [ ] Update the local state directory from `.repoindex` to `.codira`.
+- [ ] Update `scripts/clean_repo.py` protected paths from `.repoindex` and
+  `src/repoindex/_version.py` to `.codira` and `src/codira/_version.py`.
 - [ ] Update scripts that own package inventories, release plans, split
   manifests, bootstrap, cleanup, and Git aliases.
 - [ ] Update tests to assert the new package names, imports, entry points, CLI
