@@ -2,7 +2,7 @@
 
 ## Version
 
-Document version: `0.1.4`
+Document version: `0.1.5`
 
 Status: accepted working plan, not yet executed.
 
@@ -25,6 +25,8 @@ This document supersedes the root-level draft `migration-plan.md` for the
   transfer to Phase 9, after the new `codira` repository exists.
 - `0.1.4`: Clarify that cleanup-tool protected paths remain `repoindex`
   only until the local rebrand slice, then must move to `codira`.
+- `0.1.5`: Complete Phase 3 by creating the empty public
+  `marco0560/codira` GitHub repository.
 
 ## Purpose
 
@@ -311,18 +313,25 @@ Create a clean target remote without disturbing the old repository location.
 
 Tasks:
 
-- [ ] Create a new public GitHub repository named `codira`.
-- [ ] Do not rename the old `repoindex` repository in place.
-- [ ] Do not transfer the old `repoindex` repository.
-- [ ] Do not create a new repository at the old `repoindex` location after any
+- [x] Create a new public GitHub repository named `codira`.
+- [x] Do not rename the old `repoindex` repository in place.
+- [x] Do not transfer the old `repoindex` repository.
+- [x] Do not create a new repository at the old `repoindex` location after any
   rename or transfer operation.
 - [ ] Configure the new repository with the expected default branch, branch
   protection, Actions settings, and trusted publishing settings if used.
 
 Exit criteria:
 
-- [ ] Old repository: `repoindex`, public, unchanged.
-- [ ] New repository: `codira`, public, ready to receive fresh history.
+- [x] Old repository: `repoindex`, public, unchanged.
+- [x] New repository: `codira`, public, ready to receive fresh history.
+
+Phase 3 repository record:
+
+- [x] Repository URL: `https://github.com/marco0560/codira`.
+- [x] Visibility: public.
+- [x] Archived: false.
+- [x] Default branch is empty until fresh history is pushed.
 
 ## Phase 4 - Apply The Local Rebrand
 
