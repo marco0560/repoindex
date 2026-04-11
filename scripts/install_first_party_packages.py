@@ -28,7 +28,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.first_party_packages import FIRST_PARTY_PACKAGE_DIRS, package_paths
+from scripts.first_party_packages import FIRST_PARTY_PACKAGE_DIRS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIRST_PARTY_EDITABLE_PACKAGES = FIRST_PARTY_PACKAGE_DIRS
@@ -61,68 +61,117 @@ def editable_core_requirement(
     return f"{repo_root}[{','.join(extras)}]"
 
 
-def editable_package_paths(repo_root: Path) -> tuple[Path, ...]:
+def first_party_package_root(repo_root: Path, package_root: Path | None) -> Path:
+    """
+    Return the directory containing first-party package repositories.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Repository root that owns the monorepo-local ``packages`` directory.
+    package_root : pathlib.Path | None
+        Optional directory containing split first-party repositories.
+
+    Returns
+    -------
+    pathlib.Path
+        Directory used to resolve first-party package checkouts.
+    """
+    if package_root is None:
+        return repo_root / "packages"
+    return package_root
+
+
+def editable_package_paths(
+    repo_root: Path,
+    *,
+    package_root: Path | None = None,
+) -> tuple[Path, ...]:
     """
     Return the authoritative editable package paths for the repository.
 
     Parameters
     ----------
     repo_root : pathlib.Path
-        Repository root that owns the first-party packages.
+        Repository root that owns the monorepo-local package defaults.
+    package_root : pathlib.Path | None, optional
+        Optional directory containing split first-party repositories.
 
     Returns
     -------
     tuple[pathlib.Path, ...]
         Editable package directories in deterministic install order.
     """
-    return package_paths(repo_root)
+    base = first_party_package_root(repo_root, package_root)
+    return tuple(
+        base / relative.removeprefix("packages/")
+        for relative in FIRST_PARTY_PACKAGE_DIRS
+    )
 
 
-def bundle_package_path(repo_root: Path) -> Path:
+def bundle_package_path(
+    repo_root: Path,
+    *,
+    package_root: Path | None = None,
+) -> Path:
     """
     Return the editable bundle package path for the repository.
 
     Parameters
     ----------
     repo_root : pathlib.Path
-        Repository root that owns the first-party packages.
+        Repository root that owns the monorepo-local package defaults.
+    package_root : pathlib.Path | None, optional
+        Optional directory containing split first-party repositories.
 
     Returns
     -------
     pathlib.Path
         Bundle package directory resolved from ``repo_root``.
     """
-    return repo_root / BUNDLE_PACKAGE_DIR
+    base = first_party_package_root(repo_root, package_root)
+    return base / BUNDLE_PACKAGE_DIR.removeprefix("packages/")
 
 
-def non_bundle_package_paths(repo_root: Path) -> tuple[Path, ...]:
+def non_bundle_package_paths(
+    repo_root: Path,
+    *,
+    package_root: Path | None = None,
+) -> tuple[Path, ...]:
     """
     Return editable first-party package paths excluding the bundle package.
 
     Parameters
     ----------
     repo_root : pathlib.Path
-        Repository root that owns the first-party packages.
+        Repository root that owns the monorepo-local package defaults.
+    package_root : pathlib.Path | None, optional
+        Optional directory containing split first-party repositories.
 
     Returns
     -------
     tuple[pathlib.Path, ...]
         Editable package directories except the curated bundle package.
     """
+    bundle_path = bundle_package_path(repo_root, package_root=package_root)
     return tuple(
         package_path
-        for package_path in editable_package_paths(repo_root)
-        if package_path != bundle_package_path(repo_root)
+        for package_path in editable_package_paths(
+            repo_root,
+            package_root=package_root,
+        )
+        if package_path != bundle_path
     )
 
 
-def build_install_commands(
+def build_install_commands(  # noqa: PLR0913
     *,
     python: str,
     repo_root: Path,
     include_core: bool = False,
     core_extras: tuple[str, ...] = (),
     include_bundle: bool = False,
+    package_root: Path | None = None,
 ) -> tuple[tuple[str, ...], ...]:
     """
     Build the exact pip-install command plan for first-party packages.
@@ -141,6 +190,8 @@ def build_install_commands(
     include_bundle : bool, optional
         Whether to install the curated bundle meta-package in addition to the
         first-party analyzer and backend packages.
+    package_root : pathlib.Path | None, optional
+        Optional directory containing split first-party repositories.
 
     Returns
     -------
@@ -155,7 +206,10 @@ def build_install_commands(
                 editable_core_requirement(repo_root, extras=core_extras),
             )
         )
-    for package_path in non_bundle_package_paths(repo_root):
+    for package_path in non_bundle_package_paths(
+        repo_root,
+        package_root=package_root,
+    ):
         editable_install_argv.extend(("-e", str(package_path)))
 
     commands: list[tuple[str, ...]] = [tuple(editable_install_argv)]
@@ -168,7 +222,7 @@ def build_install_commands(
                 "install",
                 "--no-deps",
                 "-e",
-                str(bundle_package_path(repo_root)),
+                str(bundle_package_path(repo_root, package_root=package_root)),
             )
         )
     return tuple(commands)
@@ -214,6 +268,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Also install the curated bundle meta-package without its pinned deps.",
     )
     parser.add_argument(
+        "--package-root",
+        type=Path,
+        help=(
+            "Directory containing first-party split repositories. Defaults to "
+            "the monorepo packages/ directory."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the resolved command without executing it.",
@@ -242,6 +304,7 @@ def main(argv: list[str] | None = None) -> int:
         include_core=args.include_core,
         core_extras=tuple(args.core_extras),
         include_bundle=args.include_bundle,
+        package_root=args.package_root,
     )
     for command in commands:
         print(" ".join(command))

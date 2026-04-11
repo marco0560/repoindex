@@ -32,6 +32,13 @@ class _InstallHelperModule(Protocol):
 
     FIRST_PARTY_EDITABLE_PACKAGES: tuple[str, ...]
 
+    def first_party_package_root(
+        self,
+        repo_root: Path,
+        package_root: Path | None,
+    ) -> Path:
+        """Return the directory containing first-party package repositories."""
+
     def editable_core_requirement(
         self,
         repo_root: Path,
@@ -40,13 +47,28 @@ class _InstallHelperModule(Protocol):
     ) -> str:
         """Return the editable requirement string for the core package."""
 
-    def editable_package_paths(self, repo_root: Path) -> tuple[Path, ...]:
+    def editable_package_paths(
+        self,
+        repo_root: Path,
+        *,
+        package_root: Path | None = None,
+    ) -> tuple[Path, ...]:
         """Return package paths in deterministic order."""
 
-    def bundle_package_path(self, repo_root: Path) -> Path:
+    def bundle_package_path(
+        self,
+        repo_root: Path,
+        *,
+        package_root: Path | None = None,
+    ) -> Path:
         """Return the bundle package path."""
 
-    def non_bundle_package_paths(self, repo_root: Path) -> tuple[Path, ...]:
+    def non_bundle_package_paths(
+        self,
+        repo_root: Path,
+        *,
+        package_root: Path | None = None,
+    ) -> tuple[Path, ...]:
         """Return first-party package paths excluding the bundle package."""
 
     def build_install_commands(
@@ -57,6 +79,7 @@ class _InstallHelperModule(Protocol):
         include_core: bool = False,
         core_extras: tuple[str, ...] = (),
         include_bundle: bool = False,
+        package_root: Path | None = None,
     ) -> tuple[tuple[str, ...], ...]:
         """Build the editable-install command plan for first-party packages."""
 
@@ -408,6 +431,7 @@ def test_editable_package_paths_follow_authoritative_first_party_order() -> None
     helper = _load_install_helper()
     repo_root = Path("/tmp/repoindex")
 
+    assert helper.first_party_package_root(repo_root, None) == (repo_root / "packages")
     assert helper.editable_package_paths(repo_root) == (
         repo_root / "packages/repoindex-analyzer-python",
         repo_root / "packages/repoindex-analyzer-json",
@@ -423,6 +447,77 @@ def test_editable_package_paths_follow_authoritative_first_party_order() -> None
         "packages/repoindex-analyzer-bash",
         "packages/repoindex-backend-sqlite",
         "packages/repoindex-bundle-official",
+    )
+
+
+def test_install_helper_can_target_exported_split_repositories() -> None:
+    """
+    Build editable-install commands against an external split-repository root.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        The test asserts local bootstrap can repair stale editable installs by
+        targeting the actual split repository directory.
+    """
+    helper = _load_install_helper()
+    repo_root = Path("/tmp/repoindex")
+    package_root = Path("/tmp/repoindex-split-repos")
+
+    assert helper.first_party_package_root(repo_root, package_root) == package_root
+    assert helper.editable_package_paths(
+        repo_root,
+        package_root=package_root,
+    ) == (
+        package_root / "repoindex-analyzer-python",
+        package_root / "repoindex-analyzer-json",
+        package_root / "repoindex-analyzer-c",
+        package_root / "repoindex-analyzer-bash",
+        package_root / "repoindex-backend-sqlite",
+        package_root / "repoindex-bundle-official",
+    )
+    assert helper.bundle_package_path(
+        repo_root,
+        package_root=package_root,
+    ) == (package_root / "repoindex-bundle-official")
+    assert helper.build_install_commands(
+        python="/tmp/repoindex/.venv/bin/python",
+        repo_root=repo_root,
+        include_core=True,
+        include_bundle=True,
+        package_root=package_root,
+    ) == (
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            "/tmp/repoindex",
+            "-e",
+            "/tmp/repoindex-split-repos/repoindex-analyzer-python",
+            "-e",
+            "/tmp/repoindex-split-repos/repoindex-analyzer-json",
+            "-e",
+            "/tmp/repoindex-split-repos/repoindex-analyzer-c",
+            "-e",
+            "/tmp/repoindex-split-repos/repoindex-analyzer-bash",
+            "-e",
+            "/tmp/repoindex-split-repos/repoindex-backend-sqlite",
+        ),
+        (
+            "/tmp/repoindex/.venv/bin/python",
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "-e",
+            "/tmp/repoindex-split-repos/repoindex-bundle-official",
+        ),
     )
 
 
