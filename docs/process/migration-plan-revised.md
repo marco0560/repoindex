@@ -2,7 +2,7 @@
 
 ## Version
 
-Document version: `0.1.1`
+Document version: `0.1.2`
 
 Status: accepted working plan, not yet executed.
 
@@ -18,6 +18,9 @@ This document supersedes the root-level draft `migration-plan.md` for the
 - `0.1.1`: Complete the Phase 0 local and split-repository tool smoke checks,
   add split-package-root support to the first-party install helper, and record
   the remaining `.typed` coverage classification.
+- `0.1.2`: Complete the Phase 1 local state audit, verify
+  `pre-rebrand-snapshot`, remove cleanup-tool-managed artifacts, and record
+  PyPI namespace status for the old and new package names.
 
 ## Purpose
 
@@ -187,32 +190,63 @@ Record the last intentional `repoindex` state before modifying identity.
 
 Tasks:
 
-- [ ] Run `git status --short` and account for every untracked or modified
+- [x] Run `git status --short` and account for every untracked or modified
   file.
-- [ ] Create or verify the `pre-rebrand-snapshot` tag.
-- [ ] Record the current commit SHA.
-- [ ] Record the `pre-rebrand-snapshot` tag SHA.
-- [ ] Record the old PyPI project cleanup state for all seven old package
+- [x] Create or verify the `pre-rebrand-snapshot` tag.
+- [x] Record the current commit SHA.
+- [x] Record the `pre-rebrand-snapshot` tag SHA.
+- [x] Record the old PyPI project cleanup state for all seven old package
   names.
-- [ ] Record the final seven new PyPI package names.
-- [ ] Confirm target names are available or intentionally reserved where
+- [x] Record the final seven new PyPI package names.
+- [x] Confirm target names are available or intentionally reserved where
   package indexes are involved.
-- [ ] Confirm no pending release artifacts remain in:
-  - [ ] `dist/`
-  - [ ] `build/`
-  - [ ] `src/repoindex.egg-info/`
-  - [ ] `packages/*/dist/`
-  - [ ] `packages/*/build/`
-  - [ ] `packages/*/src/*.egg-info/`
-  - [ ] `.artifacts/`
-  - [ ] `.repoindex/`
-  - [ ] `src/repoindex/_version.py`
-- [ ] Run repository cleanup only through repository-approved tooling.
+- [x] Confirm no pending release artifacts remain in:
+  - [x] `dist/`
+  - [x] `build/`
+  - [x] `src/repoindex.egg-info/`
+  - [x] `packages/*/dist/`
+  - [x] `packages/*/build/`
+  - [x] `packages/*/src/*.egg-info/`
+  - [x] `.artifacts/`
+  - [x] `.repoindex/`
+  - [x] `src/repoindex/_version.py`
+- [x] Run repository cleanup only through repository-approved tooling.
 
 Exit criteria:
 
-- [ ] The starting state can be reconstructed from local Git and this ledger.
-- [ ] There are no stale local artifacts that can contaminate the rename.
+- [x] The starting state can be reconstructed from local Git and this ledger.
+- [x] There are no stale local artifacts that can contaminate the rename.
+
+Phase 1 audit record:
+
+- [x] Current commit SHA after Phase 0: `8a9d4d382e5128022493999c8bb0e65dd5ab6284`.
+- [x] `pre-rebrand-snapshot` resolves to
+  `eb3d2a17c6c10f68b4379d7a5307883c2b955fcb`.
+- [x] `git status --short` was clean before the Phase 1 ledger update.
+- [x] `git clean-repo` removed ignored build, cache, and package metadata
+  artifacts.
+- [x] `source .venv/bin/activate && repoindex index --full --json` passed
+  after cleanup with 93 indexed files and zero failures.
+- [x] Protected ignored runtime/generated state remains by repository policy:
+  - [x] `.repoindex/`
+  - [x] `src/repoindex/_version.py`
+- [x] PyPI JSON endpoint status for target names on 2026-04-11:
+  - [x] `codira`: 404
+  - [x] `codira-analyzer-python`: 404
+  - [x] `codira-analyzer-json`: 404
+  - [x] `codira-analyzer-c`: 404
+  - [x] `codira-analyzer-bash`: 404
+  - [x] `codira-backend-sqlite`: 404
+  - [x] `codira-bundle-official`: 404
+- [x] PyPI JSON endpoint status for old names on 2026-04-11:
+  - [x] `repoindex`: 200, occupied by package `repoindex` version `0.15.2`
+    with summary `A collection-aware metadata index for git repositories`.
+  - [x] `repoindex-analyzer-python`: 404
+  - [x] `repoindex-analyzer-json`: 404
+  - [x] `repoindex-analyzer-c`: 404
+  - [x] `repoindex-analyzer-bash`: 404
+  - [x] `repoindex-backend-sqlite`: 404
+  - [x] `repoindex-bundle-official`: 404
 
 ## Phase 2 - Triage GitHub Issues
 
