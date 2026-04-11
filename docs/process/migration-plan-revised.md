@@ -2,7 +2,7 @@
 
 ## Version
 
-Document version: `0.1.2`
+Document version: `0.1.3`
 
 Status: accepted working plan, not yet executed.
 
@@ -21,6 +21,8 @@ This document supersedes the root-level draft `migration-plan.md` for the
 - `0.1.2`: Complete the Phase 1 local state audit, verify
   `pre-rebrand-snapshot`, remove cleanup-tool-managed artifacts, and record
   PyPI namespace status for the old and new package names.
+- `0.1.3`: Complete Phase 2 issue classification and defer actual issue
+  transfer to Phase 9, after the new `codira` repository exists.
 
 ## Purpose
 
@@ -255,23 +257,46 @@ Preserve only useful active work in the new `codira` issue tracker.
 
 Tasks:
 
-- [ ] Keep the old `repoindex` repository public while issue triage is in
+- [x] Keep the old `repoindex` repository public while issue triage is in
   progress.
-- [ ] Classify each current `repoindex` issue as:
-  - [ ] still relevant to `codira`
-  - [ ] historical only
-  - [ ] obsolete
+- [x] Classify each current `repoindex` issue as:
+  - [x] still relevant to `codira`
+  - [x] historical only
+  - [x] obsolete
 - [ ] Pre-create matching labels and milestones in `codira` where preserving
   them matters.
-- [ ] Transfer only still-relevant open issues after the new `codira`
-  repository exists.
-- [ ] Leave closed, obsolete, and historical issues in the archived
+- [ ] Transfer only still-relevant open issues in Phase 9 after the new
+  `codira` repository exists.
+- [x] Leave closed, obsolete, and historical issues in the archived
   `repoindex` repository.
 
 Exit criteria:
 
 - [ ] The new `codira` issue tracker contains only intentional active work.
-- [ ] The old `repoindex` issue tracker remains available for history.
+- [x] The old `repoindex` issue tracker remains available for history.
+
+Phase 2 classification record:
+
+- [x] Open issues to transfer to `codira` after repository creation:
+  - [x] `#3` - fallback analyzers for whole-file and fragment parse gaps
+  - [x] `#4` - Ruff interface and complexity ignore cleanup
+  - [x] `#5` - documentation retrieval channel; update references from
+    `context-for` to `ctx` during the rebrand
+  - [x] `#6` - documentation-audit plugin conventions; update references from
+    `audit-docstrings` to `audit` during the rebrand
+  - [x] `#8` - Makefile analyzer plugin
+  - [x] `#14` - config-first analyzer-aware coverage roots
+  - [x] `#15` - deterministic capability contract and analyzer declarations
+- [x] Closed historical issues to leave in archived `repoindex`:
+  - [x] `#1` - real embeddings with deterministic invalidation
+  - [x] `#2` - pluggable language analyzers
+  - [x] `#7` - JSON language analyzer plugin
+  - [x] `#9` - capability-driven signal layer
+  - [x] `#10` - native call-graph retrieval producer
+  - [x] `#11` - optional plugin extraction and package topology
+  - [x] `#12` - replaceable Python analyzer and backend
+  - [x] `#13` - monorepo analyzer fallback removal
+- [x] Obsolete issues: none identified.
 
 ## Phase 3 - Create The New Public GitHub Repository
 
