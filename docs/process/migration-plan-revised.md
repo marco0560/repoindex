@@ -2,7 +2,7 @@
 
 ## Version
 
-Document version: `0.1.10`
+Document version: `0.1.11`
 
 Status: active migration ledger.
 
@@ -40,6 +40,8 @@ This document supersedes the root-level draft `migration-plan.md` for the
 - `0.1.10`: Complete Phase 9 by transferring the selected open issues from
   `marco0560/repoindex` to `marco0560/codira`, verifying issue metadata, and
   confirming GitHub redirects for sampled old issue URLs.
+- `0.1.11`: Complete Phase 10 by adding the old-repository archive notice,
+  preserving public visibility, and archiving `marco0560/repoindex` on GitHub.
 
 ## Purpose
 
@@ -555,19 +557,26 @@ Freeze the old identity as historical reference.
 
 Tasks:
 
-- [ ] Update the old `repoindex` README with:
-  - [ ] archived status
-  - [ ] link to the new `codira` repository
-  - [ ] note that active development moved to `codira`
-  - [ ] note that the rename avoided conflict and confusion around the old
-    `codira` package identity
-- [ ] Archive the old `repoindex` repository on GitHub.
-- [ ] Keep the old repository public.
+- [x] Update the old `repoindex` README with:
+  - [x] archived status
+  - [x] link to the new `codira` repository
+  - [x] note that active development moved to `codira`
+  - [x] note that the rename avoided conflict and confusion around the old
+    `repoindex` package identity
+- [x] Archive the old `repoindex` repository on GitHub.
+- [x] Keep the old repository public.
 
 Exit criteria:
 
-- [ ] Old history and issues remain visible.
-- [ ] Users landing on the old repository can find `codira`.
+- [x] Old history and issues remain visible.
+- [x] Users landing on the old repository can find `codira`.
+
+Phase 10 archive record:
+
+- [x] README archive notice added before the old repository was archived.
+- [x] Old repository visibility before archive: public.
+- [x] Old repository default branch before archive: `main`.
+- [x] Old repository archived status after archive: true.
 
 ## Phase 11 - TestPyPI Rehearsal
 

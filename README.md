@@ -1,3 +1,12 @@
+# repoindex archived
+
+This repository is archived. Active development moved to
+[`codira`](https://github.com/marco0560/codira).
+
+`repoindex` was the original working name for the project. The public release
+line now uses the `codira` package and repository identity to avoid confusion
+with the old `repoindex` package identity.
+
 # codira
 
 [![CI](https://github.com/marco0560/codira/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/marco0560/codira/actions/workflows/ci.yml)
