@@ -2,7 +2,7 @@
 
 ## Version
 
-Document version: `0.1.8`
+Document version: `0.1.9`
 
 Status: active migration ledger.
 
@@ -35,6 +35,8 @@ This document supersedes the root-level draft `migration-plan.md` for the
 - `0.1.8`: Complete Phase 7 local validation, including extended package and
   example checks, distribution builds, twine validation, installed-wheel
   rehearsal, and CLI/plugin discovery smoke tests.
+- `0.1.9`: Complete Phase 8 by publishing fresh `marco0560/codira` history
+  from a prepared copy and pushing tag `v1.0.0`.
 
 ## Purpose
 
@@ -488,18 +490,18 @@ Publish a clean `codira` history without old `codira` commit history.
 
 Tasks:
 
-- [ ] Remove old `.git` metadata only in the prepared `codira` copy, not in the
-  source `codira` repository.
-- [ ] Run `git init` in the prepared `codira` copy.
-- [ ] Create one initial commit containing the fully renamed, validated tree.
-- [ ] Add the new `codira` GitHub remote.
-- [ ] Push `main`.
-- [ ] Create and push tag `v1.0.0`.
+- [x] Remove old `.git` metadata only in the prepared `codira` copy, not in the
+  source `repoindex` repository.
+- [x] Run `git init` in the prepared `codira` copy.
+- [x] Create one initial commit containing the fully renamed, validated tree.
+- [x] Add the new `codira` GitHub remote.
+- [x] Push `main`.
+- [x] Create and push tag `v1.0.0`.
 
 Exit criteria:
 
-- [ ] The public `codira` repository starts from the renamed tree.
-- [ ] The first public tag is `v1.0.0`.
+- [x] The public `codira` repository starts from the renamed tree.
+- [x] The first public tag is `v1.0.0`.
 
 ## Phase 9 - Transfer Selected Issues
 
