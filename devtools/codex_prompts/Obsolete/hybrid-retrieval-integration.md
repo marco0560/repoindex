@@ -118,7 +118,7 @@ Steps:
 
 3. run:
 
-   codira context-for "<query>" --json
+   codira ctx "<query>" --json
 
 4. identify:
 

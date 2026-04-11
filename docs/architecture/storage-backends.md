@@ -32,7 +32,7 @@ artifacts, but query paths remain SQLite-specific until Phase 7.
 
 Phase 8 makes backend activation explicit through `src/codira/registry.py`.
 
-- the configured backend is read from `REPOINDEX_INDEX_BACKEND`
+- the configured backend is read from `CODIRA_INDEX_BACKEND`
 - the default backend is `sqlite`
 - unsupported names fail fast with `ValueError`
 - all current indexing and query entry points resolve the backend through the

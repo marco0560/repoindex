@@ -41,14 +41,14 @@ Supported subcommands and semantics:
   restrict to symbols whose defining file is under `P`
 * `embeddings --prefix P QUERY`:
   restrict to matched symbols whose file is under `P`
-* `context-for --prefix P QUERY`:
+* `ctx --prefix P QUERY`:
   restrict retrieval, expansion, docstring issues, and references to files
   under `P`
 * `calls --prefix P NAME`:
   restrict to call edges whose caller file is under `P`
 * `refs --prefix P NAME`:
   restrict to callable-object references whose owner file is under `P`
-* `audit-docstrings --prefix P`:
+* `audit --prefix P`:
   restrict to issues for symbols defined under `P`
 
 Implementation details:
@@ -86,7 +86,7 @@ Filtering semantics for relation queries are intentionally owner-side:
 
 This avoids ambiguous "either side" semantics and keeps the feature teachable.
 
-For `context-for`, prefix filtering is applied throughout the pipeline rather
+For `ctx`, prefix filtering is applied throughout the pipeline rather
 than only at the end, which reduces noise and wasted work.
 
 ## Consequences
@@ -96,7 +96,7 @@ than only at the end, which reduces noise and wasted work.
 * uniform scoping model across supported query subcommands
 * better signal when working in one subtree or file
 * smaller path-sensitive tables due to `file_id` reuse
-* exact, schema-backed filtering for `audit-docstrings`
+* exact, schema-backed filtering for `audit`
 * owner-side relation filtering that is deterministic and easy to reason about
 
 ### Negative

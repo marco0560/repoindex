@@ -120,11 +120,11 @@ Exit criteria:
 
 * either bounded parity exists, or the ledger records why it is deferred
 
-### Phase 5 — `context-for` call-graph channel integration
+### Phase 5 — `ctx` call-graph channel integration
 
 Goal:
 Use the extracted producer as a bounded retrieval channel inside
-`context-for`.
+`ctx`.
 
 Tasks:
 

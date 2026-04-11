@@ -43,7 +43,7 @@ Phase 8 introduces explicit registry helpers in `src/codira/registry.py`.
 
 Current defaults and selection rules are:
 
-- `REPOINDEX_INDEX_BACKEND` selects the active backend
+- `CODIRA_INDEX_BACKEND` selects the active backend
 - when unset or blank, the backend defaults to `sqlite`
 - unsupported backend names raise `ValueError` before indexing or query work
 - analyzers are registered from built-ins plus entry points and instantiated in

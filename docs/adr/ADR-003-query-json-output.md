@@ -5,14 +5,14 @@
 
 ## Context
 
-`codira` already exposed a structured JSON mode for `context-for`, but the
+`codira` already exposed a structured JSON mode for `ctx`, but the
 other read/query subcommands remained plain-text only:
 
 * `symbol`
 * `embeddings`
 * `calls`
 * `refs`
-* `audit-docstrings`
+* `audit`
 
 That output is easy for humans to scan, but it is awkward for downstream
 automation and agent workflows because consumers must parse display-oriented
@@ -29,7 +29,7 @@ Adopt a `--json` flag for the exact/query subcommands:
 * `embeddings`
 * `calls`
 * `refs`
-* `audit-docstrings`
+* `audit`
 
 Use a lightweight shared JSON envelope for those commands:
 
@@ -45,7 +45,7 @@ Use a lightweight shared JSON envelope for those commands:
 
 Rules:
 
-* keep the existing `context-for --json` contract unchanged
+* keep the existing `ctx --json` contract unchanged
 * keep query semantics unchanged; `--json` is an output mode only
 * allow `--json` to compose with `--prefix`, `--incoming`, `--module`, and
   `--limit` where applicable
@@ -62,7 +62,7 @@ Status values:
 
 This design gives AI and tool consumers a stable machine-readable contract
 without forcing all commands into the richer retrieval-oriented schema used by
-`context-for`.
+`ctx`.
 
 Keeping the implementation at the CLI layer has two benefits:
 
@@ -90,7 +90,7 @@ fields that matter for its result type.
 
 ### Neutral / Trade-offs
 
-* `context-for --json` remains a separate richer schema family
+* `ctx --json` remains a separate richer schema family
 * exit codes remain aligned with existing command behavior even when JSON is
   emitted
 

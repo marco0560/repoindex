@@ -20,7 +20,7 @@ In particular:
 
 * full-repository graph visualization is easy to ask for but rarely useful
 * unconstrained graph expansion becomes noisy very quickly
-* `calls`, `refs`, and `context-for` have different user-facing purposes
+* `calls`, `refs`, and `ctx` have different user-facing purposes
 * graphical export may be valuable later, but it should not define the first
   implementation
 
@@ -54,7 +54,7 @@ Examples of in-scope questions:
 * who calls `X`?
 * what does `X` call?
 * what small bounded neighborhood surrounds `X`?
-* why was `X` considered relevant in `context-for`?
+* why was `X` considered relevant in `ctx`?
 
 Examples of out-of-scope first-version behavior:
 
@@ -68,7 +68,7 @@ Examples of out-of-scope first-version behavior:
 2. native call-graph retrieval producer extraction outside `context.py`
 3. bounded user-facing `calls` enhancements
 4. optional bounded `refs` parity
-5. `context-for` integration as a retrieval channel
+5. `ctx` integration as a retrieval channel
 6. optional graph/export surfaces such as `--dot`
 
 ## Consequences
@@ -89,7 +89,7 @@ Examples of out-of-scope first-version behavior:
 ### Neutral / Trade-offs
 
 * the native producer and user-facing surfaces are related, but not identical
-* `context-for` should consume call-graph evidence in a much smaller bounded
+* `ctx` should consume call-graph evidence in a much smaller bounded
   form than a dedicated `calls` view
 * graphical output, if added later, should be optional export rather than the
   primary interaction mode
@@ -110,5 +110,5 @@ Examples of out-of-scope first-version behavior:
 * [x] Phase 2 — Native call-graph retrieval producer extraction
 * [x] Phase 3 — Bounded `calls` user surface
 * [x] Phase 4 — Optional bounded `refs` parity
-* [x] Phase 5 — `context-for` call-graph channel integration
+* [x] Phase 5 — `ctx` call-graph channel integration
 * [x] Phase 6 — Optional graph/export surfaces

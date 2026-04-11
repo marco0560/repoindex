@@ -30,7 +30,7 @@ Assume the following are already implemented in `codira`:
 - semantic retrieval
 - embedding retrieval
 - rank-based multi-channel merge
-- `context-for`, `audit-docstrings`, `calls`, and `refs`
+- `ctx`, `audit`, `calls`, and `refs`
 
 Do NOT spend effort re-implementing hybrid retrieval.
 
@@ -77,10 +77,10 @@ No step skipping.
 
 Inspect the available local surfaces first:
 
-- `codira audit-docstrings`
-- `codira context-for "missing numpy docstring" --json`
-- `codira context-for "missing numpy docstring" --prompt`
-- `codira symbol <name>`
+- `codira audit`
+- `codira ctx "missing numpy docstring" --json`
+- `codira ctx "missing numpy docstring" --prompt`
+- `codira sym <name>`
 - `rg <query>`
 
 Then determine:
@@ -98,7 +98,7 @@ Before broad analysis in the target repository:
 
 1. verify likely symbols or files with `rg <query>`
 2. run `codira index`
-3. run `codira context-for "<query>" --json`
+3. run `codira ctx "<query>" --json`
 4. inspect the referenced files before proposing edits
 
 Determine:
@@ -140,7 +140,7 @@ When confirmed:
 - prefer report-first validation over speculative fixes
 - patch only symbols that are verified in the filesystem
 - use `rg` before editing target symbols
-- use `codira context-for` only to narrow search, never as a substitute for
+- use `codira ctx` only to narrow search, never as a substitute for
   reading files
 - separate codira self-fixes from target-repository fixes conceptually
 
@@ -162,9 +162,9 @@ If documenting external integration:
 
 You may claim success for local dogfooding only if you provide:
 
-- the exact `codira audit-docstrings` output or a faithful summary grounded
+- the exact `codira audit` output or a faithful summary grounded
   in it
-- the exact symbols inspected with `codira context-for`, `codira symbol`,
+- the exact symbols inspected with `codira ctx`, `codira sym`,
   and `rg`
 - the exact files changed, if any
 
@@ -196,8 +196,8 @@ Prefer outcomes in this order:
 Provide exact commands and expected results for:
 
 - `codira index`
-- `codira audit-docstrings`
-- `codira context-for "<query>" --json`
+- `codira audit`
+- `codira ctx "<query>" --json`
 - any `rg` commands used for symbol verification
 - repository validation commands for `codira`
 - external-repository validation commands, if an external target was used

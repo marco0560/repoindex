@@ -128,7 +128,7 @@ Add or extend tests that freeze current behavior for:
 * `calls`
 * `refs`
 * `embeddings`
-* `context-for`
+* `ctx`
 * incremental reuse
 * embedding invalidation
 * deterministic ordering
@@ -301,7 +301,7 @@ This phase should also consider:
 * tooling or configuration to implementation links
 * generated-source provenance when present
 
-`context-for` and explain surfaces should be able to show when include-graph
+`ctx` and explain surfaces should be able to show when include-graph
 neighbors were used to expand or justify mixed-language results.
 
 ### Phase 16 — Language-Specific Semantic Text Units
@@ -512,7 +512,7 @@ Phase 15 adds a first-class include-graph slice for C through:
 
 * exact include-edge queries backed by persisted include artifacts
 * deterministic direct and transitive local-include expansion in
-  `context-for`
+  `ctx`
 * explain-mode diagnostics showing when include-graph edges contributed to
   module expansion
 

@@ -101,7 +101,7 @@ For each candidate symbol:
    - `codira calls <name> --incoming`
    - `codira refs <name>`
    - `codira refs <name> --incoming`
-   - `codira context-for "<query>"`
+   - `codira ctx "<query>"`
 3. Inspect the defining file
 4. Inspect possible entry points:
    - CLI registration

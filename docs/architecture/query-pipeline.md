@@ -9,7 +9,7 @@ by two query families:
 
 ## Exact Query Flow
 
-Exact commands such as `symbol`, `calls`, `refs`, and `audit-docstrings`:
+Exact commands such as `symbol`, `calls`, `refs`, and `audit`:
 
 1. normalize optional repo-root-relative prefix filters
 2. delegate exact lookup work to the active index backend
@@ -21,7 +21,7 @@ having `query/exact.py` own raw SQLite connection setup and SQL execution.
 
 ## Context Retrieval Flow
 
-`context-for` combines:
+`ctx` combines:
 
 - exact-symbol matches
 - docstring issue matches
@@ -54,7 +54,7 @@ The resulting retrieval plan now owns:
 - whether include-graph expansion should run
 - whether cross-reference collection should run
 
-The current `context-for` implementation uses call-graph, callable-reference,
+The current `ctx` implementation uses call-graph, callable-reference,
 and include-graph data twice but in bounded forms:
 
 - as low-weight retrieval-time evidence that can support ranking

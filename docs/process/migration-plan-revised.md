@@ -2,7 +2,7 @@
 
 ## Version
 
-Document version: `0.1.6`
+Document version: `0.1.7`
 
 Status: active migration ledger.
 
@@ -29,6 +29,9 @@ This document supersedes the root-level draft `migration-plan.md` for the
   `marco0560/codira` GitHub repository.
 - `0.1.6`: Complete the Phase 4 local code/package rename and Phase 5
   subcommand-shortening implementation in one validated local slice.
+- `0.1.7`: Complete Phase 6 drift audit for stale old project names,
+  environment variables, package metadata, entry-point groups, and old
+  subcommand references.
 
 ## Purpose
 
@@ -420,22 +423,22 @@ Find and classify every stale old-name reference before release.
 
 Tasks:
 
-- [ ] Run `rg -n "codira|codira-|codira_|\\.codira"`.
-- [ ] Run `rg -n "context-for|audit-docstrings|coverage|symbol|embeddings"`
+- [x] Run `rg -n "repoindex|repoindex-|repoindex_|\\.repoindex|REPOINDEX"`.
+- [x] Run `rg -n "context-for|audit-docstrings|codira coverage|codira symbol|codira embeddings"`
   and classify remaining old subcommand references.
-- [ ] Inspect every remaining hit manually.
-- [ ] Convert active references to `codira`.
-- [ ] Mark intentional historical references with local context explaining why
+- [x] Inspect every remaining hit manually.
+- [x] Convert active references to `codira`.
+- [x] Mark intentional historical references with local context explaining why
   they remain.
-- [ ] Verify package metadata names are exactly the accepted target names.
-- [ ] Verify dependency metadata points only to `codira` packages.
-- [ ] Verify entry-point groups are only `codira.analyzers` and
+- [x] Verify package metadata names are exactly the accepted target names.
+- [x] Verify dependency metadata points only to `codira` packages.
+- [x] Verify entry-point groups are only `codira.analyzers` and
   `codira.backends`.
 
 Exit criteria:
 
-- [ ] Stale-reference search has no unexplained hits.
-- [ ] Intentional historical references are few, explicit, and non-operational.
+- [x] Stale-reference search has no unexplained hits.
+- [x] Intentional historical references are few, explicit, and non-operational.
 
 ## Phase 7 - Local Validation
 

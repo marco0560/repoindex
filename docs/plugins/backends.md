@@ -9,7 +9,7 @@ The smallest working example lives at
 Backends are different from analyzers:
 
 - exactly one backend is active for one repository instance
-- the backend is selected by name through `REPOINDEX_INDEX_BACKEND`
+- the backend is selected by name through `CODIRA_INDEX_BACKEND`
 - analyzers can be many; backends are singular
 
 Register a backend:
@@ -22,7 +22,7 @@ demo = "codira_demo_backend:build_backend"
 Select it:
 
 ```bash
-export REPOINDEX_INDEX_BACKEND=demo-backend
+export CODIRA_INDEX_BACKEND=demo-backend
 codira index
 ```
 

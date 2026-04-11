@@ -16,5 +16,5 @@ pip install -e /path/to/codira/examples/plugins/codira_demo_backend
 
 ```bash
 codira plugins
-REPOINDEX_INDEX_BACKEND=demo-backend codira index
+CODIRA_INDEX_BACKEND=demo-backend codira index
 ```

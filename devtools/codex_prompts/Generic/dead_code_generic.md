@@ -29,12 +29,12 @@ installed in the local `.venv`.
 Assume the available CLI surface includes:
 
 - `codira index`
-- `codira symbol <name>`
+- `codira sym <name>`
 - `codira calls <name>`
 - `codira calls <name> --incoming`
 - `codira refs <name>`
 - `codira refs <name> --incoming`
-- `codira context-for "<query>"`
+- `codira ctx "<query>"`
 
 Before broad analysis, verify that:
 
@@ -107,7 +107,7 @@ For each candidate symbol:
    - `codira calls <name> --incoming`
    - `codira refs <name>`
    - `codira refs <name> --incoming`
-   - `codira context-for "<query>"`
+   - `codira ctx "<query>"`
 3. Inspect the defining file
 4. Inspect possible entry points:
    - CLI registration
