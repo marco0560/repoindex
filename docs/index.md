@@ -1,6 +1,6 @@
-# repoindex
+# codira
 
-`repoindex` is a repository-local indexing and context retrieval tool for
+`codira` is a repository-local indexing and context retrieval tool for
 agent-assisted development.
 
 It builds a SQLite index inside the target repository and currently provides:

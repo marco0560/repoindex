@@ -5,7 +5,7 @@
 
 ## Context
 
-`repoindex` query subcommands originally operated on the whole indexed
+`codira` query subcommands originally operated on the whole indexed
 repository. That worked for smaller repositories, but it made targeted work on
 one subsystem noisy:
 

@@ -29,12 +29,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from repoindex_backend_sqlite import SQLiteIndexBackend
+from codira_backend_sqlite import SQLiteIndexBackend
 
-import repoindex.registry as registry
-from repoindex.cli import main
-from repoindex.contracts import IndexBackend, LanguageAnalyzer
-from repoindex.models import AnalysisResult, ModuleArtifact
+import codira.registry as registry
+from codira.cli import main
+from codira.contracts import IndexBackend, LanguageAnalyzer
+from codira.models import AnalysisResult, ModuleArtifact
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -181,7 +181,7 @@ class _DemoAnalyzer:
 
         Returns
         -------
-        repoindex.models.AnalysisResult
+        codira.models.AnalysisResult
             Empty normalized analysis result for the fake plugin.
         """
         del path, root
@@ -211,7 +211,7 @@ def _build_optional_first_party_analyzer(name: str) -> LanguageAnalyzer:
 
     Returns
     -------
-    repoindex.contracts.LanguageAnalyzer
+    codira.contracts.LanguageAnalyzer
         Minimal analyzer instance compatible with registry validation.
     """
 
@@ -252,7 +252,7 @@ def _build_c_analyzer() -> LanguageAnalyzer:
 
     Returns
     -------
-    repoindex.contracts.LanguageAnalyzer
+    codira.contracts.LanguageAnalyzer
         Deterministic C analyzer stub for registry tests.
     """
     return _build_optional_first_party_analyzer("c")
@@ -268,7 +268,7 @@ def _build_bash_analyzer() -> LanguageAnalyzer:
 
     Returns
     -------
-    repoindex.contracts.LanguageAnalyzer
+    codira.contracts.LanguageAnalyzer
         Deterministic Bash analyzer stub for registry tests.
     """
     return _build_optional_first_party_analyzer("bash")
@@ -284,7 +284,7 @@ def _build_python_analyzer() -> LanguageAnalyzer:
 
     Returns
     -------
-    repoindex.contracts.LanguageAnalyzer
+    codira.contracts.LanguageAnalyzer
         Deterministic Python analyzer stub for registry tests.
     """
     return _build_optional_first_party_analyzer("python")
@@ -300,7 +300,7 @@ def _build_json_analyzer() -> LanguageAnalyzer:
 
     Returns
     -------
-    repoindex.contracts.LanguageAnalyzer
+    codira.contracts.LanguageAnalyzer
         Deterministic JSON analyzer stub for registry tests.
     """
     return _build_optional_first_party_analyzer("json")
@@ -515,7 +515,7 @@ def test_active_default_backend_comes_from_first_party_sqlite_package() -> None:
     backend = registry.active_index_backend()
 
     assert isinstance(backend, SQLiteIndexBackend)
-    assert backend.__class__.__module__ == "repoindex_backend_sqlite"
+    assert backend.__class__.__module__ == "codira_backend_sqlite"
 
 
 def test_plugins_cli_emits_json_registration_diagnostics(
@@ -549,7 +549,7 @@ def test_plugins_cli_emits_json_registration_diagnostics(
         ],
         backends=[],
     )
-    monkeypatch.setattr(sys, "argv", ["repoindex", "plugins", "--json"])
+    monkeypatch.setattr(sys, "argv", ["codira", "plugins", "--json"])
 
     assert main() == 0
     payload = json.loads(capsys.readouterr().out)
@@ -571,7 +571,7 @@ def test_version_cli_groups_curated_bundle_plugins(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """
-    Print core and curated first-party plugin versions through ``repoindex -V``.
+    Print core and curated first-party plugin versions through ``codira -V``.
 
     Parameters
     ----------
@@ -586,18 +586,18 @@ def test_version_cli_groups_curated_bundle_plugins(
         The test asserts the version report groups first-party plugins under
         the installed curated bundle marker.
     """
-    monkeypatch.setattr("repoindex.cli.__version__", "9.9.9")
+    monkeypatch.setattr("codira.cli.__version__", "9.9.9")
     monkeypatch.setattr(
-        "repoindex.cli.installed_distribution_version",
-        lambda name: "0.9.0" if name == "repoindex-bundle-official" else None,
+        "codira.cli.installed_distribution_version",
+        lambda name: "0.9.0" if name == "codira-bundle-official" else None,
     )
     monkeypatch.setattr(
-        "repoindex.cli.plugin_registrations",
+        "codira.cli.plugin_registrations",
         lambda: [
             registry.PluginRegistration(
                 family="analyzer",
                 name="python",
-                provider="repoindex-analyzer-python",
+                provider="codira-analyzer-python",
                 source="entry_point",
                 status="loaded",
                 version="0.1.0",
@@ -606,7 +606,7 @@ def test_version_cli_groups_curated_bundle_plugins(
             registry.PluginRegistration(
                 family="backend",
                 name="sqlite",
-                provider="repoindex-backend-sqlite",
+                provider="codira-backend-sqlite",
                 source="entry_point",
                 status="loaded",
                 version="0.1.0",
@@ -614,11 +614,11 @@ def test_version_cli_groups_curated_bundle_plugins(
             ),
         ],
     )
-    monkeypatch.setattr(sys, "argv", ["repoindex", "-V"])
+    monkeypatch.setattr(sys, "argv", ["codira", "-V"])
 
     assert main() == 0
     assert capsys.readouterr().out.splitlines() == [
-        "repoindex 9.9.9",
+        "codira 9.9.9",
         "bundle-official 0.9.0",
         "  analyzer python 0.1.0",
         "  backend sqlite 0.1.0",
@@ -645,13 +645,13 @@ def test_version_cli_lists_third_party_plugins_when_bundle_is_absent(
         The test asserts the version report stays concise when only third-party
         plugins are loaded.
     """
-    monkeypatch.setattr("repoindex.cli.__version__", "9.9.9")
+    monkeypatch.setattr("codira.cli.__version__", "9.9.9")
     monkeypatch.setattr(
-        "repoindex.cli.installed_distribution_version",
+        "codira.cli.installed_distribution_version",
         lambda _name: None,
     )
     monkeypatch.setattr(
-        "repoindex.cli.plugin_registrations",
+        "codira.cli.plugin_registrations",
         lambda: [
             registry.PluginRegistration(
                 family="analyzer",
@@ -664,11 +664,11 @@ def test_version_cli_lists_third_party_plugins_when_bundle_is_absent(
             )
         ],
     )
-    monkeypatch.setattr(sys, "argv", ["repoindex", "--version"])
+    monkeypatch.setattr(sys, "argv", ["codira", "--version"])
 
     assert main() == 0
     assert capsys.readouterr().out.splitlines() == [
-        "repoindex 9.9.9",
+        "codira 9.9.9",
         "third-party plugins:",
         "  analyzer demo 1",
     ]
@@ -755,11 +755,11 @@ def test_core_can_discover_installed_first_party_packages_from_built_wheels(
             sys.executable,
             "-c",
             (
-                "import json, repoindex, repoindex.registry as registry; "
+                "import json, codira, codira.registry as registry; "
                 "backend = registry.active_index_backend(); "
                 "analyzers = registry.active_language_analyzers(); "
                 "print(json.dumps({"
-                "'repoindex_file': repoindex.__file__, "
+                "'codira_file': codira.__file__, "
                 "'backend_module': type(backend).__module__, "
                 "'analyzers': [analyzer.name for analyzer in analyzers]"
                 "}))"
@@ -774,8 +774,8 @@ def test_core_can_discover_installed_first_party_packages_from_built_wheels(
 
     payload = json.loads(result.stdout)
 
-    assert Path(payload["repoindex_file"]).is_relative_to(install_dir)
-    assert payload["backend_module"] == "repoindex_backend_sqlite"
+    assert Path(payload["codira_file"]).is_relative_to(install_dir)
+    assert payload["backend_module"] == "codira_backend_sqlite"
     assert payload["analyzers"] == ["python", "json", "c", "bash"]
 
 
@@ -801,26 +801,26 @@ def test_registry_orders_first_party_analyzers_across_sources(
         analyzers=[
             _FakeEntryPoint(
                 name="python",
-                value="repoindex_analyzer_python:build_analyzer",
-                dist=_FakeDistribution("repoindex-analyzer-python"),
+                value="codira_analyzer_python:build_analyzer",
+                dist=_FakeDistribution("codira-analyzer-python"),
                 loaded=_build_python_analyzer,
             ),
             _FakeEntryPoint(
                 name="json",
-                value="repoindex_analyzer_json:build_analyzer",
-                dist=_FakeDistribution("repoindex-analyzer-json"),
+                value="codira_analyzer_json:build_analyzer",
+                dist=_FakeDistribution("codira-analyzer-json"),
                 loaded=_build_json_analyzer,
             ),
             _FakeEntryPoint(
                 name="c",
-                value="repoindex_analyzer_c:build_analyzer",
-                dist=_FakeDistribution("repoindex-analyzer-c"),
+                value="codira_analyzer_c:build_analyzer",
+                dist=_FakeDistribution("codira-analyzer-c"),
                 loaded=_build_c_analyzer,
             ),
             _FakeEntryPoint(
                 name="bash",
-                value="repoindex_analyzer_bash:build_analyzer",
-                dist=_FakeDistribution("repoindex-analyzer-bash"),
+                value="codira_analyzer_bash:build_analyzer",
+                dist=_FakeDistribution("codira-analyzer-bash"),
                 loaded=_build_bash_analyzer,
             ),
         ],
@@ -836,7 +836,7 @@ def test_registry_orders_first_party_analyzers_across_sources(
     assert any(
         record.family == "analyzer"
         and record.name == "python"
-        and record.provider == "repoindex-analyzer-python"
+        and record.provider == "codira-analyzer-python"
         and record.source == "entry_point"
         and record.origin == "first_party"
         and record.status == "loaded"
@@ -845,7 +845,7 @@ def test_registry_orders_first_party_analyzers_across_sources(
     assert any(
         record.family == "analyzer"
         and record.name == "json"
-        and record.provider == "repoindex-analyzer-json"
+        and record.provider == "codira-analyzer-json"
         and record.source == "entry_point"
         and record.origin == "first_party"
         and record.status == "loaded"
@@ -854,7 +854,7 @@ def test_registry_orders_first_party_analyzers_across_sources(
     assert any(
         record.family == "analyzer"
         and record.name == "c"
-        and record.provider == "repoindex-analyzer-c"
+        and record.provider == "codira-analyzer-c"
         and record.source == "entry_point"
         and record.origin == "first_party"
         and record.status == "loaded"
@@ -863,7 +863,7 @@ def test_registry_orders_first_party_analyzers_across_sources(
     assert any(
         record.family == "analyzer"
         and record.name == "bash"
-        and record.provider == "repoindex-analyzer-bash"
+        and record.provider == "codira-analyzer-bash"
         and record.source == "entry_point"
         and record.origin == "first_party"
         and record.status == "loaded"
@@ -892,24 +892,24 @@ def test_compatibility_shims_do_not_fall_back_to_checkout_local_package_sources(
     repo_root = Path(__file__).resolve().parents[1]
     shim_cases = (
         (
-            "src/repoindex/analyzers/python.py",
-            "repoindex_analyzer_python",
-            "repoindex-analyzer-python",
+            "src/codira/analyzers/python.py",
+            "codira_analyzer_python",
+            "codira-analyzer-python",
         ),
         (
-            "src/repoindex/analyzers/json.py",
-            "repoindex_analyzer_json",
-            "repoindex-analyzer-json",
+            "src/codira/analyzers/json.py",
+            "codira_analyzer_json",
+            "codira-analyzer-json",
         ),
         (
-            "src/repoindex/analyzers/c.py",
-            "repoindex_analyzer_c",
-            "repoindex-analyzer-c",
+            "src/codira/analyzers/c.py",
+            "codira_analyzer_c",
+            "codira-analyzer-c",
         ),
         (
-            "src/repoindex/analyzers/bash.py",
-            "repoindex_analyzer_bash",
-            "repoindex-analyzer-bash",
+            "src/codira/analyzers/bash.py",
+            "codira_analyzer_bash",
+            "codira-analyzer-bash",
         ),
     )
 

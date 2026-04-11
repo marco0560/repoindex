@@ -5,7 +5,7 @@
 
 ## Context
 
-`repoindex` currently has a strong implicit coupling between:
+`codira` currently has a strong implicit coupling between:
 
 * Python-specific analysis
 * SQLite-specific persistence and query execution
@@ -28,7 +28,7 @@ branch through a sequence of small, reviewable commits.
 
 ### Plugin Families
 
-`repoindex` will distinguish two separate extension families:
+`codira` will distinguish two separate extension families:
 
 * `IndexBackend`
   Exactly one storage/query backend is active for a given repository index.
@@ -383,9 +383,9 @@ This phase should:
   installed analyzer claims them
 * classify each relevant file as covered, optionally coverable, or uncovered
 * report missing analyzer families for uncovered suffixes or globs
-* make `repoindex index` surface this coverage state before or during indexing
+* make `codira index` surface this coverage state before or during indexing
 
-The goal is for `repoindex` to say, deterministically, that a repository
+The goal is for `codira` to say, deterministically, that a repository
 appears to need analyzers for languages such as Rust, assembly, Lua, or Pascal
 when tracked canonical-source files indicate that coverage is incomplete.
 
@@ -566,8 +566,8 @@ Phase 21 activates that persisted metadata in rebuild policy through:
 
 Phase 22 completes the operator-facing surface through:
 
-* a dedicated `repoindex coverage` inspection command
-* strict indexing preflight via `repoindex index --require-full-coverage`
+* a dedicated `codira cov` inspection command
+* strict indexing preflight via `codira index --require-full-coverage`
 * plugin and operator documentation describing partial versus full coverage
 
 Phases 18 through 22 now provide the core indexing-side mechanics needed to

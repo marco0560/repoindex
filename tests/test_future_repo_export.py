@@ -78,7 +78,7 @@ def test_package_export_plan_flattens_owned_paths_to_repository_root() -> None:
 
     plan = helper.build_future_repo_export_plan(
         repo_root=repo_root,
-        repository="repoindex-analyzer-json",
+        repository="codira-analyzer-json",
     )
 
     assert [str(entry.target_relative) for entry in plan] == [
@@ -107,7 +107,7 @@ def test_core_export_plan_preserves_repository_relative_paths() -> None:
 
     plan = helper.build_future_repo_export_plan(
         repo_root=repo_root,
-        repository="repoindex",
+        repository="codira",
     )
 
     target_paths = [str(entry.target_relative) for entry in plan]
@@ -154,14 +154,14 @@ def test_materialize_future_repo_copies_owned_paths_into_empty_destination(
 
     export_dir = helper.materialize_future_repo(
         repo_root=repo_root,
-        repository="repoindex-analyzer-python",
+        repository="codira-analyzer-python",
         destination_root=destination_root,
     )
 
-    assert export_dir == destination_root / "repoindex-analyzer-python"
+    assert export_dir == destination_root / "codira-analyzer-python"
     assert (export_dir / "README.md").is_file()
     assert (export_dir / "pyproject.toml").is_file()
-    assert (export_dir / "src" / "repoindex_analyzer_python" / "__init__.py").is_file()
+    assert (export_dir / "src" / "codira_analyzer_python" / "__init__.py").is_file()
     assert (export_dir / "tests" / "test_python_package.py").is_file()
 
 
@@ -181,7 +181,7 @@ def test_materialize_future_repo_rejects_non_empty_destination(tmp_path: Path) -
     helper = _load_future_repo_export_helper()
     repo_root = Path(__file__).resolve().parents[1]
     destination_root = tmp_path / "future-repo-export-non-empty"
-    export_dir = destination_root / "repoindex-bundle-official"
+    export_dir = destination_root / "codira-bundle-official"
     export_dir.mkdir(parents=True, exist_ok=True)
     marker = export_dir / "KEEP.txt"
     marker.write_text("occupied\n", encoding="utf-8")
@@ -189,7 +189,7 @@ def test_materialize_future_repo_rejects_non_empty_destination(tmp_path: Path) -
     try:
         helper.materialize_future_repo(
             repo_root=repo_root,
-            repository="repoindex-bundle-official",
+            repository="codira-bundle-official",
             destination_root=destination_root,
         )
     except ValueError as exc:

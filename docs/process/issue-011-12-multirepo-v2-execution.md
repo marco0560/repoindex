@@ -43,7 +43,7 @@ The repository already contains:
 
 * `ADR-007` for the first-party package boundary
 * package-owned first-party optional analyzers for C and Bash
-* a `repoindex-bundle-official` package scaffold
+* a `codira-bundle-official` package scaffold
 * a built-in JSON analyzer that should be treated as part of the future
   default-analyzer package boundary
 
@@ -71,7 +71,7 @@ Tasks:
   analyzers in `docs/process/issue-011-optional-plugin-shim-inventory.md`.
 - [x] Reconcile repository-local bootstrap with the accepted package boundary.
 - [x] Reconcile CI jobs with explicit first-party package installs.
-- [x] Align package and install docs with `repoindex[bundle-official]` and the
+- [x] Align package and install docs with `codira[bundle-official]` and the
   package-owned analyzer model.
 - [x] Validate optional analyzer discovery through package metadata and entry
   points, not only source-tree convenience imports.
@@ -113,7 +113,7 @@ Tasks:
 - [x] Update install and architecture docs to reflect that defaults are now
   package-provided implementations.
 - [x] Remove the remaining core-owned SQLite backend implementation so
-  `repoindex.indexer.SQLiteIndexBackend` is only a compatibility re-export to
+  `codira.indexer.SQLiteIndexBackend` is only a compatibility re-export to
   the package-owned class.
 
 Exit criteria:
@@ -147,7 +147,7 @@ Tasks:
   - `scripts/build_first_party_packages.py`
   - tooling tests in `tests/test_bootstrap_scripts.py`
   - a passing wheel-build validation run against
-    `/tmp/repoindex-first-party-wheels`
+    `/tmp/codira-first-party-wheels`
 - [x] Move package-local tests and package-local docs into their owning
   repository boundaries under `packages/`.
 - [x] Recreate CI in each repository as an explicit split-ready contract in:

@@ -24,15 +24,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from repoindex.cli import build_parser, main
-from repoindex.indexer import index_repo
-from repoindex.query.context import context_for
-from repoindex.query.exact import (
+from codira.cli import build_parser, main
+from codira.indexer import index_repo
+from codira.query.context import context_for
+from codira.query.exact import (
     find_call_edges,
     find_callable_refs,
     find_include_edges,
 )
-from repoindex.storage import get_db_path, init_db
+from codira.storage import get_db_path, init_db
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -272,7 +272,7 @@ def test_calls_cli_prints_incoming_edges(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "calls",
             "imported_helper",
             "--module",
@@ -318,7 +318,7 @@ def test_calls_cli_tree_prints_bounded_outgoing_traversal(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "calls",
             "caller",
             "--tree",
@@ -370,7 +370,7 @@ def test_refs_cli_prints_incoming_references(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "refs",
             "helper",
             "--module",
@@ -416,7 +416,7 @@ def test_refs_cli_tree_prints_bounded_incoming_references(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "refs",
             "helper",
             "--module",
@@ -495,12 +495,12 @@ def test_top_level_help_includes_examples_and_calls_command() -> None:
     parser = build_parser()
     help_text = parser.format_help()
 
-    assert 'repoindex embeddings "schema migration rules"' in help_text
-    assert "repoindex calls caller" in help_text
-    assert "repoindex refs _retrieve_script_candidates --incoming" in help_text
-    assert "repoindex context-for --prompt" in help_text
-    assert 'repoindex context-for "find schema migration logic"' in help_text
-    assert "audit-docstrings" in help_text
+    assert 'codira emb "schema migration rules"' in help_text
+    assert "codira calls caller" in help_text
+    assert "codira refs _retrieve_script_candidates --incoming" in help_text
+    assert "codira ctx --prompt" in help_text
+    assert 'codira ctx "find schema migration logic"' in help_text
+    assert "audit" in help_text
 
 
 def test_context_for_expands_related_cross_module_graph_symbols(
@@ -826,25 +826,21 @@ def test_context_for_help_shows_incompatibility_and_examples(
         The test asserts help text and parser enforcement for context modes.
     """
     with pytest.raises(SystemExit) as help_exit:
-        build_parser().parse_args(["context-for", "-h"])
+        build_parser().parse_args(["ctx", "-h"])
 
     assert help_exit.value.code == 0
 
     captured = capsys.readouterr()
     assert "--json | --prompt | --explain" in captured.out
-    assert "repoindex context-for --explain" in captured.out
+    assert "codira ctx --explain" in captured.out
 
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(
-            ["context-for", "--prompt", "--explain", "static call graph"]
-        )
+        build_parser().parse_args(["ctx", "--prompt", "--explain", "static call graph"])
 
     assert exc.value.code == 2
 
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(
-            ["context-for", "--json", "--prompt", "static call graph"]
-        )
+        build_parser().parse_args(["ctx", "--json", "--prompt", "static call graph"])
 
     assert exc.value.code == 2
 
@@ -866,11 +862,11 @@ def test_query_subcommand_help_includes_json_examples(
         The test asserts JSON help text on representative subcommands.
     """
     expected_examples = {
-        "symbol": "repoindex symbol build_parser --json",
-        "embeddings": 'repoindex embeddings "schema migration rules" --json',
-        "calls": "repoindex calls caller --json",
-        "refs": "repoindex refs helper --json",
-        "audit-docstrings": "repoindex audit-docstrings --json",
+        "sym": "codira sym build_parser --json",
+        "emb": 'codira emb "schema migration rules" --json',
+        "calls": "codira calls caller --json",
+        "refs": "codira refs helper --json",
+        "audit": "codira audit --json",
     }
 
     for command, example in expected_examples.items():
@@ -915,7 +911,7 @@ def test_calls_cli_tree_json_reports_truncation(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "calls",
             "caller",
             "--tree",
@@ -998,7 +994,7 @@ def test_calls_cli_tree_dot_renders_bounded_graphviz_output(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "calls",
             "caller",
             "--tree",
@@ -1011,7 +1007,7 @@ def test_calls_cli_tree_dot_renders_bounded_graphviz_output(
     assert main() == 0
     output = capsys.readouterr().out
 
-    assert "digraph repoindex_calls {" in output
+    assert "digraph codira_calls {" in output
     assert 'n0 [label="pkg.a.caller"];' in output
     assert 'n1 [label="pkg.a.dynamic"];' in output
     assert "n0 -> n1;" in output
@@ -1050,7 +1046,7 @@ def test_refs_cli_tree_json_reports_truncation(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "refs",
             "helper",
             "--module",
@@ -1118,7 +1114,7 @@ def test_refs_cli_tree_dot_renders_incoming_graphviz_output(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "refs",
             "helper",
             "--module",
@@ -1134,7 +1130,7 @@ def test_refs_cli_tree_dot_renders_incoming_graphviz_output(
     assert main() == 0
     output = capsys.readouterr().out
 
-    assert "digraph repoindex_refs {" in output
+    assert "digraph codira_refs {" in output
     assert 'n0 [label="pkg.a.helper"];' in output
     assert 'n1 [label="pkg.a.registry"];' in output
     assert "n1 -> n0;" in output
@@ -1166,7 +1162,7 @@ def test_calls_cli_dot_rejects_non_tree_and_json_combinations(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["repoindex", "calls", "caller", "--dot", "--json"],
+        ["codira", "calls", "caller", "--dot", "--json"],
     )
 
     with pytest.raises(SystemExit) as exc_info:

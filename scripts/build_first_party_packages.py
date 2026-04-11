@@ -138,7 +138,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         Parsed helper arguments.
     """
     parser = argparse.ArgumentParser(
-        description="Validate repoindex first-party package boundaries with local wheel builds."
+        description="Validate codira first-party package boundaries with local wheel builds."
     )
     parser.add_argument(
         "--python",

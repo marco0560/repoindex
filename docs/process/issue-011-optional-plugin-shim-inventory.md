@@ -13,20 +13,20 @@ monorepo phase and the cleanup target that issue `#13` completes.
 
 This inventory covers the extracted first-party optional analyzers only:
 
-- `repoindex-analyzer-c`
-- `repoindex-analyzer-bash`
+- `codira-analyzer-c`
+- `codira-analyzer-bash`
 
 It does not cover the future default-implementation extraction planned for
 issue `#12`.
 
 ## Current Compatibility Surfaces
 
-### `src/repoindex/analyzers/c.py`
+### `src/codira/analyzers/c.py`
 
 Role:
 
-- preserves historical imports from `repoindex.analyzers.c`
-- attempts to import `repoindex_analyzer_c`
+- preserves historical imports from `codira.analyzers.c`
+- attempts to import `codira_analyzer_c`
 - raises a deterministic install hint when the extracted package is absent
 
 Status:
@@ -34,12 +34,12 @@ Status:
 - retained as an import-only compatibility shim after `#13`
 - must not regain implementation ownership
 
-### `src/repoindex/analyzers/bash.py`
+### `src/codira/analyzers/bash.py`
 
 Role:
 
-- preserves historical imports from `repoindex.analyzers.bash`
-- attempts to import `repoindex_analyzer_bash`
+- preserves historical imports from `codira.analyzers.bash`
+- attempts to import `codira_analyzer_bash`
 - raises a deterministic install hint when the extracted package is absent
 
 Status:
@@ -47,7 +47,7 @@ Status:
 - retained as an import-only compatibility shim after `#13`
 - must not regain implementation ownership
 
-### `src/repoindex/analyzers/__init__.py`
+### `src/codira/analyzers/__init__.py`
 
 Role:
 
@@ -60,11 +60,11 @@ Status:
 - accepted as a narrow package-surface compatibility layer
 - should stay lightweight and import-only
 
-### `src/repoindex/registry.py`
+### `src/codira/registry.py`
 
 Role:
 
-- treats `repoindex.analyzers.c` and `repoindex.analyzers.bash` as optional
+- treats `codira.analyzers.c` and `codira.analyzers.bash` as optional
   built-in factory import targets
 - relies on the shim modules to bridge current monorepo contributor installs to
   extracted first-party analyzer packages

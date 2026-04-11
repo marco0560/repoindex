@@ -2,21 +2,21 @@
 
 This section is for third-party plugin authors.
 
-You do not need to modify the `repoindex` source tree to add a new analyzer or
+You do not need to modify the `codira` source tree to add a new analyzer or
 backend. Install your plugin package into the same Python environment as
-`repoindex`, expose an entry point, and verify discovery with:
+`codira`, expose an entry point, and verify discovery with:
 
 ```bash
-repoindex plugins
-repoindex plugins --json
+codira plugins
+codira plugins --json
 ```
 
 The plugin system currently supports two extension families:
 
-- analyzers through the `repoindex.analyzers` entry-point group
-- backends through the `repoindex.backends` entry-point group
+- analyzers through the `codira.analyzers` entry-point group
+- backends through the `codira.backends` entry-point group
 
-The `repoindex plugins` surface also classifies each discovered plugin as:
+The `codira plugins` surface also classifies each discovered plugin as:
 
 - `origin=core`
 - `origin=first_party`
@@ -24,8 +24,8 @@ The `repoindex plugins` surface also classifies each discovered plugin as:
 
 Copyable example packages live under:
 
-- `examples/plugins/repoindex_demo_analyzer`
-- `examples/plugins/repoindex_demo_backend`
+- `examples/plugins/codira_demo_analyzer`
+- `examples/plugins/codira_demo_backend`
 
 Start here:
 

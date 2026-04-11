@@ -1,6 +1,6 @@
-# Embedding introduction in repoindex
+# Embedding introduction in codira
 
-PROJECT: repoindex
+PROJECT: codira
 CURRENT_VERSION: v0.27.x
 TASK: Introduce semantic embeddings as a new retrieval channel
 ROLE: Senior Engineer

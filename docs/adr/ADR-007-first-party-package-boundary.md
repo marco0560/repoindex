@@ -14,7 +14,7 @@ The repository is now at an awkward intermediate state:
 * third-party plugins are already modeled as separate distributions discovered
   through Python entry points
 * official optional capabilities still live inside the core source tree
-* optional extras such as `repoindex[c]` and `repoindex[bash]` install
+* optional extras such as `codira[c]` and `codira[bash]` install
   dependency stacks, but they do not exercise the same distribution boundary
   that external plugin authors must use
 * the current repository layout does not yet make package ownership explicit
@@ -37,7 +37,7 @@ Adopt an explicit first-party package topology inside the current repository.
 
 ### Core stays narrow
 
-The `repoindex` core distribution remains responsible for:
+The `codira` core distribution remains responsible for:
 
 * contracts
 * registry and discovery
@@ -51,17 +51,17 @@ The `repoindex` core distribution remains responsible for:
 Phase 1 extracts the current optional analyzers into dedicated first-party
 packages under `packages/`:
 
-* `packages/repoindex-analyzer-c/`
-* `packages/repoindex-analyzer-bash/`
+* `packages/codira-analyzer-c/`
+* `packages/codira-analyzer-bash/`
 
 Those packages own their implementation modules and expose analyzers through the
-existing `repoindex.analyzers` entry-point group.
+existing `codira.analyzers` entry-point group.
 
 ### Repository topology becomes package-aware
 
 The accepted repository structure is:
 
-* `src/repoindex/` for the core platform package
+* `src/codira/` for the core platform package
 * `packages/<distribution>/` for first-party plugin distributions
 * `examples/plugins/` for tutorial or third-party-style example packages
 
@@ -71,11 +71,11 @@ only in packaging metadata.
 ### `bundle-official` is the accepted umbrella name
 
 The accepted umbrella install name for the curated first-party plugin set is
-`repoindex[bundle-official]`.
+`codira[bundle-official]`.
 
 In Phase 1 the repository may still keep a monorepo scaffold such as
-`packages/repoindex-bundle-official/`, but the user-facing bundle contract is
-the `bundle-official` install target on `repoindex`. Repository-local
+`packages/codira-bundle-official/`, but the user-facing bundle contract is
+the `bundle-official` install target on `codira`. Repository-local
 development may still need explicit editable installs for the component
 packages until the distributions are published in a normal package index.
 
@@ -107,7 +107,7 @@ replaceable through external distributions.
 * optional analyzer support is validated through real package installs rather
   than only through extras
 * future extraction of Python and backend implementations has a clear precedent
-* `repoindex[bundle-official]` becomes the stable umbrella install contract for
+* `codira[bundle-official]` becomes the stable umbrella install contract for
   curated first-party capabilities
 
 ### Negative
@@ -130,7 +130,7 @@ replaceable through external distributions.
 ## Phase 1 Ledger
 
 * [x] Accept `packages/` as the first-party plugin area
-* [x] Accept `repoindex[bundle-official]` as the umbrella install name
+* [x] Accept `codira[bundle-official]` as the umbrella install name
 * [x] Select `CAnalyzer` and `BashAnalyzer` as the first extraction targets
 * [x] Reconcile repository-local bootstrap, CI, and user docs with the new
   package boundary

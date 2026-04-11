@@ -67,7 +67,7 @@ The accepted architecture at this point is the "good Option 1" model:
 
 Phase 3 now has an initial schema scaffold as well:
 
-* `src/repoindex/query/signals.py`
+* `src/codira/query/signals.py`
 
 That module defines immutable retrieval signals and deterministic sort keys,
 but does not yet change runtime aggregation.
@@ -82,11 +82,11 @@ new abstractions.
 
 Primary files:
 
-* `src/repoindex/query/context.py`
-* `src/repoindex/query/classifier.py`
-* `src/repoindex/query/exact.py`
-* `src/repoindex/semantic/search.py`
-* `src/repoindex/contracts.py`
+* `src/codira/query/context.py`
+* `src/codira/query/classifier.py`
+* `src/codira/query/exact.py`
+* `src/codira/semantic/search.py`
+* `src/codira/contracts.py`
 * `docs/architecture/query-pipeline.md`
 
 Tasks:
@@ -116,9 +116,9 @@ behavior.
 
 Primary files:
 
-* `src/repoindex/contracts.py`
-* `src/repoindex/query/classifier.py`
-* `src/repoindex/query/context.py`
+* `src/codira/contracts.py`
+* `src/codira/query/classifier.py`
+* `src/codira/query/context.py`
 * `tests/test_contracts.py`
 * `tests/test_context_rendering.py`
 
@@ -159,8 +159,8 @@ Define the internal signal objects that become the future scoring substrate.
 
 Primary files:
 
-* `src/repoindex/query/` (new module likely required)
-* `src/repoindex/contracts.py`
+* `src/codira/query/` (new module likely required)
+* `src/codira/contracts.py`
 * `tests/test_context_rendering.py`
 * `tests/test_retrieval_merge.py`
 
@@ -194,9 +194,9 @@ ranking behavior.
 
 Primary files:
 
-* `src/repoindex/query/context.py`
-* `src/repoindex/query/exact.py`
-* `src/repoindex/semantic/search.py`
+* `src/codira/query/context.py`
+* `src/codira/query/exact.py`
+* `src/codira/semantic/search.py`
 * `tests/test_retrieval_merge.py`
 * `tests/test_characterization_phase2.py`
 
@@ -221,8 +221,8 @@ feature-specific assumptions.
 
 Primary files:
 
-* `src/repoindex/query/context.py`
-* `src/repoindex/query/classifier.py`
+* `src/codira/query/context.py`
+* `src/codira/query/classifier.py`
 * `tests/test_context_rendering.py`
 * `tests/test_retrieval_merge.py`
 
@@ -246,7 +246,7 @@ aggregation while preserving behavior as closely as possible.
 
 Primary files:
 
-* `src/repoindex/query/context.py`
+* `src/codira/query/context.py`
 * `tests/test_retrieval_merge.py`
 * `tests/test_characterization_phase2.py`
 * `tests/test_context_rendering.py`
@@ -271,8 +271,8 @@ special-case query logic.
 
 Primary files:
 
-* `src/repoindex/query/context.py`
-* `src/repoindex/query/exact.py`
+* `src/codira/query/context.py`
+* `src/codira/query/exact.py`
 * `tests/test_call_graph.py`
 * `tests/test_retrieval_merge.py`
 
@@ -296,8 +296,8 @@ Make the new architecture visible in explain mode and structured output.
 
 Primary files:
 
-* `src/repoindex/query/context.py`
-* `src/repoindex/schema/context.schema.json`
+* `src/codira/query/context.py`
+* `src/codira/schema/context.schema.json`
 * `tests/test_json_schema.py`
 * `tests/test_context_rendering.py`
 * `tests/test_characterization_phase2.py`
@@ -323,11 +323,11 @@ way.
 
 Primary files:
 
-* `src/repoindex/contracts.py`
-* `src/repoindex/analyzers/python.py`
-* `src/repoindex/analyzers/c.py`
-* `src/repoindex/analyzers/bash.py`
-* `examples/plugins/repoindex_demo_analyzer/...`
+* `src/codira/contracts.py`
+* `src/codira/analyzers/python.py`
+* `src/codira/analyzers/c.py`
+* `src/codira/analyzers/bash.py`
+* `examples/plugins/codira_demo_analyzer/...`
 * `tests/test_contracts.py`
 * `tests/test_plugins.py`
 

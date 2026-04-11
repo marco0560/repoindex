@@ -16,7 +16,7 @@
 Since then the repository has advanced further:
 
 * the C and Bash analyzers are package-owned first-party distributions
-* `repoindex[bundle-official]` is already established as the accepted umbrella
+* `codira[bundle-official]` is already established as the accepted umbrella
   install contract
 * the built-in JSON analyzer now exists with enough family-specific behavior
   that it should be considered part of the future default-analyzer packaging

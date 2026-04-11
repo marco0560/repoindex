@@ -26,7 +26,7 @@ It assumes:
 
 ### 1. Defaults no longer live in core
 
-`repoindex` remains the core platform package, but the default runtime
+`codira` remains the core platform package, but the default runtime
 implementations are no longer owned by that package:
 
 * Python analyzer
@@ -38,10 +38,10 @@ discovered through entry points.
 
 ### 2. Installed-package discovery becomes the only supported path
 
-After `#13`, `repoindex` no longer relies on sibling checkout loading or
+After `#13`, `codira` no longer relies on sibling checkout loading or
 monorepo-local fallback imports for first-party analyzers or backends.
 
-If a required first-party plugin is not installed, `repoindex` fails with an
+If a required first-party plugin is not installed, `codira` fails with an
 explicit install hint instead of silently finding code from the checkout.
 
 ### 3. Source-tree local bundle assumptions are not a supported end-user model
@@ -58,26 +58,26 @@ The `v2.0.0` contract is different:
 
 The intended published first-party package set is:
 
-* `repoindex`
-* `repoindex-analyzer-python`
-* `repoindex-analyzer-json`
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
-* `repoindex-backend-sqlite`
-* `repoindex-bundle-official`
+* `codira`
+* `codira-analyzer-python`
+* `codira-analyzer-json`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
+* `codira-backend-sqlite`
+* `codira-bundle-official`
 
 ## Stable Install Model After v2.0.0
 
 ### Recommended end-user install
 
 ```bash
-pip install repoindex-bundle-official
+pip install codira-bundle-official
 ```
 
 ### Compatible umbrella surface
 
 ```bash
-pip install "repoindex[bundle-official]"
+pip install "codira[bundle-official]"
 ```
 
 This compatibility surface is only valid once the published package metadata
@@ -100,14 +100,14 @@ Add `--core-extra semantic` when the embedding stack is required.
 
 ## Migration Guidance
 
-### If you currently install only `repoindex`
+### If you currently install only `codira`
 
 After `v2.0.0`, core-only installation does not imply the default backend or
 default analyzers are available.
 
 Install either:
 
-* `repoindex-bundle-official`
+* `codira-bundle-official`
 * or the individual first-party packages you need
 
 ### If you currently rely on source checkout behavior
@@ -116,7 +116,7 @@ Move to explicit installed packages. Do not rely on:
 
 * sibling package directories in a monorepo checkout
 * implicit import visibility from a development workspace
-* old assumptions that built-in defaults live inside `repoindex`
+* old assumptions that built-in defaults live inside `codira`
 
 ### If you integrate with plugin discovery
 
@@ -127,9 +127,9 @@ only. Missing-package failures are part of the intended operator contract.
 
 Before treating an environment as migrated, verify:
 
-1. `repoindex plugins` shows the expected backend and analyzers from installed distributions.
-2. `repoindex index` succeeds without sibling-checkout assumptions.
-3. `repoindex coverage` reports the expected active analyzer environment.
+1. `codira plugins` shows the expected backend and analyzers from installed distributions.
+2. `codira index` succeeds without sibling-checkout assumptions.
+3. `codira cov` reports the expected active analyzer environment.
 4. The install path used matches the published-package model or the documented source-tree helper.
 
 ## Maintainer Notes
@@ -141,8 +141,8 @@ Before publication, maintainers must verify:
 
 * every split repository owns exactly one distribution
 * every first-party distribution publishes `2.0.0`
-* `repoindex-bundle-official` pins the matching `2.0.0` package set
-* TestPyPI installation of `repoindex-bundle-official` works in a fresh
+* `codira-bundle-official` pins the matching `2.0.0` package set
+* TestPyPI installation of `codira-bundle-official` works in a fresh
   environment
-* `repoindex -V` reports the core version and installed first-party plugin
+* `codira -V` reports the core version and installed first-party plugin
   distribution versions

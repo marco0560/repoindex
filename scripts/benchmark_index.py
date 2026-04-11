@@ -1,4 +1,4 @@
-"""Benchmark repoindex indexing phases and embedding batch behavior.
+"""Benchmark codira indexing phases and embedding batch behavior.
 
 Responsibilities
 ----------------
@@ -27,11 +27,11 @@ from pathlib import Path
 from time import perf_counter
 from typing import cast
 
-from repoindex_backend_sqlite import SQLiteIndexBackend
+from codira_backend_sqlite import SQLiteIndexBackend
 
-from repoindex import indexer
-from repoindex.indexer import index_repo
-from repoindex.semantic import embeddings as embeddings_module
+from codira import indexer
+from codira.indexer import index_repo
+from codira.semantic import embeddings as embeddings_module
 
 
 @dataclass
@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
         Configured parser for one benchmark invocation.
     """
     parser = argparse.ArgumentParser(
-        description="Benchmark repoindex indexing phases and embedding batches.",
+        description="Benchmark codira indexing phases and embedding batches.",
     )
     parser.add_argument(
         "root",

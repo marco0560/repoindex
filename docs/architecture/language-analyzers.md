@@ -3,12 +3,12 @@
 The current repository now has one built-in analyzer plus first-party plugin
 analyzers:
 
-- Python through the extracted `repoindex-analyzer-python` first-party package
-- JSON through the extracted `repoindex-analyzer-json` first-party package for
+- Python through the extracted `codira-analyzer-python` first-party package
+- JSON through the extracted `codira-analyzer-json` first-party package for
   deterministic structured document families such as JSON Schema,
   `package.json`, and `.releaserc.json`
 - C for the first non-Python proof required by `ADR-004`, installed through
-  the extracted `repoindex-analyzer-c` first-party package
+  the extracted `codira-analyzer-c` first-party package
 
 ## Current Analyzer Responsibilities
 
@@ -22,11 +22,11 @@ The Python analysis path currently performs:
 
 Today these responsibilities are concentrated in:
 
-- `src/repoindex/parser_ast.py`
-- `src/repoindex/analyzers/python.py`
-- `src/repoindex/analyzers/json.py`
-- `src/repoindex/analyzers/c.py`
-- `src/repoindex/indexer.py` for analyzer routing only
+- `src/codira/parser_ast.py`
+- `src/codira/analyzers/python.py`
+- `src/codira/analyzers/json.py`
+- `src/codira/analyzers/c.py`
+- `src/codira/indexer.py` for analyzer routing only
 
 ## Current Scope Boundary
 
@@ -74,7 +74,7 @@ instead.
 ## Phase-6 Baseline
 
 Phase 6 now extracts the current Python analysis path into
-`src/repoindex/analyzers/python.py`.
+`src/codira/analyzers/python.py`.
 
 That module owns:
 
@@ -84,7 +84,7 @@ That module owns:
 
 ## Phase-8 Registration Rules
 
-Phase 8 moves analyzer registration into `src/repoindex/registry.py`.
+Phase 8 moves analyzer registration into `src/codira/registry.py`.
 
 - analyzers are instantiated from built-ins plus entry-point plugin discovery
 - registry order defines deterministic first-match routing order after
@@ -124,7 +124,7 @@ support to arbitrary machine-generated artifacts.
 
 ## Phase-9 Second Analyzer Proof
 
-Phase 9 adds `src/repoindex/analyzers/c.py` and registers it after Python.
+Phase 9 adds `src/codira/analyzers/c.py` and registers it after Python.
 
 - Python keeps the full AST-driven extraction path
 - C currently extracts module identity, include dependencies, and top-level
@@ -150,13 +150,13 @@ language-specific C parsing strategy has been upgraded.
 
 ## Dependency Boundary
 
-The packaging surface now distinguishes core `repoindex` dependencies from
+The packaging surface now distinguishes core `codira` dependencies from
 analyzer-specific dependencies.
 
 - core install keeps Python analysis available
-- the C analyzer loads when `repoindex-analyzer-c` is installed
-- the Bash analyzer loads when `repoindex-analyzer-bash` is installed
-- the supported package form for C-family indexing is `repoindex-analyzer-c`
+- the C analyzer loads when `codira-analyzer-c` is installed
+- the Bash analyzer loads when `codira-analyzer-bash` is installed
+- the supported package form for C-family indexing is `codira-analyzer-c`
 - third-party analyzers must declare their own discovery globs so indexing can
   see their files without core changes
 

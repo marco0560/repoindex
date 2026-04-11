@@ -20,8 +20,8 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
-from repoindex.query.classifier import build_retrieval_plan, classify_query
-from repoindex.query.context import (
+from codira.query.classifier import build_retrieval_plan, classify_query
+from codira.query.context import (
     PRIMARY_SYMBOL_SCORING_RULES,
     _append_main_context_sections,
     _apply_scoring_rules,

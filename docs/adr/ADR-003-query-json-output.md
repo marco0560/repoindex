@@ -5,7 +5,7 @@
 
 ## Context
 
-`repoindex` already exposed a structured JSON mode for `context-for`, but the
+`codira` already exposed a structured JSON mode for `context-for`, but the
 other read/query subcommands remained plain-text only:
 
 * `symbol`

@@ -48,9 +48,9 @@ Move call-graph signal production into a native retrieval producer outside
 
 Primary files:
 
-* `src/repoindex/query/context.py`
-* `src/repoindex/query/`
-* `src/repoindex/query/signals.py`
+* `src/codira/query/context.py`
+* `src/codira/query/`
+* `src/codira/query/signals.py`
 * `tests/test_retrieval_merge.py`
 * `tests/test_characterization_phase2.py`
 

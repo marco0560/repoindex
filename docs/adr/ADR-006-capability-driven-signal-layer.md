@@ -5,17 +5,17 @@
 
 ## Context
 
-Issue `#9` asks `repoindex` to make retrieval scoring genuinely pluggable
+Issue `#9` asks `codira` to make retrieval scoring genuinely pluggable
 without moving final ranking policy into analyzers or channels.
 
 The current repository already has several strong architectural pieces:
 
 * pluggable `LanguageAnalyzer` and `IndexBackend` contracts in
-  `src/repoindex/contracts.py`
+  `src/codira/contracts.py`
 * normalized analyzer output through `AnalysisResult` and durable symbol
   identities
-* a deterministic query planner in `src/repoindex/query/classifier.py`
-* a multi-channel retrieval merge in `src/repoindex/query/context.py`
+* a deterministic query planner in `src/codira/query/classifier.py`
+* a multi-channel retrieval merge in `src/codira/query/context.py`
 * explain-mode diagnostics that expose planner choices, channel results,
   merge details, diversity selection, and include-graph expansion
 
@@ -175,8 +175,8 @@ extension semantics are validated in practice.
 * this introduces another internal abstraction layer and therefore more
   conceptual surface area
 * migration will touch several core modules, especially
-  `src/repoindex/query/context.py`, `src/repoindex/query/classifier.py`, and
-  `src/repoindex/contracts.py`
+  `src/codira/query/context.py`, `src/codira/query/classifier.py`, and
+  `src/codira/contracts.py`
 * there is a real risk of premature generalization if too many signal types or
   capabilities are introduced before the first migration path is complete
 

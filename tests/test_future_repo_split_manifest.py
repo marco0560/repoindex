@@ -65,13 +65,13 @@ def test_future_repo_split_manifests_cover_the_accepted_repository_set() -> None
     manifests = _load_future_repo_split_manifest_helper().future_repo_split_manifests()
 
     assert [manifest.repository for manifest in manifests] == [
-        "repoindex",
-        "repoindex-analyzer-python",
-        "repoindex-analyzer-json",
-        "repoindex-analyzer-c",
-        "repoindex-analyzer-bash",
-        "repoindex-backend-sqlite",
-        "repoindex-bundle-official",
+        "codira",
+        "codira-analyzer-python",
+        "codira-analyzer-json",
+        "codira-analyzer-c",
+        "codira-analyzer-bash",
+        "codira-backend-sqlite",
+        "codira-bundle-official",
     ]
 
 
@@ -110,7 +110,7 @@ def test_core_manifest_keeps_shared_repository_paths_in_core() -> None:
         "package.json",
         "pyproject.toml",
         "scripts/",
-        "src/repoindex/",
+        "src/codira/",
         "tests/",
     )
     assert core_manifest.stays_in_core == ()
@@ -180,8 +180,8 @@ def test_package_manifests_keep_package_paths_and_compatibility_surfaces_explici
         for manifest in manifests
     )
     assert any(
-        manifest.repository == "repoindex-backend-sqlite"
-        and "src/repoindex/indexer.py" in manifest.stays_in_core
-        and "src/repoindex/sqlite_backend_support.py" in manifest.stays_in_core
+        manifest.repository == "codira-backend-sqlite"
+        and "src/codira/indexer.py" in manifest.stays_in_core
+        and "src/codira/sqlite_backend_support.py" in manifest.stays_in_core
         for manifest in manifests
     )

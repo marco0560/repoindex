@@ -184,7 +184,7 @@ def _target_relative_path(repository: str, source_relative: str) -> Path:
     ValueError
         If the manifest path is incompatible with the repository export rules.
     """
-    if repository == "repoindex":
+    if repository == "codira":
         return Path(source_relative.rstrip("/"))
     package_prefix = f"packages/{repository}/"
     if not source_relative.startswith(package_prefix):

@@ -19,11 +19,11 @@
 4. Verify the core repository integration tests install first-party packages as
    artifacts, not sibling source trees.
 5. Set every first-party distribution to the coordinated `2.0.0` release.
-6. Align `repoindex-bundle-official` pins to the `2.0.0` package set.
-7. Confirm `repoindex -V` reports the core package and installed plugin
+6. Align `codira-bundle-official` pins to the `2.0.0` package set.
+7. Confirm `codira -V` reports the core package and installed plugin
    distribution versions.
 8. Build artifacts from the split repositories.
 9. Upload to TestPyPI in dependency order.
-10. Run a fresh TestPyPI smoke test with `repoindex-bundle-official`.
+10. Run a fresh TestPyPI smoke test with `codira-bundle-official`.
 11. Upload to PyPI in dependency order.
-12. Run a fresh PyPI smoke test with `repoindex-bundle-official`.
+12. Run a fresh PyPI smoke test with `codira-bundle-official`.

@@ -22,9 +22,9 @@ from typing import cast
 
 from jsonschema import validate  # type: ignore[import-untyped]
 
-from repoindex.indexer import index_repo
-from repoindex.query.context import context_for
-from repoindex.storage import init_db
+from codira.indexer import index_repo
+from codira.query.context import context_for
+from codira.storage import init_db
 
 
 def _load_schema(root: Path) -> dict[str, object]:
@@ -41,7 +41,7 @@ def _load_schema(root: Path) -> dict[str, object]:
     dict[str, object]
         Parsed JSON schema document.
     """
-    schema_path = root / "src" / "repoindex" / "schema" / "context.schema.json"
+    schema_path = root / "src" / "codira" / "schema" / "context.schema.json"
     return cast(
         "dict[str, object]",
         json.loads(schema_path.read_text(encoding="utf-8")),

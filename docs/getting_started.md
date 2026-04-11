@@ -12,7 +12,7 @@ python3 scripts/bootstrap_dev_environment.py
 The bootstrap script installs the core package, the extracted first-party
 analyzer/backend packages, and the local embedding dependencies. It also
 provisions the local model artifact used by the real embedding backend, so
-`repoindex index` can build persisted embeddings without ad hoc first-run
+`codira index` can build persisted embeddings without ad hoc first-run
 downloads inside this repository.
 
 The repository-local first-party package set is owned by:
@@ -23,36 +23,36 @@ python scripts/install_first_party_packages.py
 
 ## Install into another repository
 
-Install `repoindex` into the virtual environment of the repository you want to
+Install `codira` into the virtual environment of the repository you want to
 analyze.
 
 Example:
 
 ```bash
 source .venv/bin/activate
-python ../repoindex/scripts/install_first_party_packages.py \
+python ../codira/scripts/install_first_party_packages.py \
   --python "$VIRTUAL_ENV/bin/python" \
   --include-core \
   --core-extra semantic
 ```
 
-This keeps the `repoindex` CLI available in the target repository while using
+This keeps the `codira` CLI available in the target repository while using
 the live source tree from this repository.
 
 The current source-tree install keeps the embedding stack in the core package
 while the extracted first-party analyzers and backend are installed from
 `packages/`.
-The accepted published umbrella name remains `repoindex[bundle-official]`, but
+The accepted published umbrella name remains `codira[bundle-official]`, but
 that is a published-package contract rather than a source-tree shortcut. While
 working from the current checkout, the extracted first-party packages are still
 installed explicitly from `packages/`, and the canonical local package set is
 the one installed by `scripts/install_first_party_packages.py`.
 
-Use `repoindex plugins` after installation if you want to verify whether a
+Use `codira plugins` after installation if you want to verify whether a
 capability came from the core package, an official extracted package, or a
 third-party plugin.
 
-On first indexing run, `repoindex` provisions the configured local model
+On first indexing run, `codira` provisions the configured local model
 artifact automatically if it is missing. If automatic provisioning cannot
 complete, the CLI fails with a concise remediation message.
 
@@ -60,7 +60,7 @@ You can still prefetch the model explicitly:
 
 ```bash
 source .venv/bin/activate
-python ../repoindex/scripts/provision_embedding_model.py
+python ../codira/scripts/provision_embedding_model.py
 ```
 
 ## First commands
@@ -68,30 +68,30 @@ python ../repoindex/scripts/provision_embedding_model.py
 Build or refresh the repository-local index:
 
 ```bash
-repoindex index
+codira index
 ```
 
 Inspect exact symbol data:
 
 ```bash
-repoindex symbol build_parser
-repoindex symbol build_parser --json
+codira sym build_parser
+codira sym build_parser --json
 ```
 
 Inspect context retrieval:
 
 ```bash
-repoindex context-for "schema migration rules"
-repoindex context-for "missing numpy docstring" --json
+codira ctx "schema migration rules"
+codira ctx "missing numpy docstring" --json
 ```
 
 Inspect bounded graph traversal and optional DOT export:
 
 ```bash
-repoindex calls build_parser --tree
-repoindex calls build_parser --tree --dot
-repoindex refs _retrieve_script_candidates --incoming --tree
-repoindex refs _retrieve_script_candidates --incoming --tree --dot
+codira calls build_parser --tree
+codira calls build_parser --tree --dot
+codira refs _retrieve_script_candidates --incoming --tree
+codira refs _retrieve_script_candidates --incoming --tree --dot
 ```
 
 ## Validation surface

@@ -1,6 +1,6 @@
 # Docstring dogfooding and external-repo integration workflow
 
-PROJECT: repoindex
+PROJECT: codira
 CURRENT_VERSION: v0.27.x
 TASK: Complete the remaining real-world integration work after hybrid retrieval
 ROLE: Senior Engineer
@@ -24,7 +24,7 @@ Rules:
 
 ## CURRENT STATE
 
-Assume the following are already implemented in `repoindex`:
+Assume the following are already implemented in `codira`:
 
 - symbol retrieval
 - semantic retrieval
@@ -36,19 +36,19 @@ Do NOT spend effort re-implementing hybrid retrieval.
 
 This prompt covers only the remaining workflow gaps:
 
-1. dogfooding `repoindex` on itself for docstring improvement
-2. validating `repoindex` on a real external repository
+1. dogfooding `codira` on itself for docstring improvement
+2. validating `codira` on a real external repository
 3. documenting or automating the verified external workflow when useful
 
 ---
 
 ## OBJECTIVE
 
-Use the current `repoindex` feature set to prove and improve real-world usage by:
+Use the current `codira` feature set to prove and improve real-world usage by:
 
-- running a report-first docstring audit against `repoindex` itself
+- running a report-first docstring audit against `codira` itself
 - applying small grounded fixes when confirmed
-- validating that `repoindex` works on an external repository such as Fontshow
+- validating that `codira` works on an external repository such as Fontshow
 - recording the verified workflow in code, docs, or tests when appropriate
 
 The goal is operational proof and repeatable workflow, not architectural
@@ -77,15 +77,15 @@ No step skipping.
 
 Inspect the available local surfaces first:
 
-- `repoindex audit-docstrings`
-- `repoindex context-for "missing numpy docstring" --json`
-- `repoindex context-for "missing numpy docstring" --prompt`
-- `repoindex symbol <name>`
+- `codira audit-docstrings`
+- `codira context-for "missing numpy docstring" --json`
+- `codira context-for "missing numpy docstring" --prompt`
+- `codira symbol <name>`
 - `rg <query>`
 
 Then determine:
 
-- which current docstring issues in `repoindex` are real and actionable
+- which current docstring issues in `codira` are real and actionable
 - whether the retrieved context is sufficient to patch them safely
 - whether the workflow needs a small documentation or CLI usability improvement
 
@@ -97,8 +97,8 @@ explicitly provided.
 Before broad analysis in the target repository:
 
 1. verify likely symbols or files with `rg <query>`
-2. run `repoindex index`
-3. run `repoindex context-for "<query>" --json`
+2. run `codira index`
+3. run `codira context-for "<query>" --json`
 4. inspect the referenced files before proposing edits
 
 Determine:
@@ -108,7 +108,7 @@ Determine:
   queries
 - whether docstring issues or structural issues can be identified concretely
 - whether any repo-specific friction should be documented or fixed in
-  `repoindex`
+  `codira`
 
 If the external repository is unavailable, do not invent results.
 
@@ -118,7 +118,7 @@ If the external repository is unavailable, do not invent results.
 
 Produce a plan containing:
 
-- the exact repoindex docstring issues selected for possible fixing
+- the exact codira docstring issues selected for possible fixing
 - the exact commands used for local dogfooding
 - the external repository path and queries to validate, if available
 - whether the outcome should be:
@@ -140,11 +140,11 @@ When confirmed:
 - prefer report-first validation over speculative fixes
 - patch only symbols that are verified in the filesystem
 - use `rg` before editing target symbols
-- use `repoindex context-for` only to narrow search, never as a substitute for
+- use `codira context-for` only to narrow search, never as a substitute for
   reading files
-- separate repoindex self-fixes from target-repository fixes conceptually
+- separate codira self-fixes from target-repository fixes conceptually
 
-If fixing docstrings in `repoindex`:
+If fixing docstrings in `codira`:
 
 - prefer one small unit at a time
 - keep NumPy-style docstrings aligned with actual signatures and behavior
@@ -162,9 +162,9 @@ If documenting external integration:
 
 You may claim success for local dogfooding only if you provide:
 
-- the exact `repoindex audit-docstrings` output or a faithful summary grounded
+- the exact `codira audit-docstrings` output or a faithful summary grounded
   in it
-- the exact symbols inspected with `repoindex context-for`, `repoindex symbol`,
+- the exact symbols inspected with `codira context-for`, `codira symbol`,
   and `rg`
 - the exact files changed, if any
 
@@ -184,8 +184,8 @@ Absence of failure is NOT enough.
 Prefer outcomes in this order:
 
 1. verified workflow documentation for self-use and external use
-2. small repoindex docstring fixes discovered through dogfooding
-3. small repoindex usability fixes that reduce friction during external use
+2. small codira docstring fixes discovered through dogfooding
+3. small codira usability fixes that reduce friction during external use
 4. external target-repository patches only when explicitly in scope and fully
    verified
 
@@ -195,11 +195,11 @@ Prefer outcomes in this order:
 
 Provide exact commands and expected results for:
 
-- `repoindex index`
-- `repoindex audit-docstrings`
-- `repoindex context-for "<query>" --json`
+- `codira index`
+- `codira audit-docstrings`
+- `codira context-for "<query>" --json`
 - any `rg` commands used for symbol verification
-- repository validation commands for `repoindex`
+- repository validation commands for `codira`
 - external-repository validation commands, if an external target was used
 
 Expected results must show:

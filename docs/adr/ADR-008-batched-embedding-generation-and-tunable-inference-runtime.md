@@ -17,7 +17,7 @@ indexing path still computes embeddings one row at a time:
   diagnostics
 
 Real workloads now show that this architecture leaves substantial throughput on
-the table during `repoindex index --full`, especially on repositories with many
+the table during `codira index --full`, especially on repositories with many
 embedding-bearing symbols.
 
 The performance work must preserve these invariants:
@@ -35,7 +35,7 @@ tuning controls and a repository-native benchmark helper.
 
 ### Batched Index-Time Embeddings
 
-`repoindex` will introduce a batched embedding API that accepts multiple texts
+`codira` will introduce a batched embedding API that accepts multiple texts
 at once and returns vectors in the same order.
 
 Index-time persistence will:
@@ -48,7 +48,7 @@ Index-time persistence will:
 
 ### Same-Run Payload Deduplication
 
-During one embedding flush, `repoindex` will encode each unique semantic
+During one embedding flush, `codira` will encode each unique semantic
 payload at most once.
 
 Rows with identical embedding payload text will reuse the same serialized

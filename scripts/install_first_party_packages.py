@@ -32,7 +32,7 @@ from scripts.first_party_packages import FIRST_PARTY_PACKAGE_DIRS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIRST_PARTY_EDITABLE_PACKAGES = FIRST_PARTY_PACKAGE_DIRS
-BUNDLE_PACKAGE_DIR = "packages/repoindex-bundle-official"
+BUNDLE_PACKAGE_DIR = "packages/codira-bundle-official"
 
 
 def editable_core_requirement(
@@ -46,7 +46,7 @@ def editable_core_requirement(
     Parameters
     ----------
     repo_root : pathlib.Path
-        Repository root containing the core ``repoindex`` package.
+        Repository root containing the core ``codira`` package.
     extras : tuple[str, ...], optional
         Optional extras requested on the core editable install.
 
@@ -183,7 +183,7 @@ def build_install_commands(  # noqa: PLR0913
     repo_root : pathlib.Path
         Repository root containing the package directories.
     include_core : bool, optional
-        Whether to include the editable core ``repoindex`` package before the
+        Whether to include the editable core ``codira`` package before the
         first-party package set.
     core_extras : tuple[str, ...], optional
         Optional extras requested on the editable core install.
@@ -243,7 +243,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         Parsed helper arguments.
     """
     parser = argparse.ArgumentParser(
-        description="Install repoindex first-party packages from the local checkout."
+        description="Install codira first-party packages from the local checkout."
     )
     parser.add_argument(
         "--python",
@@ -253,7 +253,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--include-core",
         action="store_true",
-        help="Include the editable core repoindex package in the install command.",
+        help="Include the editable core codira package in the install command.",
     )
     parser.add_argument(
         "--core-extra",

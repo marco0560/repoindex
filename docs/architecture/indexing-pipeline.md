@@ -1,7 +1,7 @@
 # Indexing Pipeline
 
 The current indexing entry point is `index_repo()` in
-`src/repoindex/indexer.py`.
+`src/codira/indexer.py`.
 
 ## Current Flow
 
@@ -20,7 +20,7 @@ The current indexing entry point is `index_repo()` in
 8. When a file changes, the backend compares old and new stable-id sets so
    unchanged symbols can reuse stored vectors while disappeared symbols are
    removed deterministically.
-9. The active backend persists all artifacts into `.repoindex/index.db` and
+9. The active backend persists all artifacts into `.codira/index.db` and
    rebuilds derived indexes.
 10. Canonical source directories are audited for uncovered tracked files so the
    summary can report files under `src/`, `tests/`, or `scripts/` that no
@@ -75,10 +75,10 @@ Phase 21 makes that persisted metadata active in rebuild policy:
 
 Phase 22 adds the operator-facing coverage controls:
 
-- `repoindex coverage` reports canonical-directory gaps without mutating the
+- `codira cov` reports canonical-directory gaps without mutating the
   index
-- `repoindex index` continues to warn by default through its summary output
-- `repoindex index --require-full-coverage` fails before indexing when
+- `codira index` continues to warn by default through its summary output
+- `codira index --require-full-coverage` fails before indexing when
   canonical tracked files remain uncovered
 
 ## Current Coupling

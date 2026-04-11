@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from repoindex.query.classifier import build_retrieval_plan, classify_query
-from repoindex.query.context import (
+from codira.query.classifier import build_retrieval_plan, classify_query
+from codira.query.context import (
     MERGE_RESULT_LIMIT,
     _bounded_graph_retrieval_signals,
     _channel_retrieval_producers,
@@ -31,7 +31,7 @@ from repoindex.query.context import (
     _rank_signals_with_provenance,
     _signals_from_channel_bundles,
 )
-from repoindex.query.producers import (
+from codira.query.producers import (
     CALL_GRAPH_RETRIEVAL_PRODUCER,
     CHANNEL_PRODUCER_SPECS,
     EMBEDDING_RETRIEVAL_PRODUCER,
@@ -41,8 +41,8 @@ from repoindex.query.producers import (
 )
 
 if TYPE_CHECKING:
-    from repoindex.query.producers import QueryProducerSpec
-    from repoindex.types import ChannelResults, SymbolRow
+    from codira.query.producers import QueryProducerSpec
+    from codira.types import ChannelResults, SymbolRow
 
 
 def _symbol(
@@ -70,7 +70,7 @@ def _symbol(
 
     Returns
     -------
-    repoindex.types.SymbolRow
+    codira.types.SymbolRow
         Compact symbol row used in merge tests.
     """
     return (symbol_type, module_name, name, file_path, lineno)
@@ -119,8 +119,8 @@ def test_dedupe_channel_results_keeps_first_ranked_occurrence() -> None:
     None
         The test asserts that duplicate channel entries keep the first rank.
     """
-    symbol = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
-    other = _symbol("function", "repoindex.beta", "run", "src/b.py", 20)
+    symbol = _symbol("function", "codira.alpha", "run", "src/a.py", 10)
+    other = _symbol("function", "codira.beta", "run", "src/b.py", 20)
     channel: ChannelResults = [
         (9.0, symbol),
         (8.0, symbol),
@@ -193,8 +193,8 @@ def test_merge_ranked_channel_bundles_explain_dedupes_and_orders_ties() -> None:
     None
         The test asserts deterministic tie ordering and provenance.
     """
-    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
-    beta = _symbol("function", "repoindex.beta", "run", "src/b.py", 20)
+    alpha = _symbol("function", "codira.alpha", "run", "src/a.py", 10)
+    beta = _symbol("function", "codira.beta", "run", "src/b.py", 20)
 
     bundles = [
         (
@@ -250,9 +250,9 @@ def test_merge_ranked_channel_bundles_explain_rewards_cross_family_support() -> 
         The test asserts the merge layer applies a deterministic bonus when a
         symbol is corroborated by both lexical and semantic evidence.
     """
-    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
-    beta = _symbol("function", "repoindex.beta", "run", "src/b.py", 20)
-    gamma = _symbol("function", "repoindex.gamma", "run", "src/c.py", 30)
+    alpha = _symbol("function", "codira.alpha", "run", "src/a.py", 10)
+    beta = _symbol("function", "codira.beta", "run", "src/b.py", 20)
+    gamma = _symbol("function", "codira.gamma", "run", "src/c.py", 30)
 
     bundles = [
         (
@@ -364,7 +364,7 @@ def test_merge_ranked_channel_bundles_explain_caps_output() -> None:
                     float(MERGE_RESULT_LIMIT - idx),
                     _symbol(
                         "function",
-                        f"repoindex.module_{idx:02d}",
+                        f"codira.module_{idx:02d}",
                         "run",
                         f"src/module_{idx:02d}.py",
                         idx,
@@ -396,8 +396,8 @@ def test_signals_from_channel_bundles_preserve_channel_evidence_deterministicall
         The test asserts signal adapters preserve producer attribution,
         capability names, deduped channel rank, and deterministic order.
     """
-    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
-    beta = _symbol("function", "repoindex.beta", "run", "src/b.py", 20)
+    alpha = _symbol("function", "codira.alpha", "run", "src/a.py", 10)
+    beta = _symbol("function", "codira.beta", "run", "src/b.py", 20)
     bundles = [
         (
             "semantic",
@@ -446,7 +446,7 @@ def test_signals_from_channel_bundles_map_embedding_and_task_capabilities() -> N
         The test asserts embedding and test channels normalize to the expected
         signal families and capability names.
     """
-    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
+    alpha = _symbol("function", "codira.alpha", "run", "src/a.py", 10)
     beta = _symbol("function", "tests.alpha", "run_test", "tests/test_a.py", 20)
     bundles = [
         ("test", [(7.0, beta)]),
@@ -480,7 +480,7 @@ def test_collect_retrieval_signals_uses_known_channel_producers_only() -> None:
         The test asserts channel producers contribute signals while
         enrichment-only producers remain diagnostics-only during Phase 5.
     """
-    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
+    alpha = _symbol("function", "codira.alpha", "run", "src/a.py", 10)
     beta = _symbol("function", "tests.alpha", "run_test", "tests/test_a.py", 20)
     bundles = [
         ("symbol", [(9.0, alpha)]),
@@ -522,7 +522,7 @@ def test_graph_expansion_still_keeps_enrichment_producers_out_of_initial_collect
         The test asserts the extracted graph enrichment path does not change
         initial capability-gated collection semantics.
     """
-    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
+    alpha = _symbol("function", "codira.alpha", "run", "src/a.py", 10)
     bundles = [("symbol", [(9.0, alpha)])]
     producers = _query_producers("architecture graph cache flow", bundles)
 
@@ -606,8 +606,8 @@ def test_rank_signals_with_provenance_matches_channel_merge_contract() -> None:
         The test asserts the signal aggregator reproduces the existing merge
         ordering and provenance for one mixed lexical/semantic fixture.
     """
-    alpha = _symbol("function", "repoindex.alpha", "run", "src/a.py", 10)
-    beta = _symbol("function", "repoindex.beta", "run", "src/b.py", 20)
+    alpha = _symbol("function", "codira.alpha", "run", "src/a.py", 10)
+    beta = _symbol("function", "codira.beta", "run", "src/b.py", 20)
     bundles = [
         (
             "semantic",
@@ -665,9 +665,9 @@ def test_diversify_merged_symbols_caps_one_symbol_per_file() -> None:
         already contributed one symbol.
     """
     ranked = [
-        _symbol("function", "repoindex.alpha", "first", "src/a.py", 10),
-        _symbol("function", "repoindex.alpha", "second", "src/a.py", 20),
-        _symbol("function", "repoindex.beta", "run", "src/b.py", 30),
+        _symbol("function", "codira.alpha", "first", "src/a.py", 10),
+        _symbol("function", "codira.alpha", "second", "src/a.py", 20),
+        _symbol("function", "codira.beta", "run", "src/b.py", 30),
     ]
 
     diversified = _diversify_merged_symbols(ranked)
@@ -693,7 +693,7 @@ def test_diversify_merged_symbols_limits_test_role_monopoly() -> None:
         _symbol("function", "tests.alpha", "one", "tests/test_a.py", 10),
         _symbol("function", "tests.beta", "two", "tests/test_b.py", 20),
         _symbol("function", "tests.gamma", "three", "tests/test_c.py", 30),
-        _symbol("function", "repoindex.core", "run", "src/core.py", 40),
+        _symbol("function", "codira.core", "run", "src/core.py", 40),
     ]
 
     diversified = _diversify_merged_symbols(ranked)
@@ -746,7 +746,7 @@ def test_diversify_merged_symbols_explain_reports_selected_and_deferred() -> Non
         _symbol("function", "tests.alpha", "one", "tests/test_a.py", 10),
         _symbol("function", "tests.beta", "two", "tests/test_b.py", 20),
         _symbol("function", "tests.gamma", "three", "tests/test_c.py", 30),
-        _symbol("function", "repoindex.core", "run", "src/core.py", 40),
+        _symbol("function", "codira.core", "run", "src/core.py", 40),
     ]
 
     diversified, diagnostics = _diversify_merged_symbols_explain(ranked)

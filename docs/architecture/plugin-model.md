@@ -21,15 +21,15 @@ The current codebase now exposes:
 - built-in backend and analyzer registrations
 - third-party plugin discovery through Python entry points
 - deterministic duplicate rejection and load diagnostics
-- a `repoindex plugins` inspection surface for discovery verification
+- a `codira plugins` inspection surface for discovery verification
 
 ## Phase-3 Baseline
 
 Phase 3 now introduces the first explicit contract modules:
 
-- `src/repoindex/contracts.py`
-- `src/repoindex/models.py`
-- `src/repoindex/normalization.py`
+- `src/codira/contracts.py`
+- `src/codira/models.py`
+- `src/codira/normalization.py`
 
 Those modules define the accepted vocabulary for:
 
@@ -39,7 +39,7 @@ Those modules define the accepted vocabulary for:
 
 ## Phase-8 Registries and Configuration
 
-Phase 8 introduces explicit registry helpers in `src/repoindex/registry.py`.
+Phase 8 introduces explicit registry helpers in `src/codira/registry.py`.
 
 Current defaults and selection rules are:
 
@@ -55,13 +55,13 @@ activation explicit.
 
 The current packaging boundary is also now explicit:
 
-- core `repoindex` dependencies cover the default Python analyzer and shared
+- core `codira` dependencies cover the default Python analyzer and shared
   query/index infrastructure
 - analyzer-specific dependencies can live in separate plugin distributions
 - the current C and Bash analyzers are now extracted into first-party packages
   rather than remaining optional built-ins in the core install
 - third-party plugins live in separate distributions and are discovered from
-  `repoindex.analyzers` and `repoindex.backends` entry-point groups
+  `codira.analyzers` and `codira.backends` entry-point groups
 
 ## Phase-9 Analyzer Proof
 

@@ -33,7 +33,7 @@ The regression coverage for the export helper lives in:
 
 Repository:
 
-* `repoindex`
+* `codira`
 
 Owned paths:
 
@@ -51,7 +51,7 @@ Owned paths:
 * `package.json`
 * `pyproject.toml`
 * `scripts/`
-* `src/repoindex/`
+* `src/codira/`
 * `tests/`
 
 Notes:
@@ -66,10 +66,10 @@ Notes:
 
 Repositories:
 
-* `repoindex-analyzer-python`
-* `repoindex-analyzer-json`
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
+* `codira-analyzer-python`
+* `codira-analyzer-json`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
 
 Owned paths per repository:
 
@@ -80,10 +80,10 @@ Owned paths per repository:
 
 Core paths that still matter operationally after the split:
 
-* `src/repoindex/analyzers/python.py`
-* `src/repoindex/analyzers/json.py`
-* `src/repoindex/analyzers/c.py`
-* `src/repoindex/analyzers/bash.py`
+* `src/codira/analyzers/python.py`
+* `src/codira/analyzers/json.py`
+* `src/codira/analyzers/c.py`
+* `src/codira/analyzers/bash.py`
 * `tests/test_plugins.py`
 
 These paths stay in core because they either provide compatibility imports or
@@ -93,7 +93,7 @@ core-side integration coverage.
 
 Repository:
 
-* `repoindex-backend-sqlite`
+* `codira-backend-sqlite`
 
 Owned paths:
 
@@ -104,15 +104,15 @@ Owned paths:
 
 Core paths that still matter operationally after the split:
 
-* `src/repoindex/indexer.py`
-* `src/repoindex/sqlite_backend_support.py`
+* `src/codira/indexer.py`
+* `src/codira/sqlite_backend_support.py`
 * `tests/test_plugins.py`
 
 ## Bundle Repository
 
 Repository:
 
-* `repoindex-bundle-official`
+* `codira-bundle-official`
 
 Owned paths:
 
@@ -129,7 +129,7 @@ Core paths that still matter operationally after the split:
 During the actual multirepo extraction:
 
 1. copy the owned paths into the target repository
-2. keep the listed core paths in `repoindex`
+2. keep the listed core paths in `codira`
 3. verify the copied repository against the CI contract in
    `docs/process/multirepo-ci-decomposition.md`
 4. only after the repositories exist and validate independently, proceed to
@@ -138,6 +138,6 @@ During the actual multirepo extraction:
 For split rehearsal from the monorepo checkout, use:
 
 ```bash
-python scripts/future_repo_export.py repoindex-analyzer-python
-python scripts/future_repo_export.py repoindex-analyzer-python --destination-root /tmp/repoindex-split
+python scripts/future_repo_export.py codira-analyzer-python
+python scripts/future_repo_export.py codira-analyzer-python --destination-root /tmp/codira-split
 ```

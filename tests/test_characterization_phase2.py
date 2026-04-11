@@ -19,10 +19,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from repoindex.indexer import index_repo
-from repoindex.query.context import context_for
-from repoindex.query.exact import find_symbol
-from repoindex.storage import init_db
+from codira.indexer import index_repo
+from codira.query.context import context_for
+from codira.query.exact import find_symbol
+from codira.storage import init_db
 
 if TYPE_CHECKING:
     from pathlib import Path

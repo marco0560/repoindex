@@ -1,7 +1,7 @@
 # Dead code removal workflow (generic Python repo)
 
 PROJECT: target repository
-TASK: Dead-code triage and removal using repoindex
+TASK: Dead-code triage and removal using codira
 ROLE: Senior Engineer
 ENVIRONMENT: Codex CLI agent
 MODE: PLAN -> CONFIRM -> EXECUTE -> VERIFY (STRICT)
@@ -23,25 +23,25 @@ Rules:
 
 ## ASSUMPTION
 
-Assume the target repository is a Python repository and `repoindex` is
+Assume the target repository is a Python repository and `codira` is
 installed in the local `.venv`.
 
 Assume the available CLI surface includes:
 
-- `repoindex index`
-- `repoindex symbol <name>`
-- `repoindex calls <name>`
-- `repoindex calls <name> --incoming`
-- `repoindex refs <name>`
-- `repoindex refs <name> --incoming`
-- `repoindex context-for "<query>"`
+- `codira index`
+- `codira symbol <name>`
+- `codira calls <name>`
+- `codira calls <name> --incoming`
+- `codira refs <name>`
+- `codira refs <name> --incoming`
+- `codira context-for "<query>"`
 
 Before broad analysis, verify that:
 
 1. `.venv` exists
-2. `repoindex index` succeeds in the target repository
+2. `codira index` succeeds in the target repository
 
-Treat `repoindex` call and reference data as heuristic only.
+Treat `codira` call and reference data as heuristic only.
 
 It is useful for triage, not proof.
 
@@ -66,7 +66,7 @@ Typical weaknesses:
 
 ## OBJECTIVE
 
-Use `repoindex` to identify dead-code candidates and remove only code that is
+Use `codira` to identify dead-code candidates and remove only code that is
 well-supported as unused by:
 
 - static call-edge evidence
@@ -101,13 +101,13 @@ No step skipping.
 For each candidate symbol:
 
 1. Verify symbol existence with `rg`
-2. Query `repoindex` for exact call edges, callable references, and related
+2. Query `codira` for exact call edges, callable references, and related
    context:
-   - `repoindex calls <name>`
-   - `repoindex calls <name> --incoming`
-   - `repoindex refs <name>`
-   - `repoindex refs <name> --incoming`
-   - `repoindex context-for "<query>"`
+   - `codira calls <name>`
+   - `codira calls <name> --incoming`
+   - `codira refs <name>`
+   - `codira refs <name> --incoming`
+   - `codira context-for "<query>"`
 3. Inspect the defining file
 4. Inspect possible entry points:
    - CLI registration
@@ -148,7 +148,7 @@ You may remove a symbol only if all of the following hold:
    - framework discovery rules
 8. prefer removing entire symbols over partial edits
 9. after each removal batch, the repository must remain indexable by
-   `repoindex`
+   `codira`
 
 Absence of inbound call edges alone is NOT sufficient evidence for removal.
 
@@ -185,7 +185,7 @@ Produce a plan with:
 
 - the exact dead-code candidates
 - the evidence for each candidate
-- the exact `repoindex calls`, `repoindex refs`, and `rg` commands used to
+- the exact `codira calls`, `codira refs`, and `rg` commands used to
   justify each candidate
 - impacted files
 - risks
@@ -215,8 +215,8 @@ and explain why.
 Provide exact commands and expected results for:
 
 - exact symbol checks with `rg`
-- `repoindex` call-edge inspection
-- `repoindex` callable-reference inspection
+- `codira` call-edge inspection
+- `codira` callable-reference inspection
 - repository validation commands
 - tests touching the affected area
 

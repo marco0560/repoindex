@@ -4,7 +4,7 @@
 Responsibilities
 ----------------
 - Build the deterministic installed-wheel rehearsal commands for the release path.
-- Validate that `repoindex` and the first-party plugin packages can be installed
+- Validate that `codira` and the first-party plugin packages can be installed
   together from local wheel artifacts.
 - Exercise plugin discovery from installed artifacts outside the repository checkout.
 
@@ -72,7 +72,7 @@ def build_root_wheel_argv(
     wheel_dir: Path,
 ) -> tuple[str, ...]:
     """
-    Build the command that creates the core `repoindex` wheel artifact.
+    Build the command that creates the core `codira` wheel artifact.
 
     Parameters
     ----------
@@ -170,11 +170,11 @@ def build_probe_argv(*, python: str) -> tuple[str, ...]:
         python,
         "-c",
         (
-            "import json, repoindex, repoindex.registry as registry; "
+            "import json, codira, codira.registry as registry; "
             "backend = registry.active_index_backend(); "
             "analyzers = registry.active_language_analyzers(); "
             "print(json.dumps({"
-            "'repoindex_file': repoindex.__file__, "
+            "'codira_file': codira.__file__, "
             "'backend_module': type(backend).__module__, "
             "'analyzers': [analyzer.name for analyzer in analyzers]"
             "}))"
@@ -246,7 +246,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Build local wheel artifacts and rehearse installed-wheel plugin "
-            "discovery for repoindex."
+            "discovery for codira."
         )
     )
     parser.add_argument(

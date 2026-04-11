@@ -3,7 +3,7 @@
 ## Purpose
 
 This document defines the rules, workflow, and constraints for AI-assisted
-development in the `repoindex` project.
+development in the `codira` project.
 
 All agents (including ChatGPT) MUST follow these rules strictly.
 
@@ -74,7 +74,7 @@ Use at least the following shared skills for the corresponding task classes:
   feature work
 - `numpy-docstring-enforcer` whenever modifying modules, classes, public
   functions, or non-trivial private functions
-- `repoindex-workflow` before broad code exploration or patching
+- `codira-workflow` before broad code exploration or patching
 - `commit-block-generator` when proposing the final commit block
 
 If a required shared skill is unavailable, state that explicitly and apply the
@@ -111,24 +111,24 @@ same rules manually.
 
    The commit block must remain atomic and CI-compliant.
 
-### repoindex Workflow
+### codira Workflow
 
-Use `repoindex` as a repository-local developer tool.
+Use `codira` as a repository-local developer tool.
 
 Before broad code exploration or patching:
 
 1. Verify candidate symbols with `rg <query>` before editing.
-2. Run `repoindex context-for "<query>" --json` or `--prompt` as needed.
+2. Run `codira ctx "<query>" --json` or `--prompt` as needed.
 3. Inspect the referenced files before applying changes.
 
 Use output modes as follows:
 
-- plain `context-for`: compact human-readable context
-- `context-for --json`: structured tool/agent workflows
-- `context-for --prompt`: copy-ready agent preamble
-- `context-for --explain`: retrieval diagnostics
+- plain `ctx`: compact human-readable context
+- `ctx --json`: structured tool/agent workflows
+- `ctx --prompt`: copy-ready agent preamble
+- `ctx --explain`: retrieval diagnostics
 
-`repoindex` narrows search and improves determinism. It does not replace
+`codira` narrows search and improves determinism. It does not replace
 reading the actual source files before editing.
 
 ### Virtual Environment
@@ -154,7 +154,7 @@ Before critical operations:
 
 ```bash
 git clean-repo
-repoindex index
+codira index
 ```
 
 ---

@@ -33,8 +33,8 @@ PROTECTED_PATHS = {
     Path(".venv"),
     Path(".vscode"),
     Path("node_modules"),
-    Path("src/repoindex/_version.py"),
-    Path(".repoindex"),
+    Path("src/codira/_version.py"),
+    Path(".codira"),
 }
 GIT_EXE = shutil.which("git") or "git"
 

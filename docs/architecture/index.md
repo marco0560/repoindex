@@ -1,6 +1,6 @@
 # Architecture
 
-This section documents the current `repoindex` architecture and the accepted
+This section documents the current `codira` architecture and the accepted
 migration boundary introduced by
 [`ADR-004`](../adr/ADR-004-pluggable-backends-migration-plan.md).
 

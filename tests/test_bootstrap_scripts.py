@@ -429,24 +429,24 @@ def test_editable_package_paths_follow_authoritative_first_party_order() -> None
         The test asserts the helper preserves the accepted first-party package list.
     """
     helper = _load_install_helper()
-    repo_root = Path("/tmp/repoindex")
+    repo_root = Path("/tmp/codira")
 
     assert helper.first_party_package_root(repo_root, None) == (repo_root / "packages")
     assert helper.editable_package_paths(repo_root) == (
-        repo_root / "packages/repoindex-analyzer-python",
-        repo_root / "packages/repoindex-analyzer-json",
-        repo_root / "packages/repoindex-analyzer-c",
-        repo_root / "packages/repoindex-analyzer-bash",
-        repo_root / "packages/repoindex-backend-sqlite",
-        repo_root / "packages/repoindex-bundle-official",
+        repo_root / "packages/codira-analyzer-python",
+        repo_root / "packages/codira-analyzer-json",
+        repo_root / "packages/codira-analyzer-c",
+        repo_root / "packages/codira-analyzer-bash",
+        repo_root / "packages/codira-backend-sqlite",
+        repo_root / "packages/codira-bundle-official",
     )
     assert helper.FIRST_PARTY_EDITABLE_PACKAGES == (
-        "packages/repoindex-analyzer-python",
-        "packages/repoindex-analyzer-json",
-        "packages/repoindex-analyzer-c",
-        "packages/repoindex-analyzer-bash",
-        "packages/repoindex-backend-sqlite",
-        "packages/repoindex-bundle-official",
+        "packages/codira-analyzer-python",
+        "packages/codira-analyzer-json",
+        "packages/codira-analyzer-c",
+        "packages/codira-analyzer-bash",
+        "packages/codira-backend-sqlite",
+        "packages/codira-bundle-official",
     )
 
 
@@ -465,58 +465,58 @@ def test_install_helper_can_target_exported_split_repositories() -> None:
         targeting the actual split repository directory.
     """
     helper = _load_install_helper()
-    repo_root = Path("/tmp/repoindex")
-    package_root = Path("/tmp/repoindex-split-repos")
+    repo_root = Path("/tmp/codira")
+    package_root = Path("/tmp/codira-split-repos")
 
     assert helper.first_party_package_root(repo_root, package_root) == package_root
     assert helper.editable_package_paths(
         repo_root,
         package_root=package_root,
     ) == (
-        package_root / "repoindex-analyzer-python",
-        package_root / "repoindex-analyzer-json",
-        package_root / "repoindex-analyzer-c",
-        package_root / "repoindex-analyzer-bash",
-        package_root / "repoindex-backend-sqlite",
-        package_root / "repoindex-bundle-official",
+        package_root / "codira-analyzer-python",
+        package_root / "codira-analyzer-json",
+        package_root / "codira-analyzer-c",
+        package_root / "codira-analyzer-bash",
+        package_root / "codira-backend-sqlite",
+        package_root / "codira-bundle-official",
     )
     assert helper.bundle_package_path(
         repo_root,
         package_root=package_root,
-    ) == (package_root / "repoindex-bundle-official")
+    ) == (package_root / "codira-bundle-official")
     assert helper.build_install_commands(
-        python="/tmp/repoindex/.venv/bin/python",
+        python="/tmp/codira/.venv/bin/python",
         repo_root=repo_root,
         include_core=True,
         include_bundle=True,
         package_root=package_root,
     ) == (
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "install",
             "-e",
-            "/tmp/repoindex",
+            "/tmp/codira",
             "-e",
-            "/tmp/repoindex-split-repos/repoindex-analyzer-python",
+            "/tmp/codira-split-repos/codira-analyzer-python",
             "-e",
-            "/tmp/repoindex-split-repos/repoindex-analyzer-json",
+            "/tmp/codira-split-repos/codira-analyzer-json",
             "-e",
-            "/tmp/repoindex-split-repos/repoindex-analyzer-c",
+            "/tmp/codira-split-repos/codira-analyzer-c",
             "-e",
-            "/tmp/repoindex-split-repos/repoindex-analyzer-bash",
+            "/tmp/codira-split-repos/codira-analyzer-bash",
             "-e",
-            "/tmp/repoindex-split-repos/repoindex-backend-sqlite",
+            "/tmp/codira-split-repos/codira-backend-sqlite",
         ),
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "install",
             "--no-deps",
             "-e",
-            "/tmp/repoindex-split-repos/repoindex-bundle-official",
+            "/tmp/codira-split-repos/codira-bundle-official",
         ),
     )
 
@@ -536,23 +536,23 @@ def test_shared_first_party_package_inventory_stays_in_split_order() -> None:
         accepted split/package order.
     """
     helper = _load_first_party_package_inventory()
-    repo_root = Path("/tmp/repoindex")
+    repo_root = Path("/tmp/codira")
 
     assert helper.package_paths(repo_root) == (
-        repo_root / "packages/repoindex-analyzer-python",
-        repo_root / "packages/repoindex-analyzer-json",
-        repo_root / "packages/repoindex-analyzer-c",
-        repo_root / "packages/repoindex-analyzer-bash",
-        repo_root / "packages/repoindex-backend-sqlite",
-        repo_root / "packages/repoindex-bundle-official",
+        repo_root / "packages/codira-analyzer-python",
+        repo_root / "packages/codira-analyzer-json",
+        repo_root / "packages/codira-analyzer-c",
+        repo_root / "packages/codira-analyzer-bash",
+        repo_root / "packages/codira-backend-sqlite",
+        repo_root / "packages/codira-bundle-official",
     )
     assert helper.FIRST_PARTY_PACKAGE_DIRS == (
-        "packages/repoindex-analyzer-python",
-        "packages/repoindex-analyzer-json",
-        "packages/repoindex-analyzer-c",
-        "packages/repoindex-analyzer-bash",
-        "packages/repoindex-backend-sqlite",
-        "packages/repoindex-bundle-official",
+        "packages/codira-analyzer-python",
+        "packages/codira-analyzer-json",
+        "packages/codira-analyzer-c",
+        "packages/codira-analyzer-bash",
+        "packages/codira-backend-sqlite",
+        "packages/codira-bundle-official",
     )
 
 
@@ -571,37 +571,37 @@ def test_build_install_argv_installs_each_first_party_package_editably() -> None
         without installing the curated bundle by default.
     """
     helper = _load_install_helper()
-    repo_root = Path("/tmp/repoindex")
+    repo_root = Path("/tmp/codira")
 
     assert helper.bundle_package_path(repo_root) == (
-        repo_root / "packages/repoindex-bundle-official"
+        repo_root / "packages/codira-bundle-official"
     )
     assert helper.non_bundle_package_paths(repo_root) == (
-        repo_root / "packages/repoindex-analyzer-python",
-        repo_root / "packages/repoindex-analyzer-json",
-        repo_root / "packages/repoindex-analyzer-c",
-        repo_root / "packages/repoindex-analyzer-bash",
-        repo_root / "packages/repoindex-backend-sqlite",
+        repo_root / "packages/codira-analyzer-python",
+        repo_root / "packages/codira-analyzer-json",
+        repo_root / "packages/codira-analyzer-c",
+        repo_root / "packages/codira-analyzer-bash",
+        repo_root / "packages/codira-backend-sqlite",
     )
     assert helper.build_install_commands(
-        python="/tmp/repoindex/.venv/bin/python",
+        python="/tmp/codira/.venv/bin/python",
         repo_root=repo_root,
     ) == (
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "install",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-python",
+            "/tmp/codira/packages/codira-analyzer-python",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-json",
+            "/tmp/codira/packages/codira-analyzer-json",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-c",
+            "/tmp/codira/packages/codira-analyzer-c",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-bash",
+            "/tmp/codira/packages/codira-analyzer-bash",
             "-e",
-            "/tmp/repoindex/packages/repoindex-backend-sqlite",
+            "/tmp/codira/packages/codira-backend-sqlite",
         ),
     )
 
@@ -621,39 +621,39 @@ def test_install_helper_can_include_core_repo_with_requested_extras() -> None:
         with requested extras ahead of the extracted package set.
     """
     helper = _load_install_helper()
-    repo_root = Path("/tmp/repoindex")
+    repo_root = Path("/tmp/codira")
 
-    assert helper.editable_core_requirement(repo_root) == "/tmp/repoindex"
+    assert helper.editable_core_requirement(repo_root) == "/tmp/codira"
     assert (
         helper.editable_core_requirement(
             repo_root,
             extras=("semantic",),
         )
-        == "/tmp/repoindex[semantic]"
+        == "/tmp/codira[semantic]"
     )
     assert helper.build_install_commands(
-        python="/tmp/repoindex/.venv/bin/python",
+        python="/tmp/codira/.venv/bin/python",
         repo_root=repo_root,
         include_core=True,
         core_extras=("semantic",),
     ) == (
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "install",
             "-e",
-            "/tmp/repoindex[semantic]",
+            "/tmp/codira[semantic]",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-python",
+            "/tmp/codira/packages/codira-analyzer-python",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-json",
+            "/tmp/codira/packages/codira-analyzer-json",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-c",
+            "/tmp/codira/packages/codira-analyzer-c",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-bash",
+            "/tmp/codira/packages/codira-analyzer-bash",
             "-e",
-            "/tmp/repoindex/packages/repoindex-backend-sqlite",
+            "/tmp/codira/packages/codira-backend-sqlite",
         ),
     )
 
@@ -673,37 +673,37 @@ def test_install_helper_can_opt_into_bundle_package() -> None:
         is requested explicitly.
     """
     helper = _load_install_helper()
-    repo_root = Path("/tmp/repoindex")
+    repo_root = Path("/tmp/codira")
 
     assert helper.build_install_commands(
-        python="/tmp/repoindex/.venv/bin/python",
+        python="/tmp/codira/.venv/bin/python",
         repo_root=repo_root,
         include_bundle=True,
     ) == (
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "install",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-python",
+            "/tmp/codira/packages/codira-analyzer-python",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-json",
+            "/tmp/codira/packages/codira-analyzer-json",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-c",
+            "/tmp/codira/packages/codira-analyzer-c",
             "-e",
-            "/tmp/repoindex/packages/repoindex-analyzer-bash",
+            "/tmp/codira/packages/codira-analyzer-bash",
             "-e",
-            "/tmp/repoindex/packages/repoindex-backend-sqlite",
+            "/tmp/codira/packages/codira-backend-sqlite",
         ),
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "install",
             "--no-deps",
             "-e",
-            "/tmp/repoindex/packages/repoindex-bundle-official",
+            "/tmp/codira/packages/codira-bundle-official",
         ),
     )
 
@@ -723,73 +723,73 @@ def test_build_helper_rehearses_each_first_party_package_boundary() -> None:
         command per future package repository.
     """
     helper = _load_build_helper()
-    repo_root = Path("/tmp/repoindex")
+    repo_root = Path("/tmp/codira")
     wheel_dir = repo_root / ".artifacts" / "wheels"
 
     assert helper.build_all_argv(
-        python="/tmp/repoindex/.venv/bin/python",
+        python="/tmp/codira/.venv/bin/python",
         repo_root=repo_root,
         wheel_dir=wheel_dir,
     ) == (
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "wheel",
             "--no-deps",
             "--wheel-dir",
-            "/tmp/repoindex/.artifacts/wheels",
-            "/tmp/repoindex/packages/repoindex-analyzer-python",
+            "/tmp/codira/.artifacts/wheels",
+            "/tmp/codira/packages/codira-analyzer-python",
         ),
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "wheel",
             "--no-deps",
             "--wheel-dir",
-            "/tmp/repoindex/.artifacts/wheels",
-            "/tmp/repoindex/packages/repoindex-analyzer-json",
+            "/tmp/codira/.artifacts/wheels",
+            "/tmp/codira/packages/codira-analyzer-json",
         ),
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "wheel",
             "--no-deps",
             "--wheel-dir",
-            "/tmp/repoindex/.artifacts/wheels",
-            "/tmp/repoindex/packages/repoindex-analyzer-c",
+            "/tmp/codira/.artifacts/wheels",
+            "/tmp/codira/packages/codira-analyzer-c",
         ),
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "wheel",
             "--no-deps",
             "--wheel-dir",
-            "/tmp/repoindex/.artifacts/wheels",
-            "/tmp/repoindex/packages/repoindex-analyzer-bash",
+            "/tmp/codira/.artifacts/wheels",
+            "/tmp/codira/packages/codira-analyzer-bash",
         ),
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "wheel",
             "--no-deps",
             "--wheel-dir",
-            "/tmp/repoindex/.artifacts/wheels",
-            "/tmp/repoindex/packages/repoindex-backend-sqlite",
+            "/tmp/codira/.artifacts/wheels",
+            "/tmp/codira/packages/codira-backend-sqlite",
         ),
         (
-            "/tmp/repoindex/.venv/bin/python",
+            "/tmp/codira/.venv/bin/python",
             "-m",
             "pip",
             "wheel",
             "--no-deps",
             "--wheel-dir",
-            "/tmp/repoindex/.artifacts/wheels",
-            "/tmp/repoindex/packages/repoindex-bundle-official",
+            "/tmp/codira/.artifacts/wheels",
+            "/tmp/codira/packages/codira-bundle-official",
         ),
     )
 
@@ -809,9 +809,9 @@ def test_build_helper_cleans_known_package_build_artifacts(tmp_path: Path) -> No
         The test asserts the helper removes `build/` and `*.egg-info` outputs.
     """
     helper = _load_build_helper()
-    package_path = tmp_path / "packages" / "repoindex-analyzer-python"
+    package_path = tmp_path / "packages" / "codira-analyzer-python"
     build_dir = package_path / "build"
-    egg_info_dir = package_path / "src" / "repoindex_analyzer_python.egg-info"
+    egg_info_dir = package_path / "src" / "codira_analyzer_python.egg-info"
     build_dir.mkdir(parents=True)
     egg_info_dir.mkdir(parents=True)
 
@@ -836,8 +836,8 @@ def test_release_install_rehearsal_builds_first_party_and_core_wheels() -> None:
         the core wheel.
     """
     helper = _load_release_install_rehearsal_helper()
-    repo_root = Path("/tmp/repoindex")
-    wheel_dir = Path("/tmp/repoindex-wheels")
+    repo_root = Path("/tmp/codira")
+    wheel_dir = Path("/tmp/codira-wheels")
 
     assert helper.build_first_party_wheels_argv(
         python="python",
@@ -886,17 +886,17 @@ def test_release_install_rehearsal_installs_sorted_wheels_into_target_directory(
     wheel_dir = tmp_path / "wheels"
     install_dir = tmp_path / "site-packages"
     wheel_dir.mkdir()
-    (wheel_dir / "repoindex_backend_sqlite-2.0.0-py3-none-any.whl").write_text(
+    (wheel_dir / "codira_backend_sqlite-1.0.0-py3-none-any.whl").write_text(
         "",
         encoding="utf-8",
     )
-    (wheel_dir / "repoindex-2.0.0-py3-none-any.whl").write_text("", encoding="utf-8")
+    (wheel_dir / "codira-1.0.0-py3-none-any.whl").write_text("", encoding="utf-8")
 
     wheel_paths = helper.discover_wheel_paths(wheel_dir)
 
     assert wheel_paths == (
-        wheel_dir / "repoindex-2.0.0-py3-none-any.whl",
-        wheel_dir / "repoindex_backend_sqlite-2.0.0-py3-none-any.whl",
+        wheel_dir / "codira-1.0.0-py3-none-any.whl",
+        wheel_dir / "codira_backend_sqlite-1.0.0-py3-none-any.whl",
     )
     assert helper.build_install_wheels_argv(
         python="python",
@@ -910,8 +910,8 @@ def test_release_install_rehearsal_installs_sorted_wheels_into_target_directory(
         "--no-deps",
         "--target",
         str(install_dir),
-        str(wheel_dir / "repoindex-2.0.0-py3-none-any.whl"),
-        str(wheel_dir / "repoindex_backend_sqlite-2.0.0-py3-none-any.whl"),
+        str(wheel_dir / "codira-1.0.0-py3-none-any.whl"),
+        str(wheel_dir / "codira_backend_sqlite-1.0.0-py3-none-any.whl"),
     )
 
 
@@ -926,7 +926,7 @@ def test_release_install_rehearsal_probe_stays_focused_on_discovery_contract() -
     Returns
     -------
     None
-        The test asserts the release probe inspects the installed repoindex
+        The test asserts the release probe inspects the installed codira
         location, backend module, and analyzer names.
     """
     helper = _load_release_install_rehearsal_helper()
@@ -954,16 +954,16 @@ def test_release_artifact_helper_covers_core_and_all_first_party_packages() -> N
         distribution in deterministic order.
     """
     helper = _load_release_artifact_build_helper()
-    repo_root = Path("/tmp/repoindex")
+    repo_root = Path("/tmp/codira")
 
     assert helper.release_package_paths(repo_root) == (
         repo_root,
-        repo_root / "packages/repoindex-analyzer-python",
-        repo_root / "packages/repoindex-analyzer-json",
-        repo_root / "packages/repoindex-analyzer-c",
-        repo_root / "packages/repoindex-analyzer-bash",
-        repo_root / "packages/repoindex-backend-sqlite",
-        repo_root / "packages/repoindex-bundle-official",
+        repo_root / "packages/codira-analyzer-python",
+        repo_root / "packages/codira-analyzer-json",
+        repo_root / "packages/codira-analyzer-c",
+        repo_root / "packages/codira-analyzer-bash",
+        repo_root / "packages/codira-backend-sqlite",
+        repo_root / "packages/codira-bundle-official",
     )
 
 
@@ -982,41 +982,41 @@ def test_release_artifact_helper_builds_build_and_twine_commands() -> None:
         surfaces and package order.
     """
     helper = _load_release_artifact_build_helper()
-    repo_root = Path("/tmp/repoindex")
+    repo_root = Path("/tmp/codira")
 
     assert helper.build_artifact_argv(
         python="python",
-        package_path=repo_root / "packages/repoindex-backend-sqlite",
+        package_path=repo_root / "packages/codira-backend-sqlite",
     ) == (
         "python",
         "-m",
         "build",
         "--wheel",
         "--sdist",
-        "/tmp/repoindex/packages/repoindex-backend-sqlite",
+        "/tmp/codira/packages/codira-backend-sqlite",
     )
     assert helper.artifact_check_argv(
         python="python",
-        package_path=repo_root / "packages/repoindex-backend-sqlite",
+        package_path=repo_root / "packages/codira-backend-sqlite",
     ) == (
         "python",
         "-m",
         "twine",
         "check",
-        "/tmp/repoindex/packages/repoindex-backend-sqlite/dist/*",
+        "/tmp/codira/packages/codira-backend-sqlite/dist/*",
     )
 
     release_plan = helper.build_release_plan(python="python", repo_root=repo_root)
 
     assert release_plan[:2] == (
-        ("python", "-m", "build", "--wheel", "--sdist", "/tmp/repoindex"),
+        ("python", "-m", "build", "--wheel", "--sdist", "/tmp/codira"),
         (
             "python",
             "-m",
             "build",
             "--wheel",
             "--sdist",
-            "/tmp/repoindex/packages/repoindex-analyzer-python",
+            "/tmp/codira/packages/codira-analyzer-python",
         ),
     )
     assert release_plan[-2:] == (
@@ -1025,14 +1025,14 @@ def test_release_artifact_helper_builds_build_and_twine_commands() -> None:
             "-m",
             "twine",
             "check",
-            "/tmp/repoindex/packages/repoindex-backend-sqlite/dist/*",
+            "/tmp/codira/packages/codira-backend-sqlite/dist/*",
         ),
         (
             "python",
             "-m",
             "twine",
             "check",
-            "/tmp/repoindex/packages/repoindex-bundle-official/dist/*",
+            "/tmp/codira/packages/codira-bundle-official/dist/*",
         ),
     )
 
@@ -1055,16 +1055,16 @@ def test_split_repo_verification_uses_local_core_checkout_before_package_install
     """
     helper = _load_split_repo_verification_helper()
     export_root = Path("/tmp/newrepos/split")
-    repo_root = export_root / "repoindex-analyzer-python"
-    core_root = Path("/tmp/repoindex")
+    repo_root = export_root / "codira-analyzer-python"
+    core_root = Path("/tmp/codira")
 
     assert helper.split_repo_names() == (
-        "repoindex-analyzer-python",
-        "repoindex-analyzer-json",
-        "repoindex-analyzer-c",
-        "repoindex-analyzer-bash",
-        "repoindex-backend-sqlite",
-        "repoindex-bundle-official",
+        "codira-analyzer-python",
+        "codira-analyzer-json",
+        "codira-analyzer-c",
+        "codira-analyzer-bash",
+        "codira-backend-sqlite",
+        "codira-bundle-official",
     )
     assert helper.build_repo_validation_commands(
         python="python",
@@ -1072,14 +1072,14 @@ def test_split_repo_verification_uses_local_core_checkout_before_package_install
         core_repo_root=core_root,
     )[:3] == (
         ("python", "-m", "pip", "install", "--upgrade", "pip"),
-        ("python", "-m", "pip", "install", "-e", "/tmp/repoindex[semantic]"),
+        ("python", "-m", "pip", "install", "-e", "/tmp/codira[semantic]"),
         (
             "python",
             "-m",
             "pip",
             "install",
             "-e",
-            "/tmp/newrepos/split/repoindex-analyzer-python[test]",
+            "/tmp/newrepos/split/codira-analyzer-python[test]",
         ),
     )
 
@@ -1102,8 +1102,8 @@ def test_split_repo_verification_installs_local_first_party_packages_for_bundle(
     """
     helper = _load_split_repo_verification_helper()
     export_root = Path("/tmp/newrepos/split")
-    bundle_root = export_root / "repoindex-bundle-official"
-    core_root = Path("/tmp/repoindex")
+    bundle_root = export_root / "codira-bundle-official"
+    core_root = Path("/tmp/codira")
 
     commands = helper.build_repo_validation_commands(
         python="python",
@@ -1113,14 +1113,14 @@ def test_split_repo_verification_installs_local_first_party_packages_for_bundle(
 
     assert commands[:8] == (
         ("python", "-m", "pip", "install", "--upgrade", "pip"),
-        ("python", "-m", "pip", "install", "-e", "/tmp/repoindex[semantic]"),
+        ("python", "-m", "pip", "install", "-e", "/tmp/codira[semantic]"),
         (
             "python",
             "-m",
             "pip",
             "install",
             "-e",
-            "/tmp/newrepos/split/repoindex-analyzer-python",
+            "/tmp/newrepos/split/codira-analyzer-python",
         ),
         (
             "python",
@@ -1128,7 +1128,7 @@ def test_split_repo_verification_installs_local_first_party_packages_for_bundle(
             "pip",
             "install",
             "-e",
-            "/tmp/newrepos/split/repoindex-analyzer-json",
+            "/tmp/newrepos/split/codira-analyzer-json",
         ),
         (
             "python",
@@ -1136,7 +1136,7 @@ def test_split_repo_verification_installs_local_first_party_packages_for_bundle(
             "pip",
             "install",
             "-e",
-            "/tmp/newrepos/split/repoindex-analyzer-c",
+            "/tmp/newrepos/split/codira-analyzer-c",
         ),
         (
             "python",
@@ -1144,7 +1144,7 @@ def test_split_repo_verification_installs_local_first_party_packages_for_bundle(
             "pip",
             "install",
             "-e",
-            "/tmp/newrepos/split/repoindex-analyzer-bash",
+            "/tmp/newrepos/split/codira-analyzer-bash",
         ),
         (
             "python",
@@ -1152,7 +1152,7 @@ def test_split_repo_verification_installs_local_first_party_packages_for_bundle(
             "pip",
             "install",
             "-e",
-            "/tmp/newrepos/split/repoindex-backend-sqlite",
+            "/tmp/newrepos/split/codira-backend-sqlite",
         ),
         (
             "python",
@@ -1160,7 +1160,7 @@ def test_split_repo_verification_installs_local_first_party_packages_for_bundle(
             "pip",
             "install",
             "-e",
-            "/tmp/newrepos/split/repoindex-bundle-official[test]",
+            "/tmp/newrepos/split/codira-bundle-official[test]",
         ),
     )
 
@@ -1179,7 +1179,7 @@ def test_build_bootstrap_commands_reuses_shared_first_party_install_command() ->
         The test asserts bootstrap no longer hard-codes a divergent package list.
     """
     bootstrap_helper = _load_bootstrap_helper()
-    repo_root = Path("/tmp/repoindex")
+    repo_root = Path("/tmp/codira")
     commands = bootstrap_helper.build_bootstrap_commands(
         repo_root=repo_root,
         python="/usr/bin/python3",

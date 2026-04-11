@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan and optionally execute release artifact builds for repoindex.
+"""Plan and optionally execute release artifact builds for codira.
 
 Responsibilities
 ----------------
@@ -148,7 +148,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Plan or execute release-artifact builds and twine validation for "
-            "repoindex and the first-party packages."
+            "codira and the first-party packages."
         )
     )
     parser.add_argument(

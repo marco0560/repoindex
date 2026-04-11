@@ -12,7 +12,7 @@ Tests stay deterministic by using explicit metadata hooks, temporary roots, and 
 
 Architectural role
 ------------------
-This module belongs to the **indexing verification layer** that guards incremental-run guarantees for repoindex.
+This module belongs to the **indexing verification layer** that guards incremental-run guarantees for codira.
 """
 
 from __future__ import annotations
@@ -26,19 +26,19 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from repoindex_backend_sqlite import SQLiteIndexBackend
+from codira_backend_sqlite import SQLiteIndexBackend
 
-import repoindex.registry as registry_module
-from repoindex.analyzers import PythonAnalyzer
-from repoindex.cli import (
+import codira.registry as registry_module
+from codira.analyzers import PythonAnalyzer
+from codira.cli import (
     IndexRebuildRequest,
     _ensure_index,
     _read_index_metadata,
     _write_index_metadata,
     main,
 )
-from repoindex.indexer import audit_repo_coverage, index_repo
-from repoindex.models import (
+from codira.indexer import audit_repo_coverage, index_repo
+from codira.models import (
     AnalysisResult,
     CallableReference,
     CallSite,
@@ -46,15 +46,15 @@ from repoindex.models import (
     FunctionArtifact,
     ModuleArtifact,
 )
-from repoindex.query.exact import docstring_issues, find_symbol
-from repoindex.scanner import file_metadata
-from repoindex.schema import SCHEMA_VERSION
-from repoindex.semantic.embeddings import (
+from codira.query.exact import docstring_issues, find_symbol
+from codira.scanner import file_metadata
+from codira.schema import SCHEMA_VERSION
+from codira.semantic.embeddings import (
     EMBEDDING_BACKEND,
     EMBEDDING_DIM,
     EmbeddingBackendSpec,
 )
-from repoindex.storage import acquire_index_lock, get_db_path, init_db
+from codira.storage import acquire_index_lock, get_db_path, init_db
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -124,7 +124,7 @@ class _PythonAnalyzerV2:
 
         Returns
         -------
-        repoindex.models.AnalysisResult
+        codira.models.AnalysisResult
             Normalized analysis result from the installed Python analyzer.
         """
         return PythonAnalyzer().analyze_file(path, root)
@@ -156,7 +156,7 @@ def test_cli_reports_unexpected_index_errors_without_traceback(
         The test asserts the CLI reports the failure without a traceback.
     """
     monkeypatch.setattr(
-        "repoindex.cli._run_index",
+        "codira.cli._run_index",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             ValueError(
                 "duplicate stable_id(s) in native/annotated.c: "
@@ -164,7 +164,7 @@ def test_cli_reports_unexpected_index_errors_without_traceback(
             )
         ),
     )
-    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+    monkeypatch.setattr(sys, "argv", ["codira", "index"])
 
     assert main() == 2
     captured = capsys.readouterr()
@@ -203,7 +203,7 @@ def test_index_cli_fails_gracefully_when_no_language_analyzers_are_registered(
         return cast("list[object]", original_entry_points(group))
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+    monkeypatch.setattr(sys, "argv", ["codira", "index"])
     monkeypatch.setattr(
         registry_module,
         "_entry_points_for_group",
@@ -213,7 +213,7 @@ def test_index_cli_fails_gracefully_when_no_language_analyzers_are_registered(
     assert main() == 2
     captured = capsys.readouterr()
 
-    assert "No language analyzers are registered for repoindex" in captured.err
+    assert "No language analyzers are registered for codira" in captured.err
     assert captured.out == ""
 
 
@@ -247,7 +247,7 @@ def test_index_cli_fails_gracefully_when_no_backend_plugins_are_registered(
         return cast("list[object]", original_entry_points(group))
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+    monkeypatch.setattr(sys, "argv", ["codira", "index"])
     monkeypatch.setenv(registry_module.INDEX_BACKEND_ENV_VAR, "sqlite")
     monkeypatch.setattr(
         registry_module,
@@ -258,8 +258,8 @@ def test_index_cli_fails_gracefully_when_no_backend_plugins_are_registered(
     assert main() == 2
     captured = capsys.readouterr()
 
-    assert "Unsupported repoindex backend 'sqlite'" in captured.err
-    assert "repoindex-backend-sqlite" in captured.err
+    assert "Unsupported codira backend 'sqlite'" in captured.err
+    assert "codira-backend-sqlite" in captured.err
     assert captured.out == ""
 
 
@@ -391,7 +391,7 @@ def test_index_repo_reports_duplicate_stable_ids_as_file_failures(
     )
 
     monkeypatch.setattr(
-        "repoindex.indexer._duplicate_analysis_stable_ids",
+        "codira.indexer._duplicate_analysis_stable_ids",
         lambda analysis: ["python:function:pkg.sample:demo"],
     )
 
@@ -710,7 +710,7 @@ def test_index_repo_recomputes_embeddings_when_backend_changes(
     index_repo(tmp_path)
 
     monkeypatch.setattr(
-        "repoindex.indexer.get_embedding_backend",
+        "codira.indexer.get_embedding_backend",
         lambda: EmbeddingBackendSpec(
             name=EMBEDDING_BACKEND,
             version="2",
@@ -763,7 +763,7 @@ def test_index_repo_reindexes_unchanged_files_when_analyzer_changes(
     index_repo(tmp_path)
 
     monkeypatch.setattr(
-        "repoindex.indexer.active_language_analyzers",
+        "codira.indexer.active_language_analyzers",
         lambda: [_PythonAnalyzerV2()],
     )
     report = index_repo(tmp_path)
@@ -816,7 +816,7 @@ def test_index_cli_reports_summary_and_decisions(
     )
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "index", "--explain"])
+    monkeypatch.setattr(sys, "argv", ["codira", "index", "--explain"])
 
     assert main() == 0
     captured = capsys.readouterr()
@@ -906,7 +906,7 @@ def test_index_cli_reports_failures_without_aborting(
     _write_module(legacy_module, 'print "hi"\n')
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+    monkeypatch.setattr(sys, "argv", ["codira", "index"])
 
     assert main() == 0
     captured = capsys.readouterr()
@@ -966,7 +966,7 @@ def test_index_cli_omits_python_syntax_warnings(
     _write_module(warned_module, 'value = "\\$"\n')
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+    monkeypatch.setattr(sys, "argv", ["codira", "index"])
 
     assert main() == 0
     captured = capsys.readouterr()
@@ -1072,7 +1072,7 @@ def test_index_repo_covers_json_schema_documents_in_canonical_directories(
     None
         The test asserts supported JSON Schema files index cleanly.
     """
-    schema_file = tmp_path / "src" / "repoindex" / "schema" / "context.schema.json"
+    schema_file = tmp_path / "src" / "codira" / "schema" / "context.schema.json"
     schema_file.parent.mkdir(parents=True, exist_ok=True)
     schema_file.write_text(
         json.dumps(
@@ -1090,11 +1090,11 @@ def test_index_repo_covers_json_schema_documents_in_canonical_directories(
 
     assert report.coverage_issues == []
     assert report.indexed == 1
-    assert find_symbol(tmp_path, "src.repoindex.schema.context_schema") == [
+    assert find_symbol(tmp_path, "src.codira.schema.context_schema") == [
         (
             "module",
-            "src.repoindex.schema.context_schema",
-            "src.repoindex.schema.context_schema",
+            "src.codira.schema.context_schema",
+            "src.codira.schema.context_schema",
             str(schema_file),
             1,
         )
@@ -1120,7 +1120,7 @@ def test_index_repo_indexes_package_and_release_json_families(tmp_path: Path) ->
     package_file.write_text(
         json.dumps(
             {
-                "name": "repoindex-release",
+                "name": "codira-release",
                 "devDependencies": {"semantic-release": "^23.0.0"},
             }
         ),
@@ -1141,11 +1141,11 @@ def test_index_repo_indexes_package_and_release_json_families(tmp_path: Path) ->
 
     assert report.coverage_issues == []
     assert report.indexed == 2
-    assert find_symbol(tmp_path, "repoindex-release") == [
+    assert find_symbol(tmp_path, "codira-release") == [
         (
             "json_manifest_name",
             "package",
-            "repoindex-release",
+            "codira-release",
             str(package_file),
             1,
         )
@@ -1193,7 +1193,7 @@ def test_index_cli_prints_coverage_issues(
     config_file.write_text('{"task": "demo"}\n', encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+    monkeypatch.setattr(sys, "argv", ["codira", "index"])
 
     assert main() == 0
     captured = capsys.readouterr()
@@ -1238,7 +1238,7 @@ def test_coverage_cli_reports_uncovered_canonical_files(
     config_file.write_text('{"task": "demo"}\n', encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "coverage"])
+    monkeypatch.setattr(sys, "argv", ["codira", "cov"])
 
     assert main() == 1
     captured = capsys.readouterr()
@@ -1283,7 +1283,7 @@ def test_coverage_cli_groups_text_output_by_suffix_and_directory(
     tests_json.write_text('{"name": "fixture"}\n', encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "coverage"])
+    monkeypatch.setattr(sys, "argv", ["codira", "cov"])
 
     assert main() == 1
     captured = capsys.readouterr()
@@ -1370,11 +1370,11 @@ def test_coverage_cli_emits_json(
     rust_module.write_text("pub fn helper() {}\n", encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "coverage", "--json"])
+    monkeypatch.setattr(sys, "argv", ["codira", "cov", "--json"])
 
     assert main() == 1
     payload = json.loads(capsys.readouterr().out)
-    assert payload["command"] == "coverage"
+    assert payload["command"] == "cov"
     assert payload["status"] == "incomplete"
     assert payload["query"]["canonical_directories"] == ["src", "tests", "scripts"]
     assert payload["results"] == [
@@ -1423,7 +1423,7 @@ def test_index_cli_can_require_full_coverage(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["repoindex", "index", "--require-full-coverage"],
+        ["codira", "index", "--require-full-coverage"],
     )
 
     assert main() == 2
@@ -1467,7 +1467,7 @@ def test_index_cli_emits_json(
     config_file.write_text('{"task": "demo"}\n', encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["repoindex", "index", "--json", "--explain"])
+    monkeypatch.setattr(sys, "argv", ["codira", "index", "--json", "--explain"])
 
     assert main() == 0
     payload = json.loads(capsys.readouterr().out)
@@ -1537,7 +1537,7 @@ def test_index_cli_emits_json_for_required_coverage_failure(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["repoindex", "index", "--json", "--require-full-coverage"],
+        ["codira", "index", "--json", "--require-full-coverage"],
     )
 
     assert main() == 2
@@ -1603,13 +1603,13 @@ def test_ensure_index_rebuilds_when_analyzer_inventory_changes(
     index_repo(tmp_path)
     _write_index_metadata(tmp_path, {"schema_version": str(SCHEMA_VERSION)})
 
-    monkeypatch.setattr("repoindex.cli._get_head_commit", lambda root: None)
+    monkeypatch.setattr("codira.cli._get_head_commit", lambda root: None)
     monkeypatch.setattr(
-        "repoindex.cli.active_language_analyzers",
+        "codira.cli.active_language_analyzers",
         lambda: [_PythonAnalyzerV2()],
     )
     monkeypatch.setattr(
-        "repoindex.indexer.active_language_analyzers",
+        "codira.indexer.active_language_analyzers",
         lambda: [_PythonAnalyzerV2()],
     )
 
@@ -1653,13 +1653,13 @@ def test_ensure_index_rebuilds_when_backend_inventory_changes(
     index_repo(tmp_path)
     _write_index_metadata(tmp_path, {"schema_version": str(SCHEMA_VERSION)})
 
-    monkeypatch.setattr("repoindex.cli._get_head_commit", lambda root: None)
+    monkeypatch.setattr("codira.cli._get_head_commit", lambda root: None)
     monkeypatch.setattr(
-        "repoindex.cli.active_index_backend",
+        "codira.cli.active_index_backend",
         lambda: _SQLiteBackendV12(),
     )
     monkeypatch.setattr(
-        "repoindex.indexer.active_index_backend",
+        "codira.indexer.active_index_backend",
         lambda: _SQLiteBackendV12(),
     )
 
@@ -1728,7 +1728,7 @@ def test_ensure_index_missing_db_writes_schema_and_commit_metadata(
         'def demo():\n    """Return a constant."""\n    return 1\n',
     )
     monkeypatch.setattr(
-        "repoindex.cli._get_head_commit",
+        "codira.cli._get_head_commit",
         lambda root: "abc123",
     )
 
@@ -1765,7 +1765,7 @@ def test_open_connection_does_not_clear_commit_metadata(
         'def demo():\n    """Return a constant."""\n    return 1\n',
     )
     monkeypatch.setattr(
-        "repoindex.cli._get_head_commit",
+        "codira.cli._get_head_commit",
         lambda root: "abc123",
     )
 
@@ -1802,7 +1802,7 @@ def test_ensure_index_rechecks_after_waiting_for_lock(
         The test asserts the locked recheck suppresses a redundant rebuild.
     """
     request = IndexRebuildRequest(
-        message="[repoindex] Index stale — rebuilding...",
+        message="[codira] Index stale — rebuilding...",
         reset_db=True,
         stderr=True,
     )
@@ -1813,9 +1813,9 @@ def test_ensure_index_rechecks_after_waiting_for_lock(
         del root
         yield
 
-    monkeypatch.setattr("repoindex.cli.acquire_index_lock", _dummy_lock)
+    monkeypatch.setattr("codira.cli.acquire_index_lock", _dummy_lock)
     monkeypatch.setattr(
-        "repoindex.cli._inspect_index_rebuild_request",
+        "codira.cli._inspect_index_rebuild_request",
         lambda root: next(inspections),
     )
 
@@ -1825,7 +1825,7 @@ def test_ensure_index_rechecks_after_waiting_for_lock(
         raise AssertionError(msg)
 
     monkeypatch.setattr(
-        "repoindex.cli._run_locked_index_refresh",
+        "codira.cli._run_locked_index_refresh",
         _unexpected_refresh,
     )
 
@@ -1854,7 +1854,7 @@ def test_acquire_index_lock_blocks_other_processes(tmp_path: Path) -> None:
         "import time\n"
         "from pathlib import Path\n"
         f"sys.path.insert(0, {str(source_root)!r})\n"
-        "from repoindex.storage import acquire_index_lock\n"
+        "from codira.storage import acquire_index_lock\n"
         f"root = Path({str(tmp_path)!r})\n"
         f"acquired = Path({str(acquired_marker)!r})\n"
         f"release = Path({str(release_marker)!r})\n"

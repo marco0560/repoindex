@@ -16,7 +16,7 @@ This module belongs to the **docstring verification layer** that keeps docstring
 
 from __future__ import annotations
 
-from repoindex.docstring import (
+from codira.docstring import (
     find_missing_sections,
     find_unexpected_sections,
     validate_docstring,

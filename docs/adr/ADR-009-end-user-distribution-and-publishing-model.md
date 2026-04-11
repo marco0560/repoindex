@@ -6,7 +6,7 @@
 ## Context
 
 `ADR-007` established the first-party package boundary for extracted optional
-plugins and accepted `repoindex[bundle-official]` as the umbrella install
+plugins and accepted `codira[bundle-official]` as the umbrella install
 contract.
 
 That decision is structurally sound, but it leaves one practical packaging
@@ -15,10 +15,10 @@ that install work without requiring monorepo-specific knowledge?
 
 The current repository contains four relevant distributions:
 
-* `repoindex`
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
-* `repoindex-bundle-official`
+* `codira`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
+* `codira-bundle-official`
 
 The repository also serves two different audiences:
 
@@ -40,8 +40,8 @@ Additional constraints now shape the decision:
 
 Adopt a two-surface distribution model:
 
-* `repoindex-bundle-official` becomes the primary end-user install target
-* `repoindex[bundle-official]` remains a compatible umbrella surface on the
+* `codira-bundle-official` becomes the primary end-user install target
+* `codira[bundle-official]` remains a compatible umbrella surface on the
   core package
 
 ### End-user install target
@@ -49,7 +49,7 @@ Adopt a two-surface distribution model:
 The primary end-user command is:
 
 ```bash
-pip install repoindex-bundle-official
+pip install codira-bundle-official
 ```
 
 This package acts as the curated umbrella distribution for the official
@@ -57,18 +57,18 @@ repository-owned capabilities.
 
 Its responsibility is to depend on:
 
-* `repoindex`
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
+* `codira`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
 * the semantic embedding stack required by the curated official bundle
 
 ### Core extra remains valid
 
-The `bundle-official` extra on `repoindex` remains supported as an equivalent
+The `bundle-official` extra on `codira` remains supported as an equivalent
 install contract:
 
 ```bash
-pip install "repoindex[bundle-official]"
+pip install "codira[bundle-official]"
 ```
 
 This preserves continuity with `ADR-007` and allows users who prefer extras to
@@ -81,10 +81,10 @@ The seamless end-user experience depends on normal package-name resolution.
 Therefore the following distributions must be published to a package index such
 as PyPI:
 
-* `repoindex`
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
-* `repoindex-bundle-official`
+* `codira`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
+* `codira-bundle-official`
 
 The monorepo directory structure alone is not sufficient for `pip` to resolve
 dependency names during a normal install.
@@ -101,10 +101,10 @@ end-user install path.
 
 While the analyzers and bundle remain in the monorepo:
 
-* `repoindex` continues to use SCM-managed versioning
-* `repoindex-analyzer-c` keeps a manually managed version
-* `repoindex-analyzer-bash` keeps a manually managed version
-* `repoindex-bundle-official` keeps a manually managed version
+* `codira` continues to use SCM-managed versioning
+* `codira-analyzer-c` keeps a manually managed version
+* `codira-analyzer-bash` keeps a manually managed version
+* `codira-bundle-official` keeps a manually managed version
 
 Independent SCM-managed analyzer versioning is deferred until each analyzer
 has its own repository and therefore its own tag stream.
@@ -132,7 +132,7 @@ has its own repository and therefore its own tag stream.
 
 ### Neutral / Trade-offs
 
-* `repoindex[bundle-official]` remains valid, but it is no longer the primary
+* `codira[bundle-official]` remains valid, but it is no longer the primary
   user-facing recommendation
 * manual analyzer and bundle versions are acceptable while the monorepo
   structure remains intact
@@ -141,9 +141,9 @@ has its own repository and therefore its own tag stream.
 
 ## Operational Rules
 
-* Document `repoindex-bundle-official` as the default install target for
+* Document `codira-bundle-official` as the default install target for
   end users.
-* Keep `repoindex[bundle-official]` working as a compatibility surface.
+* Keep `codira[bundle-official]` working as a compatibility surface.
 * Publish plugin distributions before or together with root releases that
   depend on them.
 * Revisit analyzer version management only when repository splits become real,

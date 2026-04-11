@@ -1,15 +1,15 @@
 # PHASE 3.X — REAL EMBEDDINGS (OPTION B)
-PROJECT: repoindex
+PROJECT: codira
 ROLE: Senior Engineer
 MODE: HARD-FAIL DETERMINISTIC
 BRANCH: dev/embeddings-option-b
 
 OBJECTIVE
 ---------
-Introduce real embeddings into repoindex as an indexed artifact,
+Introduce real embeddings into codira as an indexed artifact,
 while preserving the current operational model:
 
-• indexing remains explicit (repoindex index)
+• indexing remains explicit (codira index)
 • embeddings are computed at index time only
 • queries reuse stored vectors
 • no background indexing
@@ -101,7 +101,7 @@ STEP 1 — Embedding abstraction
 
 Create or extend:
 
-    src/repoindex/semantic/embeddings.py
+    src/codira/semantic/embeddings.py
 
 Define a backend interface:
 
@@ -291,7 +291,7 @@ If any invariant is violated → STOP
 EXIT CRITERIA
 ────────────────────────────────────────────
 
-✔ repoindex index computes embeddings deterministically
+✔ codira index computes embeddings deterministically
 ✔ embeddings persisted and reused
 ✔ invalidation works correctly
 ✔ retrieval uses stored embeddings

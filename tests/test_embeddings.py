@@ -21,16 +21,16 @@ import sys
 import types
 from typing import TYPE_CHECKING
 
-from repoindex.cli import main
-from repoindex.indexer import (
+from codira.cli import main
+from codira.indexer import (
     PendingEmbeddingRow,
     StoredEmbeddingRow,
     _flush_embedding_rows,
     index_repo,
 )
-from repoindex.query.exact import find_symbol
-from repoindex.semantic import embeddings as embeddings_module
-from repoindex.semantic.embeddings import (
+from codira.query.exact import find_symbol
+from codira.semantic import embeddings as embeddings_module
+from codira.semantic.embeddings import (
     DEFAULT_EMBEDDING_BATCH_SIZE,
     EMBEDDING_BACKEND,
     EMBEDDING_DIM,
@@ -39,8 +39,8 @@ from repoindex.semantic.embeddings import (
     embed_text,
     embed_texts,
 )
-from repoindex.semantic.search import embedding_candidates
-from repoindex.storage import get_db_path, init_db
+from codira.semantic.search import embedding_candidates
+from codira.storage import get_db_path, init_db
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -157,7 +157,7 @@ def test_embed_texts_batches_inputs_and_preserves_blank_vectors(
 
     fake_model = _FakeModel()
     embeddings_module._load_model.cache_clear()
-    monkeypatch.setenv("REPOINDEX_EMBED_BATCH_SIZE", "7")
+    monkeypatch.setenv("CODIRA_EMBED_BATCH_SIZE", "7")
     monkeypatch.setattr(embeddings_module, "_load_model", lambda: fake_model)
 
     vectors = embed_texts(["schema migration", "   ", "docstring audit"])
@@ -221,7 +221,7 @@ def test_embed_texts_uses_repo_default_batch_size(
 
     fake_model = _FakeModel()
     embeddings_module._load_model.cache_clear()
-    monkeypatch.delenv("REPOINDEX_EMBED_BATCH_SIZE", raising=False)
+    monkeypatch.delenv("CODIRA_EMBED_BATCH_SIZE", raising=False)
     monkeypatch.setattr(embeddings_module, "_load_model", lambda: fake_model)
 
     assert embed_texts(["schema migration"]) == [[1.0] * EMBEDDING_DIM]
@@ -258,8 +258,8 @@ def test_configure_torch_runtime_uses_explicit_overrides(
 
     fake_torch = _FakeTorch()
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setenv("REPOINDEX_TORCH_NUM_THREADS", "3")
-    monkeypatch.setenv("REPOINDEX_TORCH_NUM_INTEROP_THREADS", "2")
+    monkeypatch.setenv("CODIRA_TORCH_NUM_THREADS", "3")
+    monkeypatch.setenv("CODIRA_TORCH_NUM_INTEROP_THREADS", "2")
 
     embeddings_module._configure_torch_runtime()
 
@@ -303,7 +303,7 @@ def test_flush_embedding_rows_batches_and_reuses_identical_payloads(
         calls.append(list(texts))
         return [[float(index + 1)] * EMBEDDING_DIM for index, _text in enumerate(texts)]
 
-    monkeypatch.setattr("repoindex.indexer.embed_texts", fake_embed_texts)
+    monkeypatch.setattr("codira.indexer.embed_texts", fake_embed_texts)
     backend = embeddings_module.get_embedding_backend()
     rows = [
         PendingEmbeddingRow("symbol", 1, "stable-a", "shared payload"),
@@ -693,7 +693,7 @@ def test_embeddings_cli_prints_backend_and_matches(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["repoindex", "embeddings", "schema migration rules", "--limit", "2"],
+        ["codira", "emb", "schema migration rules", "--limit", "2"],
     )
 
     assert main() == 0
@@ -727,16 +727,16 @@ def test_cli_reports_embedding_errors_without_traceback(
         The test asserts operator-facing stderr output and exit status.
     """
     monkeypatch.setattr(
-        "repoindex.cli._run_index",
+        "codira.cli._run_index",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            EmbeddingBackendError("Install repoindex[semantic].")
+            EmbeddingBackendError("Install codira[semantic].")
         ),
     )
-    monkeypatch.setattr(sys, "argv", ["repoindex", "index"])
+    monkeypatch.setattr(sys, "argv", ["codira", "index"])
 
     assert main() == 2
     captured = capsys.readouterr()
-    assert "[repoindex] Install repoindex[semantic]." in captured.err
+    assert "[codira] Install codira[semantic]." in captured.err
     assert captured.out == ""
 
 

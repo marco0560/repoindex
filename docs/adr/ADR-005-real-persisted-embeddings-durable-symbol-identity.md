@@ -5,7 +5,7 @@
 
 ## Context
 
-Issue `#1` asks `repoindex` to move from its current placeholder local
+Issue `#1` asks `codira` to move from its current placeholder local
 embedding backend to real persisted embeddings while preserving the explicit
 manual indexing model.
 
@@ -33,7 +33,7 @@ swap:
 
 The solution must still preserve these invariants:
 
-* indexing remains explicit through `repoindex index`
+* indexing remains explicit through `codira index`
 * no background indexing or query-time mutation is introduced
 * embeddings are invalidated when semantic input changes
 * embeddings are invalidated when backend or backend-version metadata changes
@@ -46,7 +46,7 @@ symbol identity.
 
 ### Real Embedding Backend
 
-`repoindex` will replace the current placeholder hash backend with a real
+`codira` will replace the current placeholder hash backend with a real
 local embedding backend.
 
 The active backend contract will continue to expose explicit metadata used for

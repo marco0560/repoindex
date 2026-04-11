@@ -2,9 +2,9 @@
 
 `ADR-004` Phase 3 introduces explicit backend-neutral contracts in code:
 
-- `src/repoindex/contracts.py`
-- `src/repoindex/models.py`
-- `src/repoindex/normalization.py`
+- `src/codira/contracts.py`
+- `src/codira/models.py`
+- `src/codira/normalization.py`
 
 These modules are the first durable abstraction layer between language
 analysis, normalized artifacts, and persistence.

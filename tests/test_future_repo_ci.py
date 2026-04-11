@@ -47,13 +47,13 @@ def test_future_repo_ci_specs_cover_the_accepted_repository_set() -> None:
     specs = _load_future_repo_ci_helper().future_repo_ci_specs()
 
     assert [spec.repository for spec in specs] == [
-        "repoindex",
-        "repoindex-analyzer-python",
-        "repoindex-analyzer-json",
-        "repoindex-analyzer-c",
-        "repoindex-analyzer-bash",
-        "repoindex-backend-sqlite",
-        "repoindex-bundle-official",
+        "codira",
+        "codira-analyzer-python",
+        "codira-analyzer-json",
+        "codira-analyzer-c",
+        "codira-analyzer-bash",
+        "codira-backend-sqlite",
+        "codira-bundle-official",
     ]
 
 

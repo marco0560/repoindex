@@ -16,7 +16,7 @@ The branch now completes the Phase 1 reconciliation:
 * C and Bash are package-owned first-party analyzer distributions.
 * runtime discovery now loads those analyzers through Python entry points
   instead of core-side factory wiring
-* `repoindex[bundle-official]` remains the accepted umbrella install contract
+* `codira[bundle-official]` remains the accepted umbrella install contract
   for curated first-party capabilities
 
 Issue `#12` needs a concrete extraction target before files move. Without that
@@ -35,17 +35,17 @@ later multirepo split all target the same topology.
 
 Adopt the following first-party package set for Phase 2:
 
-* `repoindex` remains the core platform package
-* `repoindex-analyzer-python` owns the Python analyzer implementation
-* `repoindex-analyzer-json` owns the JSON analyzer implementation
-* `repoindex-backend-sqlite` owns the default SQLite backend implementation
-* `repoindex-analyzer-c` remains the C analyzer distribution from Phase 1
-* `repoindex-analyzer-bash` remains the Bash analyzer distribution from Phase 1
-* `repoindex-bundle-official` remains the curated first-party meta-package
+* `codira` remains the core platform package
+* `codira-analyzer-python` owns the Python analyzer implementation
+* `codira-analyzer-json` owns the JSON analyzer implementation
+* `codira-backend-sqlite` owns the default SQLite backend implementation
+* `codira-analyzer-c` remains the C analyzer distribution from Phase 1
+* `codira-analyzer-bash` remains the Bash analyzer distribution from Phase 1
+* `codira-bundle-official` remains the curated first-party meta-package
 
 ### Core ownership after Phase 2
 
-The `repoindex` core package remains responsible for:
+The `codira` core package remains responsible for:
 
 * contracts
 * registry and discovery
@@ -62,8 +62,8 @@ modules once Phase 2 is complete.
 
 The accepted Phase 2 discovery model is:
 
-* analyzers load through the `repoindex.analyzers` entry-point group
-* backends load through the `repoindex.backends` entry-point group
+* analyzers load through the `codira.analyzers` entry-point group
+* backends load through the `codira.backends` entry-point group
 * the default implementations are still defaults, but they are defaults by
   selection policy rather than by living in core
 
@@ -80,9 +80,9 @@ They must not regain implementation ownership.
 
 ### Bundle rule
 
-`repoindex[bundle-official]` stays the accepted umbrella install contract.
+`codira[bundle-official]` stays the accepted umbrella install contract.
 
-`repoindex-bundle-official` remains the repository-local first-party package
+`codira-bundle-official` remains the repository-local first-party package
 that aggregates the official analyzer and backend distributions for the
 published and multirepo end state.
 

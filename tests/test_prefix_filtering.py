@@ -22,18 +22,18 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from repoindex.cli import main
-from repoindex.indexer import index_repo
-from repoindex.prefix import normalize_prefix
-from repoindex.query.context import context_for
-from repoindex.query.exact import (
+from codira.cli import main
+from codira.indexer import index_repo
+from codira.prefix import normalize_prefix
+from codira.query.context import context_for
+from codira.query.exact import (
     docstring_issues,
     find_call_edges,
     find_callable_refs,
     find_symbol,
 )
-from repoindex.semantic.search import embedding_candidates
-from repoindex.storage import init_db
+from codira.semantic.search import embedding_candidates
+from codira.storage import init_db
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -404,7 +404,7 @@ def test_cli_prefix_is_applied_and_rejects_escape(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["repoindex", "symbol", "shared_symbol", "--prefix", "pkg"],
+        ["codira", "sym", "shared_symbol", "--prefix", "pkg"],
     )
 
     assert main() == 0
@@ -415,7 +415,7 @@ def test_cli_prefix_is_applied_and_rejects_escape(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["repoindex", "symbol", "shared_symbol", "--prefix", "../escape"],
+        ["codira", "sym", "shared_symbol", "--prefix", "../escape"],
     )
     with pytest.raises(SystemExit) as exc:
         main()
@@ -453,14 +453,14 @@ def test_symbol_cli_json_includes_prefix_and_status(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["repoindex", "symbol", "shared_symbol", "--json", "--prefix", "pkg"],
+        ["codira", "sym", "shared_symbol", "--json", "--prefix", "pkg"],
     )
 
     assert main() == 0
     payload = json.loads(capsys.readouterr().out)
 
     assert payload["schema_version"] == "1.0"
-    assert payload["command"] == "symbol"
+    assert payload["command"] == "sym"
     assert payload["status"] == "ok"
     assert payload["query"] == {"name": "shared_symbol", "prefix": "pkg"}
     assert payload["results"] == [
@@ -505,7 +505,7 @@ def test_calls_and_refs_cli_json_emit_structured_results(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "calls",
             "imported_helper",
             "--module",
@@ -541,7 +541,7 @@ def test_calls_and_refs_cli_json_emit_structured_results(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "refs",
             "imported_helper",
             "--module",
@@ -606,7 +606,7 @@ def test_calls_cli_tree_json_respects_prefix_filter(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "calls",
             "imported_helper",
             "--module",
@@ -685,7 +685,7 @@ def test_refs_cli_tree_json_respects_prefix_filter(
         sys,
         "argv",
         [
-            "repoindex",
+            "codira",
             "refs",
             "imported_helper",
             "--module",
@@ -763,8 +763,8 @@ def test_embeddings_and_audit_cli_json_emit_shared_envelope(
         sys,
         "argv",
         [
-            "repoindex",
-            "embeddings",
+            "codira",
+            "emb",
             "schema migration helper",
             "--json",
             "--limit",
@@ -776,7 +776,7 @@ def test_embeddings_and_audit_cli_json_emit_shared_envelope(
 
     assert main() == 0
     embeddings_payload = json.loads(capsys.readouterr().out)
-    assert embeddings_payload["command"] == "embeddings"
+    assert embeddings_payload["command"] == "emb"
     assert embeddings_payload["status"] == "ok"
     assert embeddings_payload["query"] == {
         "text": "schema migration helper",
@@ -795,8 +795,8 @@ def test_embeddings_and_audit_cli_json_emit_shared_envelope(
         sys,
         "argv",
         [
-            "repoindex",
-            "audit-docstrings",
+            "codira",
+            "audit",
             "--json",
             "--prefix",
             "pkg",
@@ -805,7 +805,7 @@ def test_embeddings_and_audit_cli_json_emit_shared_envelope(
 
     assert main() == 0
     audit_payload = json.loads(capsys.readouterr().out)
-    assert audit_payload["command"] == "audit-docstrings"
+    assert audit_payload["command"] == "audit"
     assert audit_payload["status"] == "ok"
     assert audit_payload["query"] == {"prefix": "pkg"}
     messages = {row["message"] for row in audit_payload["results"]}
@@ -853,8 +853,8 @@ def test_plain_docstring_audit_reports_file_location(
         sys,
         "argv",
         [
-            "repoindex",
-            "audit-docstrings",
+            "codira",
+            "audit",
             "--prefix",
             "pkg",
         ],
@@ -899,8 +899,8 @@ def test_json_cli_reports_no_matches_status(
         sys,
         "argv",
         [
-            "repoindex",
-            "symbol",
+            "codira",
+            "sym",
             "shared_symbol",
             "--json",
             "--prefix",
@@ -910,6 +910,6 @@ def test_json_cli_reports_no_matches_status(
 
     assert main() == 1
     payload = json.loads(capsys.readouterr().out)
-    assert payload["command"] == "symbol"
+    assert payload["command"] == "sym"
     assert payload["status"] == "no_matches"
     assert payload["results"] == []

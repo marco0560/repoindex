@@ -1,18 +1,18 @@
 # Tutorial
 
 This walkthrough mirrors the installable example package in
-`examples/plugins/repoindex_demo_analyzer`.
+`examples/plugins/codira_demo_analyzer`.
 
 ## 1. Create a package
 
 ```toml
 [project]
-name = "repoindex-demo-analyzer"
+name = "codira-demo-analyzer"
 version = "0.1.0"
-dependencies = ["repoindex"]
+dependencies = ["codira"]
 
-[project.entry-points."repoindex.analyzers"]
-demo = "repoindex_demo_analyzer:build_analyzer"
+[project.entry-points."codira.analyzers"]
+demo = "codira_demo_analyzer:build_analyzer"
 ```
 
 ## 2. Add the analyzer
@@ -20,8 +20,8 @@ demo = "repoindex_demo_analyzer:build_analyzer"
 ```python
 from pathlib import Path
 
-from repoindex.contracts import LanguageAnalyzer
-from repoindex.models import AnalysisResult, ModuleArtifact
+from codira.contracts import LanguageAnalyzer
+from codira.models import AnalysisResult, ModuleArtifact
 
 
 class DemoAnalyzer:
@@ -53,13 +53,13 @@ def build_analyzer() -> LanguageAnalyzer:
 
 ```bash
 source .venv/bin/activate
-pip install -e /path/to/repoindex-demo-analyzer
+pip install -e /path/to/codira-demo-analyzer
 ```
 
 ## 4. Verify discovery
 
 ```bash
-repoindex plugins
+codira plugins
 ```
 
 Expected output should contain a loaded analyzer record for `demo`.
@@ -67,4 +67,4 @@ Expected output should contain a loaded analyzer record for `demo`.
 ## 5. Index supported files
 
 Once the analyzer is installed, any tracked `*.demo` file can participate in
-the normal indexing run without patching `repoindex` itself.
+the normal indexing run without patching `codira` itself.

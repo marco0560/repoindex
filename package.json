@@ -1,5 +1,5 @@
 {
-  "name": "repoindex-release",
+  "name": "codira-release",
   "private": true,
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.0",

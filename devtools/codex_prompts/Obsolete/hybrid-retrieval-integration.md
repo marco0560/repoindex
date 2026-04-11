@@ -1,6 +1,6 @@
 # Hybrid Retrieval + Integration
 
-PROJECT: repoindex
+PROJECT: codira
 CURRENT_VERSION: v0.27.x
 TASK: Implement hybrid retrieval (symbol + semantic + embedding) and prepare external integration
 ROLE: Senior Engineer
@@ -11,7 +11,7 @@ MODE: PLAN -> CONFIRM -> EXECUTE -> VERIFY (STRICT)
 ## OBJECTIVE
 
 Combine all retrieval channels into a **coherent hybrid system** and prepare
-repoindex for real-world usage (Fontshow).
+codira for real-world usage (Fontshow).
 
 ---
 
@@ -90,9 +90,9 @@ Improve output for LLM consumption:
 
 ---
 
-## PHASE 5 — DOGFOODING (repoindex)
+## PHASE 5 — DOGFOODING (codira)
 
-Use repoindex on itself:
+Use codira on itself:
 
 1. run docstring audit queries
 2. generate patches
@@ -118,7 +118,7 @@ Steps:
 
 3. run:
 
-   repoindex context-for "<query>" --json
+   codira context-for "<query>" --json
 
 4. identify:
 
@@ -141,7 +141,7 @@ Steps:
 
 Verify:
 
-• repoindex works on external repo
+• codira works on external repo
 • results are relevant
 • patches are correct
 
@@ -150,7 +150,7 @@ Verify:
 ## SUCCESS CRITERIA
 
 • hybrid retrieval improves results
-• repoindex works on repoindex and Fontshow
+• codira works on codira and Fontshow
 • integration workflow is reproducible
 
 ---

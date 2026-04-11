@@ -1,6 +1,6 @@
 # Release Process
 
-`repoindex` uses a conservative main-branch release flow backed by
+`codira` uses a conservative main-branch release flow backed by
 `semantic-release`.
 
 ## Local checks

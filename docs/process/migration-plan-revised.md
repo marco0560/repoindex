@@ -2,9 +2,9 @@
 
 ## Version
 
-Document version: `0.1.5`
+Document version: `0.1.6`
 
-Status: accepted working plan, not yet executed.
+Status: active migration ledger.
 
 This document supersedes the root-level draft `migration-plan.md` for the
 `repoindex` to `codira` rebrand.
@@ -27,6 +27,8 @@ This document supersedes the root-level draft `migration-plan.md` for the
   only until the local rebrand slice, then must move to `codira`.
 - `0.1.5`: Complete Phase 3 by creating the empty public
   `marco0560/codira` GitHub repository.
+- `0.1.6`: Complete the Phase 4 local code/package rename and Phase 5
+  subcommand-shortening implementation in one validated local slice.
 
 ## Purpose
 
@@ -39,40 +41,40 @@ and auditable.
 
 ## Fixed Decisions
 
-- [ ] Use `codira` as the new project name.
-- [ ] Treat the earlier `codera` spelling as a typo.
-- [ ] Use `pre-rebrand-snapshot` as the historical snapshot tag name.
-- [ ] Start the public `codira` release line at `v1.0.0` intentionally, even
+- [x] Use `codira` as the new project name.
+- [x] Treat the earlier `codera` spelling as a typo.
+- [x] Use `pre-rebrand-snapshot` as the historical snapshot tag name.
+- [x] Start the public `codira` release line at `v1.0.0` intentionally, even
   though the old `repoindex` line reached `v2.0.0`.
-- [ ] Publish the core distribution as `codira`.
-- [ ] Publish first-party distributions under the `codira-*` namespace.
-- [ ] Rename public APIs from `repoindex*` to `codira*`; do not keep the old
+- [x] Publish the core distribution as `codira`.
+- [x] Publish first-party distributions under the `codira-*` namespace.
+- [x] Rename public APIs from `repoindex*` to `codira*`; do not keep the old
   public names as supported compatibility surfaces for the new project.
-- [ ] Keep the old `repoindex` GitHub repository public and archived after
+- [x] Keep the old `repoindex` GitHub repository public and archived after
   issue triage, instead of making it private.
-- [ ] Create a new public GitHub repository named `codira` with fresh history.
+- [x] Create a new public GitHub repository named `codira` with fresh history.
 
 ## Target Package Set
 
 The intended published package set is:
 
-- [ ] `codira`
-- [ ] `codira-analyzer-python`
-- [ ] `codira-analyzer-json`
-- [ ] `codira-analyzer-c`
-- [ ] `codira-analyzer-bash`
-- [ ] `codira-backend-sqlite`
-- [ ] `codira-bundle-official`
+- [x] `codira`
+- [x] `codira-analyzer-python`
+- [x] `codira-analyzer-json`
+- [x] `codira-analyzer-c`
+- [x] `codira-analyzer-bash`
+- [x] `codira-backend-sqlite`
+- [x] `codira-bundle-official`
 
 The old package set must not appear in active package metadata after the rename:
 
-- [ ] `repoindex`
-- [ ] `repoindex-analyzer-python`
-- [ ] `repoindex-analyzer-json`
-- [ ] `repoindex-analyzer-c`
-- [ ] `repoindex-analyzer-bash`
-- [ ] `repoindex-backend-sqlite`
-- [ ] `repoindex-bundle-official`
+- [x] `repoindex`
+- [x] `repoindex-analyzer-python`
+- [x] `repoindex-analyzer-json`
+- [x] `repoindex-analyzer-c`
+- [x] `repoindex-analyzer-bash`
+- [x] `repoindex-backend-sqlite`
+- [x] `repoindex-bundle-official`
 
 ## Target Public API Surface
 
@@ -80,27 +82,27 @@ The rebrand is a public API rename, not only a repository rename.
 
 Required public surface changes:
 
-- [ ] CLI executable: `repoindex` -> `codira`.
-- [ ] Python import package: `repoindex` -> `codira`.
-- [ ] First-party analyzer import packages:
-  - [ ] `repoindex_analyzer_python` -> `codira_analyzer_python`
-  - [ ] `repoindex_analyzer_json` -> `codira_analyzer_json`
-  - [ ] `repoindex_analyzer_c` -> `codira_analyzer_c`
-  - [ ] `repoindex_analyzer_bash` -> `codira_analyzer_bash`
-- [ ] First-party backend import package:
-  - [ ] `repoindex_backend_sqlite` -> `codira_backend_sqlite`
-- [ ] Example plugin import packages:
-  - [ ] `repoindex_demo_analyzer` -> `codira_demo_analyzer`
-  - [ ] `repoindex_demo_backend` -> `codira_demo_backend`
-- [ ] Plugin entry-point groups:
-  - [ ] `repoindex.analyzers` -> `codira.analyzers`
-  - [ ] `repoindex.backends` -> `codira.backends`
-- [ ] Repository-local state directory: `.repoindex` -> `.codira`.
-- [ ] Generated version file path: `src/repoindex/_version.py` ->
+- [x] CLI executable: `repoindex` -> `codira`.
+- [x] Python import package: `repoindex` -> `codira`.
+- [x] First-party analyzer import packages:
+  - [x] `repoindex_analyzer_python` -> `codira_analyzer_python`
+  - [x] `repoindex_analyzer_json` -> `codira_analyzer_json`
+  - [x] `repoindex_analyzer_c` -> `codira_analyzer_c`
+  - [x] `repoindex_analyzer_bash` -> `codira_analyzer_bash`
+- [x] First-party backend import package:
+  - [x] `repoindex_backend_sqlite` -> `codira_backend_sqlite`
+- [x] Example plugin import packages:
+  - [x] `repoindex_demo_analyzer` -> `codira_demo_analyzer`
+  - [x] `repoindex_demo_backend` -> `codira_demo_backend`
+- [x] Plugin entry-point groups:
+  - [x] `repoindex.analyzers` -> `codira.analyzers`
+  - [x] `repoindex.backends` -> `codira.backends`
+- [x] Repository-local state directory: `.repoindex` -> `.codira`.
+- [x] Generated version file path: `src/repoindex/_version.py` ->
   `src/codira/_version.py`.
-- [ ] Package data key: `repoindex = ["py.typed"]` ->
+- [x] Package data key: `repoindex = ["py.typed"]` ->
   `codira = ["py.typed"]`.
-- [ ] Documentation, examples, badges, scripts, release notes, and developer
+- [x] Documentation, examples, badges, scripts, release notes, and developer
   prompts use `codira` unless they intentionally describe archived history.
 
 Intentional historical references to `repoindex` are allowed only when they
@@ -112,27 +114,27 @@ The rebrand includes shortening subcommands while keeping them mnemonic.
 
 Accepted command names:
 
-- [ ] `index` remains `index`.
-- [ ] `coverage` becomes `cov`.
-- [ ] `symbol` becomes `sym`.
-- [ ] `embeddings` becomes `emb`.
-- [ ] `calls` remains `calls`.
-- [ ] `refs` remains `refs`.
-- [ ] `audit-docstrings` becomes `audit`.
-- [ ] `context-for` becomes `ctx`.
-- [ ] `plugins` remains `plugins`.
-- [ ] `help` remains `help`.
+- [x] `index` remains `index`.
+- [x] `coverage` becomes `cov`.
+- [x] `symbol` becomes `sym`.
+- [x] `embeddings` becomes `emb`.
+- [x] `calls` remains `calls`.
+- [x] `refs` remains `refs`.
+- [x] `audit-docstrings` becomes `audit`.
+- [x] `context-for` becomes `ctx`.
+- [x] `plugins` remains `plugins`.
+- [x] `help` remains `help`.
 
 Required CLI behavior:
 
-- [ ] `codira ctx` is the documented replacement for `repoindex context-for`.
-- [ ] `codira audit` is the documented replacement for
+- [x] `codira ctx` is the documented replacement for `repoindex context-for`.
+- [x] `codira audit` is the documented replacement for
   `repoindex audit-docstrings`.
-- [ ] `codira cov` is the documented replacement for `repoindex coverage`.
-- [ ] `codira sym` is the documented replacement for `repoindex symbol`.
-- [ ] `codira emb` is the documented replacement for `repoindex embeddings`.
-- [ ] Help text, examples, tests, and docs use only the new command names.
-- [ ] No old subcommand aliases are retained unless a later decision explicitly
+- [x] `codira cov` is the documented replacement for `repoindex coverage`.
+- [x] `codira sym` is the documented replacement for `repoindex symbol`.
+- [x] `codira emb` is the documented replacement for `repoindex embeddings`.
+- [x] Help text, examples, tests, and docs use only the new command names.
+- [x] No old subcommand aliases are retained unless a later decision explicitly
   adds a temporary compatibility phase.
 
 ## Phase 0 - Restore Tool Usability Before Rebranding
@@ -154,34 +156,34 @@ Tasks:
   installed in `.venv`.
 - [x] Fix the local developer bootstrap or installation flow so the active
   `.venv` can discover the first-party analyzer and backend entry points.
-- [x] Ensure `repoindex plugins --json` reports the expected first-party
+- [x] Ensure `codira plugins --json` reports the expected first-party
   analyzers and backend from installed distributions.
-- [x] Ensure `repoindex coverage --json` works from this repository root.
-  It currently reports incomplete coverage for `src/repoindex/py.typed`.
-- [x] Ensure `repoindex index --full --json` works from this repository root.
-- [x] Ensure `repoindex ctx "rename package metadata" --json` works from this
+- [x] Ensure `codira cov --json` works from this repository root.
+  It currently reports incomplete coverage for `src/codira/py.typed`.
+- [x] Ensure `codira index --full --json` works from this repository root.
+- [x] Ensure `codira ctx "rename package metadata" --json` works from this
   repository root after the subcommand-shortening implementation, or
-  `repoindex context-for "rename package metadata" --json` works before that
+  `codira ctx "rename package metadata" --json` works before that
   implementation.
 - [x] Run the same minimum tool-smoke sequence from one external repository:
-  - [x] `repoindex plugins --json`
-  - [x] `repoindex coverage --json`
-  - [x] `repoindex index --full --json`
+  - [x] `codira plugins --json`
+  - [x] `codira cov --json`
+  - [x] `codira index --full --json`
   - [x] one context retrieval query
 - [x] Add or update tests that would have caught missing analyzer discovery in
   the repository-local developer workflow.
 
 Exit criteria:
 
-- [x] `repoindex` can index and query this repository from the active `.venv`.
-- [x] `repoindex` can index and query at least one external repository from the
+- [x] `codira` can index and query this repository from the active `.venv`.
+- [x] `codira` can index and query at least one external repository from the
   active `.venv`.
 - [x] The fix is validated by the current repository contract.
 
 Phase 0 implementation note:
 
 - [x] The active `.venv` now points first-party editable installs at
-  `../repoindex-split-repos/`.
+  `../codira-split-repos/`.
 - [x] `scripts/install_first_party_packages.py` supports `--package-root` so
   maintainers can intentionally target exported split repositories.
 - [x] `tests/test_bootstrap_scripts.py` verifies the split-package-root install
@@ -192,7 +194,7 @@ Phase 0 implementation note:
 ## Phase 1 - Freeze And Audit The Starting State
 
 Goal:
-Record the last intentional `repoindex` state before modifying identity.
+Record the last intentional `codira` state before modifying identity.
 
 Tasks:
 
@@ -209,13 +211,13 @@ Tasks:
 - [x] Confirm no pending release artifacts remain in:
   - [x] `dist/`
   - [x] `build/`
-  - [x] `src/repoindex.egg-info/`
+  - [x] `src/codira.egg-info/`
   - [x] `packages/*/dist/`
   - [x] `packages/*/build/`
   - [x] `packages/*/src/*.egg-info/`
   - [x] `.artifacts/`
-  - [x] `.repoindex/`
-  - [x] `src/repoindex/_version.py`
+  - [x] `.codira/`
+  - [x] `src/codira/_version.py`
 - [x] Run repository cleanup only through repository-approved tooling.
 
 Exit criteria:
@@ -231,12 +233,12 @@ Phase 1 audit record:
 - [x] `git status --short` was clean before the Phase 1 ledger update.
 - [x] `git clean-repo` removed ignored build, cache, and package metadata
   artifacts.
-- [x] `source .venv/bin/activate && repoindex index --full --json` passed
+- [x] `source .venv/bin/activate && codira index --full --json` passed
   after cleanup with 93 indexed files and zero failures.
 - [x] Protected ignored runtime/generated state remains by repository policy:
-  - [x] `.repoindex/`
-  - [x] `src/repoindex/_version.py`
-- [x] These protected paths are intentionally still `repoindex` before the
+  - [x] `.codira/`
+  - [x] `src/codira/_version.py`
+- [x] These protected paths are intentionally still `codira` before the
   rebrand implementation. They must become `.codira/` and
   `src/codira/_version.py` when `scripts/clean_repo.py` is updated in
   Phase 4.
@@ -249,14 +251,14 @@ Phase 1 audit record:
   - [x] `codira-backend-sqlite`: 404
   - [x] `codira-bundle-official`: 404
 - [x] PyPI JSON endpoint status for old names on 2026-04-11:
-  - [x] `repoindex`: 200, occupied by package `repoindex` version `0.15.2`
+  - [x] `codira`: 200, occupied by package `codira` version `0.15.2`
     with summary `A collection-aware metadata index for git repositories`.
-  - [x] `repoindex-analyzer-python`: 404
-  - [x] `repoindex-analyzer-json`: 404
-  - [x] `repoindex-analyzer-c`: 404
-  - [x] `repoindex-analyzer-bash`: 404
-  - [x] `repoindex-backend-sqlite`: 404
-  - [x] `repoindex-bundle-official`: 404
+  - [x] `codira-analyzer-python`: 404
+  - [x] `codira-analyzer-json`: 404
+  - [x] `codira-analyzer-c`: 404
+  - [x] `codira-analyzer-bash`: 404
+  - [x] `codira-backend-sqlite`: 404
+  - [x] `codira-bundle-official`: 404
 
 ## Phase 2 - Triage GitHub Issues
 
@@ -265,9 +267,9 @@ Preserve only useful active work in the new `codira` issue tracker.
 
 Tasks:
 
-- [x] Keep the old `repoindex` repository public while issue triage is in
+- [x] Keep the old `codira` repository public while issue triage is in
   progress.
-- [x] Classify each current `repoindex` issue as:
+- [x] Classify each current `codira` issue as:
   - [x] still relevant to `codira`
   - [x] historical only
   - [x] obsolete
@@ -276,12 +278,12 @@ Tasks:
 - [ ] Transfer only still-relevant open issues in Phase 9 after the new
   `codira` repository exists.
 - [x] Leave closed, obsolete, and historical issues in the archived
-  `repoindex` repository.
+  `codira` repository.
 
 Exit criteria:
 
 - [ ] The new `codira` issue tracker contains only intentional active work.
-- [x] The old `repoindex` issue tracker remains available for history.
+- [x] The old `codira` issue tracker remains available for history.
 
 Phase 2 classification record:
 
@@ -295,7 +297,7 @@ Phase 2 classification record:
   - [x] `#8` - Makefile analyzer plugin
   - [x] `#14` - config-first analyzer-aware coverage roots
   - [x] `#15` - deterministic capability contract and analyzer declarations
-- [x] Closed historical issues to leave in archived `repoindex`:
+- [x] Closed historical issues to leave in archived `codira`:
   - [x] `#1` - real embeddings with deterministic invalidation
   - [x] `#2` - pluggable language analyzers
   - [x] `#7` - JSON language analyzer plugin
@@ -314,16 +316,16 @@ Create a clean target remote without disturbing the old repository location.
 Tasks:
 
 - [x] Create a new public GitHub repository named `codira`.
-- [x] Do not rename the old `repoindex` repository in place.
-- [x] Do not transfer the old `repoindex` repository.
-- [x] Do not create a new repository at the old `repoindex` location after any
+- [x] Do not rename the old `codira` repository in place.
+- [x] Do not transfer the old `codira` repository.
+- [x] Do not create a new repository at the old `codira` location after any
   rename or transfer operation.
 - [ ] Configure the new repository with the expected default branch, branch
   protection, Actions settings, and trusted publishing settings if used.
 
 Exit criteria:
 
-- [x] Old repository: `repoindex`, public, unchanged.
+- [x] Old repository: `codira`, public, unchanged.
 - [x] New repository: `codira`, public, ready to receive fresh history.
 
 Phase 3 repository record:
@@ -341,50 +343,50 @@ reviewable.
 
 Tasks:
 
-- [ ] Work in a copy or branch dedicated to the rebrand.
-- [ ] Rename `src/repoindex/` to `src/codira/`.
-- [ ] Rename package directories under `packages/`:
-  - [ ] `packages/repoindex-analyzer-python/` ->
+- [x] Work in a copy or branch dedicated to the rebrand.
+- [x] Rename `src/repoindex/` to `src/codira/`.
+- [x] Rename package directories under `packages/`:
+  - [x] `packages/repoindex-analyzer-python/` ->
     `packages/codira-analyzer-python/`
-  - [ ] `packages/repoindex-analyzer-json/` ->
+  - [x] `packages/repoindex-analyzer-json/` ->
     `packages/codira-analyzer-json/`
-  - [ ] `packages/repoindex-analyzer-c/` ->
+  - [x] `packages/repoindex-analyzer-c/` ->
     `packages/codira-analyzer-c/`
-  - [ ] `packages/repoindex-analyzer-bash/` ->
+  - [x] `packages/repoindex-analyzer-bash/` ->
     `packages/codira-analyzer-bash/`
-  - [ ] `packages/repoindex-backend-sqlite/` ->
+  - [x] `packages/repoindex-backend-sqlite/` ->
     `packages/codira-backend-sqlite/`
-  - [ ] `packages/repoindex-bundle-official/` ->
+  - [x] `packages/repoindex-bundle-official/` ->
     `packages/codira-bundle-official/`
-- [ ] Rename first-party package source roots under each package.
-- [ ] Rename example plugin directories and source roots.
-- [ ] Update root `pyproject.toml`.
-- [ ] Update every package `pyproject.toml`.
-- [ ] Update package dependencies and pins from `repoindex*` to `codira*`.
-- [ ] Update all imports from `repoindex` to `codira`.
-- [ ] Update all imports from `repoindex_*` first-party packages to
+- [x] Rename first-party package source roots under each package.
+- [x] Rename example plugin directories and source roots.
+- [x] Update root `pyproject.toml`.
+- [x] Update every package `pyproject.toml`.
+- [x] Update package dependencies and pins from `repoindex*` to `codira*`.
+- [x] Update all imports from `repoindex` to `codira`.
+- [x] Update all imports from `repoindex_*` first-party packages to
   `codira_*`.
-- [ ] Update plugin discovery entry-point groups to `codira.analyzers` and
+- [x] Update plugin discovery entry-point groups to `codira.analyzers` and
   `codira.backends`.
-- [ ] Update registry/discovery code and error messages.
-- [ ] Update the local state directory from `.repoindex` to `.codira`.
-- [ ] Update `scripts/clean_repo.py` protected paths from `.repoindex` and
+- [x] Update registry/discovery code and error messages.
+- [x] Update the local state directory from `.repoindex` to `.codira`.
+- [x] Update `scripts/clean_repo.py` protected paths from `.repoindex` and
   `src/repoindex/_version.py` to `.codira` and `src/codira/_version.py`.
-- [ ] Update scripts that own package inventories, release plans, split
+- [x] Update scripts that own package inventories, release plans, split
   manifests, bootstrap, cleanup, and Git aliases.
-- [ ] Update tests to assert the new package names, imports, entry points, CLI
+- [x] Update tests to assert the new package names, imports, entry points, CLI
   command names, cache directory, and error messages.
-- [ ] Update docs, README, MkDocs config, badges, examples, release docs,
+- [x] Update docs, README, MkDocs config, badges, examples, release docs,
   architecture docs, ADR references, and developer prompts.
-- [ ] Keep one explicit historical note in the new README:
+- [x] Keep one explicit historical note in the new README:
   `This project was initially developed under the working name repoindex and
   was renamed to codira before the codira public release.`
 
 Exit criteria:
 
-- [ ] No active code, metadata, test, script, or documentation reference still
+- [x] No active code, metadata, test, script, or documentation reference still
   uses `repoindex` except approved historical notes.
-- [ ] Public APIs use `codira*`.
+- [x] Public APIs use `codira*`.
 
 ## Phase 5 - Apply CLI Subcommand Shortening
 
@@ -393,22 +395,22 @@ Ship the new project identity with the shorter mnemonic command set.
 
 Tasks:
 
-- [ ] Update CLI parser command names.
-- [ ] Update dispatch logic for the new command names.
-- [ ] Update CLI usage examples.
-- [ ] Update README command walkthroughs.
-- [ ] Update AGENTS-style workflow snippets and developer prompts.
-- [ ] Update tests for command parsing and CLI behavior.
-- [ ] Update shell aliases and helper scripts from old commands to new
+- [x] Update CLI parser command names.
+- [x] Update dispatch logic for the new command names.
+- [x] Update CLI usage examples.
+- [x] Update README command walkthroughs.
+- [x] Update AGENTS-style workflow snippets and developer prompts.
+- [x] Update tests for command parsing and CLI behavior.
+- [x] Update shell aliases and helper scripts from old commands to new
   commands.
-- [ ] Confirm `codira --help` lists the new command set.
-- [ ] Confirm old command names are absent unless explicitly approved later.
+- [x] Confirm `codira --help` lists the new command set.
+- [x] Confirm old command names are absent unless explicitly approved later.
 
 Exit criteria:
 
-- [ ] `codira ctx`, `codira audit`, `codira cov`, `codira sym`, and
+- [x] `codira ctx`, `codira audit`, `codira cov`, `codira sym`, and
   `codira emb` work.
-- [ ] The documented CLI surface contains only the accepted new subcommand
+- [x] The documented CLI surface contains only the accepted new subcommand
   names.
 
 ## Phase 6 - Drift Audit
@@ -418,7 +420,7 @@ Find and classify every stale old-name reference before release.
 
 Tasks:
 
-- [ ] Run `rg -n "repoindex|repoindex-|repoindex_|\\.repoindex"`.
+- [ ] Run `rg -n "codira|codira-|codira_|\\.codira"`.
 - [ ] Run `rg -n "context-for|audit-docstrings|coverage|symbol|embeddings"`
   and classify remaining old subcommand references.
 - [ ] Inspect every remaining hit manually.
@@ -476,12 +478,12 @@ Exit criteria:
 ## Phase 8 - Create Fresh Public History
 
 Goal:
-Publish a clean `codira` history without old `repoindex` commit history.
+Publish a clean `codira` history without old `codira` commit history.
 
 Tasks:
 
 - [ ] Remove old `.git` metadata only in the prepared `codira` copy, not in the
-  source `repoindex` repository.
+  source `codira` repository.
 - [ ] Run `git init` in the prepared `codira` copy.
 - [ ] Create one initial commit containing the fully renamed, validated tree.
 - [ ] Add the new `codira` GitHub remote.
@@ -500,7 +502,7 @@ Move only intentionally active issue work to `codira`.
 
 Tasks:
 
-- [ ] Transfer selected open issues from `repoindex` to `codira`.
+- [ ] Transfer selected open issues from `codira` to `codira`.
 - [ ] Verify transferred issues have comments and assignees.
 - [ ] Verify labels and milestones are preserved where intended.
 - [ ] Verify old issue URLs redirect to the transferred issues where GitHub
@@ -509,7 +511,7 @@ Tasks:
 Exit criteria:
 
 - [ ] Active issue work lives in `codira`.
-- [ ] Historical issue work remains in `repoindex`.
+- [ ] Historical issue work remains in `codira`.
 
 ## Phase 10 - Archive The Old Repository
 
@@ -518,13 +520,13 @@ Freeze the old identity as historical reference.
 
 Tasks:
 
-- [ ] Update the old `repoindex` README with:
+- [ ] Update the old `codira` README with:
   - [ ] archived status
   - [ ] link to the new `codira` repository
   - [ ] note that active development moved to `codira`
   - [ ] note that the rename avoided conflict and confusion around the old
-    `repoindex` package identity
-- [ ] Archive the old `repoindex` repository on GitHub.
+    `codira` package identity
+- [ ] Archive the old `codira` repository on GitHub.
 - [ ] Keep the old repository public.
 
 Exit criteria:
@@ -556,7 +558,7 @@ Fresh-environment checks:
 - [ ] `codira plugins --json`
 - [ ] `codira index --full --json`
 - [ ] `codira ctx "package metadata rename" --json`
-- [ ] Confirm no installed distribution depends on `repoindex`.
+- [ ] Confirm no installed distribution depends on `codira`.
 
 Exit criteria:
 
@@ -585,7 +587,7 @@ Tasks:
 - [ ] Verify `pip install codira-bundle-official` in a fresh environment.
 - [ ] Verify `codira --help`.
 - [ ] Verify `codira plugins --json`.
-- [ ] Verify no dependency metadata points to `repoindex`.
+- [ ] Verify no dependency metadata points to `codira`.
 
 Exit criteria:
 
@@ -612,7 +614,7 @@ Tasks:
 Exit criteria:
 
 - [ ] The migration is complete.
-- [ ] Remaining `repoindex` references are historical and intentional.
+- [ ] Remaining `codira` references are historical and intentional.
 
 ## Validation Contract
 
@@ -639,4 +641,4 @@ leave the tree in a coherent state and should update this ledger when it
 completes a listed step.
 
 Do not combine unrelated behavior changes with the rebrand unless they are
-required to keep `repoindex` or `codira` usable as a tool during migration.
+required to keep `codira` or `codira` usable as a tool during migration.

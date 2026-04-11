@@ -6,14 +6,14 @@ The current repository has one concrete backend: SQLite.
 
 SQLite currently owns:
 
-- schema creation and refresh in `src/repoindex/storage.py`
+- schema creation and refresh in `src/codira/storage.py`
 - indexing-side persistence orchestration through `SQLiteIndexBackend` in
-  `src/repoindex/indexer.py`
-- exact-query execution in `src/repoindex/query/exact.py`
-- embedding inventory reads in `src/repoindex/query/exact.py`
+  `src/codira/indexer.py`
+- exact-query execution in `src/codira/query/exact.py`
+- embedding inventory reads in `src/codira/query/exact.py`
 - embedding vector retrieval for semantic search in
-  `src/repoindex/semantic/search.py`
-- repository-local storage paths under `.repoindex/`
+  `src/codira/semantic/search.py`
+- repository-local storage paths under `.codira/`
 - persisted runtime plugin inventory and per-file analyzer ownership metadata
 
 ## Current Constraints
@@ -30,7 +30,7 @@ artifacts, but query paths remain SQLite-specific until Phase 7.
 
 ## Phase-8 Selection Rules
 
-Phase 8 makes backend activation explicit through `src/repoindex/registry.py`.
+Phase 8 makes backend activation explicit through `src/codira/registry.py`.
 
 - the configured backend is read from `REPOINDEX_INDEX_BACKEND`
 - the default backend is `sqlite`

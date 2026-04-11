@@ -24,13 +24,13 @@ import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from repoindex_backend_sqlite import SQLiteIndexBackend
+from codira_backend_sqlite import SQLiteIndexBackend
 
-import repoindex.indexer as indexer_module
-import repoindex.registry as registry_module
-from repoindex.analyzers import BashAnalyzer, CAnalyzer, JsonAnalyzer, PythonAnalyzer
-from repoindex.analyzers.c import _disambiguate_function_stable_ids
-from repoindex.contracts import (
+import codira.indexer as indexer_module
+import codira.registry as registry_module
+from codira.analyzers import BashAnalyzer, CAnalyzer, JsonAnalyzer, PythonAnalyzer
+from codira.analyzers.c import _disambiguate_function_stable_ids
+from codira.contracts import (
     KNOWN_RETRIEVAL_CAPABILITIES,
     IndexBackend,
     LanguageAnalyzer,
@@ -38,33 +38,33 @@ from repoindex.contracts import (
     RetrievalProducerInfo,
     split_declared_retrieval_capabilities,
 )
-from repoindex.indexer import (
+from codira.indexer import (
     _collect_indexed_file_analyses,
     _select_language_analyzer,
     index_repo,
 )
-from repoindex.models import (
+from codira.models import (
     AnalysisResult,
     CallSite,
     FileMetadataSnapshot,
     FunctionArtifact,
     ModuleArtifact,
 )
-from repoindex.normalization import analysis_result_from_parsed
-from repoindex.parser_ast import parse_file
-from repoindex.query.producers import (
+from codira.normalization import analysis_result_from_parsed
+from codira.parser_ast import parse_file
+from codira.query.producers import (
     CALL_GRAPH_RETRIEVAL_PRODUCER,
     EMBEDDING_RETRIEVAL_PRODUCER,
     INCLUDE_GRAPH_RETRIEVAL_PRODUCER,
     REFERENCE_RETRIEVAL_PRODUCER,
 )
-from repoindex.registry import (
+from codira.registry import (
     _instantiate_language_analyzers,
     active_index_backend,
     active_language_analyzers,
     missing_language_analyzer_hint,
 )
-from repoindex.semantic.embeddings import (
+from codira.semantic.embeddings import (
     EMBEDDING_BACKEND,
     EMBEDDING_DIM,
     EMBEDDING_VERSION,
@@ -72,12 +72,12 @@ from repoindex.semantic.embeddings import (
 
 if TYPE_CHECKING:
     from pytest import MonkeyPatch
-from repoindex.scanner import (
+from codira.scanner import (
     discovery_file_globs,
     iter_canonical_project_files,
     iter_project_files,
 )
-from repoindex.storage import get_db_path
+from codira.storage import get_db_path
 
 
 class _FakeAnalyzer:
@@ -116,7 +116,7 @@ class _FakeAnalyzer:
 
         Returns
         -------
-        repoindex.models.AnalysisResult
+        codira.models.AnalysisResult
             Normalized analysis result for the file.
         """
         parsed = parse_file(path, root)
@@ -298,9 +298,9 @@ class _FakeBackend:
         ----------
         root : pathlib.Path
             Repository root.
-        file_metadata : repoindex.models.FileMetadataSnapshot
+        file_metadata : codira.models.FileMetadataSnapshot
             Stable file metadata snapshot.
-        analysis : repoindex.models.AnalysisResult
+        analysis : codira.models.AnalysisResult
             Normalized analyzer output.
 
         Returns
@@ -741,7 +741,7 @@ class _FakeRetrievalProducer:
 
         Returns
         -------
-        repoindex.contracts.RetrievalProducerInfo
+        codira.contracts.RetrievalProducerInfo
             Producer and capability-version metadata.
         """
         return RetrievalProducerInfo(
@@ -1005,11 +1005,11 @@ def test_root_optional_dependencies_support_monorepo_bundle_install() -> None:
     ]
     assert optional_dependencies["bundle-official"] == [
         "sentence-transformers>=3.0",
-        "repoindex-analyzer-python==2.0.0",
-        "repoindex-analyzer-json==2.0.0",
-        "repoindex-analyzer-c==2.0.0",
-        "repoindex-analyzer-bash==2.0.0",
-        "repoindex-backend-sqlite==2.0.0",
+        "codira-analyzer-python==1.0.0",
+        "codira-analyzer-json==1.0.0",
+        "codira-analyzer-c==1.0.0",
+        "codira-analyzer-bash==1.0.0",
+        "codira-backend-sqlite==1.0.0",
     ]
 
 
@@ -1118,7 +1118,7 @@ def test_active_language_analyzers_skip_optional_c_when_dependencies_missing(
         msg = "expected ValueError when no analyzers are registered"
         raise AssertionError(msg)
 
-    assert message == "No language analyzers are registered for repoindex"
+    assert message == "No language analyzers are registered for codira"
 
 
 def test_json_analyzer_extracts_module_metadata_from_json_schema(
@@ -1137,14 +1137,14 @@ def test_json_analyzer_extracts_module_metadata_from_json_schema(
     None
         The test asserts schema documents become stable module artifacts.
     """
-    source = tmp_path / "src" / "repoindex" / "schema" / "context.schema.json"
+    source = tmp_path / "src" / "codira" / "schema" / "context.schema.json"
     source.parent.mkdir(parents=True)
     source.write_text(
         json.dumps(
             {
                 "$schema": "http://json-schema.org/draft-07/schema#",
-                "title": "repoindex context output",
-                "description": "Validate context-for JSON output.",
+                "title": "codira context output",
+                "description": "Validate ctx JSON output.",
                 "type": "object",
             }
         ),
@@ -1153,14 +1153,13 @@ def test_json_analyzer_extracts_module_metadata_from_json_schema(
 
     result = JsonAnalyzer().analyze_file(source, tmp_path)
 
-    assert result.module.name == "src.repoindex.schema.context_schema"
+    assert result.module.name == "src.codira.schema.context_schema"
     assert (
-        result.module.stable_id
-        == "json:module:src/repoindex/schema/context.schema.json"
+        result.module.stable_id == "json:module:src/codira/schema/context.schema.json"
     )
     assert (
         result.module.docstring
-        == "JSON Schema: repoindex context output. Validate context-for JSON output."
+        == "JSON Schema: codira context output. Validate ctx JSON output."
     )
     assert result.classes == ()
     assert result.functions == ()
@@ -1205,7 +1204,7 @@ def test_json_analyzer_extracts_schema_properties_and_definitions(
     None
         The test asserts the JSON analyzer emits schema-specific declarations.
     """
-    source = tmp_path / "src" / "repoindex" / "schema" / "example.schema.json"
+    source = tmp_path / "src" / "codira" / "schema" / "example.schema.json"
     source.parent.mkdir(parents=True)
     source.write_text(
         json.dumps(
@@ -1279,7 +1278,7 @@ def test_json_analyzer_extracts_package_manifest_symbols(tmp_path: Path) -> None
     source.write_text(
         json.dumps(
             {
-                "name": "repoindex-release",
+                "name": "codira-release",
                 "version": "1.2.3",
                 "scripts": {"release": "semantic-release"},
                 "devDependencies": {"semantic-release": "^23.0.0"},
@@ -1295,8 +1294,8 @@ def test_json_analyzer_extracts_package_manifest_symbols(tmp_path: Path) -> None
 
     assert (
         "json_manifest_name",
-        "repoindex-release",
-        "package name=repoindex-release version=1.2.3",
+        "codira-release",
+        "package name=codira-release version=1.2.3",
     ) in declaration_rows
     assert (
         "json_manifest_script",
@@ -1403,7 +1402,7 @@ def test_select_language_analyzer_reports_optional_extra_hint(
         raise AssertionError(msg)
 
     assert "No language analyzer registered for path: native/sample.c" in message
-    assert "repoindex-analyzer-c" in message
+    assert "codira-analyzer-c" in message
     assert missing_language_analyzer_hint(Path("native/sample.c")) is not None
 
 
@@ -1445,7 +1444,7 @@ def test_select_language_analyzer_reports_python_package_hint(
         raise AssertionError(msg)
 
     assert "No language analyzer registered for path: pkg/sample.py" in message
-    assert "repoindex-analyzer-python" in message
+    assert "codira-analyzer-python" in message
     assert missing_language_analyzer_hint(Path("pkg/sample.py")) is not None
 
 
@@ -1487,7 +1486,7 @@ def test_select_language_analyzer_reports_json_package_hint(
         raise AssertionError(msg)
 
     assert "No language analyzer registered for path: package.json" in message
-    assert "repoindex-analyzer-json" in message
+    assert "codira-analyzer-json" in message
     assert missing_language_analyzer_hint(Path("package.json")) is not None
 
 
@@ -2592,7 +2591,7 @@ def test_active_index_backend_rejects_unknown_configured_backend(
     ValueError
         Raised when the configured backend name is not registered.
     """
-    monkeypatch.setenv("REPOINDEX_INDEX_BACKEND", "unknown")
+    monkeypatch.setenv("CODIRA_INDEX_BACKEND", "unknown")
 
     try:
         active_index_backend()
@@ -2602,7 +2601,7 @@ def test_active_index_backend_rejects_unknown_configured_backend(
         msg = "expected ValueError for unsupported backend"
         raise AssertionError(msg)
 
-    assert "Unsupported repoindex backend 'unknown'" in message
+    assert "Unsupported codira backend 'unknown'" in message
     assert "sqlite" in message
 
 
@@ -2638,8 +2637,8 @@ def test_active_index_backend_mentions_first_party_sqlite_package_when_missing(
         msg = "expected ValueError when no backend plugins are registered"
         raise AssertionError(msg)
 
-    assert "repoindex-backend-sqlite" in message
-    assert "repoindex-bundle-official" in message
+    assert "codira-backend-sqlite" in message
+    assert "codira-bundle-official" in message
 
 
 def test_instantiating_language_analyzers_requires_a_non_empty_registry() -> None:
@@ -2664,7 +2663,7 @@ def test_instantiating_language_analyzers_requires_a_non_empty_registry() -> Non
     try:
         _instantiate_language_analyzers(())
     except ValueError as exc:
-        assert str(exc) == "No language analyzers are registered for repoindex"
+        assert str(exc) == "No language analyzers are registered for codira"
     else:
         msg = "expected ValueError for empty analyzer registry"
         raise AssertionError(msg)

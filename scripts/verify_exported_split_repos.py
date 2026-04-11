@@ -4,7 +4,7 @@
 Responsibilities
 ----------------
 - Build the deterministic pre-publish validation plan for exported split repositories.
-- Ensure package repos install against the local core checkout rather than an unrelated published `repoindex`.
+- Ensure package repos install against the local core checkout rather than an unrelated published `codira`.
 - Validate the exported bundle repository only after the local first-party package set is installed.
 
 Design principles
@@ -28,13 +28,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 PACKAGE_REPOS: tuple[str, ...] = (
-    "repoindex-analyzer-python",
-    "repoindex-analyzer-json",
-    "repoindex-analyzer-c",
-    "repoindex-analyzer-bash",
-    "repoindex-backend-sqlite",
+    "codira-analyzer-python",
+    "codira-analyzer-json",
+    "codira-analyzer-c",
+    "codira-analyzer-bash",
+    "codira-backend-sqlite",
 )
-BUNDLE_REPO = "repoindex-bundle-official"
+BUNDLE_REPO = "codira-bundle-official"
 
 
 def split_repo_names() -> tuple[str, ...]:
@@ -69,7 +69,7 @@ def build_repo_validation_commands(
     exported_repo_root : pathlib.Path
         Exported split repository directory to validate.
     core_repo_root : pathlib.Path
-        Local core checkout used to satisfy the `repoindex` dependency.
+        Local core checkout used to satisfy the `codira` dependency.
 
     Returns
     -------
@@ -137,7 +137,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         description=(
-            "Verify exported split repositories against the local repoindex core "
+            "Verify exported split repositories against the local codira core "
             "checkout before publication."
         )
     )
@@ -155,7 +155,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--core-repo-root",
         type=Path,
         default=REPO_ROOT,
-        help="Local repoindex checkout used to satisfy the core dependency.",
+        help="Local codira checkout used to satisfy the core dependency.",
     )
     parser.add_argument(
         "--dry-run",

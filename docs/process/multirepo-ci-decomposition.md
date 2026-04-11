@@ -23,7 +23,7 @@ The regression coverage for that contract lives in:
 
 Repository:
 
-* `repoindex`
+* `codira`
 
 Purpose:
 
@@ -61,11 +61,11 @@ Notes:
 
 Repositories:
 
-* `repoindex-analyzer-python`
-* `repoindex-analyzer-json`
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
-* `repoindex-backend-sqlite`
+* `codira-analyzer-python`
+* `codira-analyzer-json`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
+* `codira-backend-sqlite`
 
 Install command:
 
@@ -87,7 +87,7 @@ Notes:
 * Each package now has package-local tests under its own `tests/` directory.
 * Package-local README verification snippets already point at those test paths.
 * Before the first publish, local split-repo rehearsal should install the
-  current core checkout explicitly rather than resolving `repoindex` from an
+  current core checkout explicitly rather than resolving `codira` from an
   index. Use `scripts/verify_exported_split_repos.py` from the monorepo for
   that pre-publish validation pass.
 
@@ -95,7 +95,7 @@ Notes:
 
 Repository:
 
-* `repoindex-bundle-official`
+* `codira-bundle-official`
 
 Install command:
 

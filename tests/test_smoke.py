@@ -1,10 +1,10 @@
-"""Smoke tests for repoindex CLI and retrieval workflows.
+"""Smoke tests for codira CLI and retrieval workflows.
 
 Responsibilities
 ----------------
-- Run the `repoindex` CLI to ensure indexing, context, and docstring diagnostics succeed end-to-end.
+- Run the `codira` CLI to ensure indexing, context, and docstring diagnostics succeed end-to-end.
 - Validate deterministic outputs from exact, semantic, and embedding channels using a minimal fixture repository.
-- Confirm regression coverage for default CLI behaviors such as `context-for` and docstring reporting.
+- Confirm regression coverage for default CLI behaviors such as `ctx` and docstring reporting.
 
 Design principles
 -----------------
@@ -24,9 +24,9 @@ if TYPE_CHECKING:
 
 import sqlite3
 
-from repoindex.indexer import index_repo
-from repoindex.query.exact import docstring_issues, find_symbol
-from repoindex.storage import get_db_path, init_db
+from codira.indexer import index_repo
+from codira.query.exact import docstring_issues, find_symbol
+from codira.storage import get_db_path, init_db
 
 
 def test_index_and_queries(tmp_path: Path) -> None:

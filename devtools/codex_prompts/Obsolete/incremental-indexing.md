@@ -1,12 +1,12 @@
-# PHASE X — Incremental Indexing for repoindex
-PROJECT: repoindex
+# PHASE X — Incremental Indexing for codira
+PROJECT: codira
 ROLE: Senior Engineer
 MODE: HARD-FAIL DETERMINISTIC
 BRANCH: dev/incremental-indexing
 
 OBJECTIVE
 ---------
-Introduce incremental indexing so that re-running `repoindex index`:
+Introduce incremental indexing so that re-running `codira index`:
 
 • reuses existing index data
 • only reindexes changed files
@@ -30,10 +30,10 @@ The following are authoritative:
 
 1. The repository snapshot (SOT archive)
 2. Existing indexing pipeline under:
-   - src/repoindex/indexer.py
-   - src/repoindex/scanner.py
-   - src/repoindex/storage.py
-   - src/repoindex/models.py
+   - src/codira/indexer.py
+   - src/codira/scanner.py
+   - src/codira/storage.py
+   - src/codira/models.py
 3. Existing database schema (SQLite)
 
 Rules:
@@ -118,7 +118,7 @@ This must be deterministic and auditable.
 CLI BEHAVIOR
 ────────────────────────────────────────────
 
-`repoindex index` should:
+`codira index` should:
 
 • perform incremental indexing by default
 • support a `--full` flag to force full rebuild

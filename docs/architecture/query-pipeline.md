@@ -1,11 +1,11 @@
 # Query Pipeline
 
-The current query surface is exposed through `src/repoindex/cli.py` and backed
+The current query surface is exposed through `src/codira/cli.py` and backed
 by two query families:
 
-- exact lookups in `src/repoindex/query/exact.py`
-- embedding-assisted retrieval in `src/repoindex/semantic/search.py` and
-  `src/repoindex/query/context.py`
+- exact lookups in `src/codira/query/exact.py`
+- embedding-assisted retrieval in `src/codira/semantic/search.py` and
+  `src/codira/query/context.py`
 
 ## Exact Query Flow
 
@@ -37,7 +37,7 @@ output also reports the active embedding backend metadata so retrieval
 diagnostics can be tied to a concrete backend contract.
 
 Phase 17 adds an explicit retrieval planner in
-`src/repoindex/query/classifier.py`. The planner classifies each query into a
+`src/codira/query/classifier.py`. The planner classifies each query into a
 deterministic primary intent family:
 
 - behavior or implementation
@@ -61,7 +61,7 @@ and include-graph data twice but in bounded forms:
 - as bounded post-merge expansion around the current top matches
 
 The current capability-driven retrieval path also owns shared retrieval
-producer metadata in `src/repoindex/query/producers.py`.
+producer metadata in `src/codira/query/producers.py`.
 
 That layer now declares:
 
@@ -74,7 +74,7 @@ built-in analyzers to implement retrieval capabilities directly, and it must
 not depend on analyzer internals to rank evidence.
 
 Phase 7 also moves the embedding channel behind backend methods. The semantic
-wrapper in `src/repoindex/semantic/search.py` now delegates to the active
+wrapper in `src/codira/semantic/search.py` now delegates to the active
 backend instead of owning direct SQL access to the embedding tables.
 
 ## ADR-004 Query Implication
@@ -85,7 +85,7 @@ build registries and alternate backends against that seam instead of patching
 query modules directly.
 
 Phase 8 completes the backend-selection side of that boundary by routing query
-entry points through `repoindex.registry.active_index_backend()`.
+entry points through `codira.registry.active_index_backend()`.
 
 Phases 12 through 17 complete the ranking and retrieval side by adding:
 

@@ -15,11 +15,11 @@ It exists to answer one question precisely:
 The current retrieval path is not analyzer-driven at ranking time. It is built
  from a mix of producer shapes:
 
-1. planner output from `src/repoindex/query/classifier.py`
-2. exact backend-backed lookups from `src/repoindex/query/exact.py`
-3. embedding retrieval from `src/repoindex/semantic/search.py`
-4. context-local channel functions in `src/repoindex/query/context.py`
-5. graph and issue enrichments also implemented in `src/repoindex/query/context.py`
+1. planner output from `src/codira/query/classifier.py`
+2. exact backend-backed lookups from `src/codira/query/exact.py`
+3. embedding retrieval from `src/codira/semantic/search.py`
+4. context-local channel functions in `src/codira/query/context.py`
+5. graph and issue enrichments also implemented in `src/codira/query/context.py`
 
 The active runtime "producer" concept is therefore implicit and currently more
 channel-shaped than analyzer-shaped.

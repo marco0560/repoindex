@@ -1,10 +1,10 @@
 # Analyzer Plugins
 
 Analyzer plugins must return an object implementing
-`repoindex.contracts.LanguageAnalyzer`.
+`codira.contracts.LanguageAnalyzer`.
 
 The smallest working example lives at
-`examples/plugins/repoindex_demo_analyzer`.
+`examples/plugins/codira_demo_analyzer`.
 
 Required attributes and methods:
 
@@ -19,8 +19,8 @@ Minimal example:
 ```python
 from pathlib import Path
 
-from repoindex.contracts import LanguageAnalyzer
-from repoindex.models import AnalysisResult, ModuleArtifact
+from codira.contracts import LanguageAnalyzer
+from codira.models import AnalysisResult, ModuleArtifact
 
 
 class DemoAnalyzer:
@@ -56,8 +56,8 @@ def build_analyzer() -> LanguageAnalyzer:
 Register it in `pyproject.toml`:
 
 ```toml
-[project.entry-points."repoindex.analyzers"]
-demo = "repoindex_demo_analyzer:build_analyzer"
+[project.entry-points."codira.analyzers"]
+demo = "codira_demo_analyzer:build_analyzer"
 ```
 
 Rules:
@@ -72,6 +72,6 @@ Rules:
   `supports_path()` deterministically rejects unsupported files
 - uncovered tracked files under `src/`, `tests/`, and `scripts/` will be
   surfaced by the index coverage audit when no analyzer claims them
-- `repoindex coverage` is the operator-facing way to verify whether your
+- `codira cov` is the operator-facing way to verify whether your
   analyzer closes those gaps
 - analyzers must not own storage or query persistence

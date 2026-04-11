@@ -65,7 +65,7 @@ def future_repo_ci_specs() -> tuple[FutureRepoCISpec, ...]:
     )
     return (
         FutureRepoCISpec(
-            repository="repoindex",
+            repository="codira",
             purpose="core platform and cross-package integration",
             install=(
                 ("python", "-m", "pip", "install", "--upgrade", "pip"),
@@ -80,37 +80,37 @@ def future_repo_ci_specs() -> tuple[FutureRepoCISpec, ...]:
             ),
         ),
         FutureRepoCISpec(
-            repository="repoindex-analyzer-python",
+            repository="codira-analyzer-python",
             purpose="first-party Python analyzer plugin",
             install=(("python", "-m", "pip", "install", "-e", ".[test]"),),
             validate=package_validate,
         ),
         FutureRepoCISpec(
-            repository="repoindex-analyzer-json",
+            repository="codira-analyzer-json",
             purpose="first-party JSON analyzer plugin",
             install=(("python", "-m", "pip", "install", "-e", ".[test]"),),
             validate=package_validate,
         ),
         FutureRepoCISpec(
-            repository="repoindex-analyzer-c",
+            repository="codira-analyzer-c",
             purpose="first-party C analyzer plugin",
             install=(("python", "-m", "pip", "install", "-e", ".[test]"),),
             validate=package_validate,
         ),
         FutureRepoCISpec(
-            repository="repoindex-analyzer-bash",
+            repository="codira-analyzer-bash",
             purpose="first-party Bash analyzer plugin",
             install=(("python", "-m", "pip", "install", "-e", ".[test]"),),
             validate=package_validate,
         ),
         FutureRepoCISpec(
-            repository="repoindex-backend-sqlite",
+            repository="codira-backend-sqlite",
             purpose="first-party SQLite backend plugin",
             install=(("python", "-m", "pip", "install", "-e", ".[test]"),),
             validate=package_validate,
         ),
         FutureRepoCISpec(
-            repository="repoindex-bundle-official",
+            repository="codira-bundle-official",
             purpose="curated first-party bundle package",
             install=(("python", "-m", "pip", "install", "-e", ".[test]"),),
             validate=(

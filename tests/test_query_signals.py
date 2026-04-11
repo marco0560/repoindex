@@ -17,8 +17,8 @@ This module belongs to the **retrieval normalization verification layer** that p
 
 from __future__ import annotations
 
-from repoindex.query.producers import CALL_GRAPH_RETRIEVAL_PRODUCER
-from repoindex.query.signals import RetrievalSignal, signal_sort_key
+from codira.query.producers import CALL_GRAPH_RETRIEVAL_PRODUCER
+from codira.query.signals import RetrievalSignal, signal_sort_key
 
 
 def _symbol(

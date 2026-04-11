@@ -1,10 +1,10 @@
 # Backend Plugins
 
 Backend plugins must return an object implementing
-`repoindex.contracts.IndexBackend`.
+`codira.contracts.IndexBackend`.
 
 The smallest working example lives at
-`examples/plugins/repoindex_demo_backend`.
+`examples/plugins/codira_demo_backend`.
 
 Backends are different from analyzers:
 
@@ -15,15 +15,15 @@ Backends are different from analyzers:
 Register a backend:
 
 ```toml
-[project.entry-points."repoindex.backends"]
-demo = "repoindex_demo_backend:build_backend"
+[project.entry-points."codira.backends"]
+demo = "codira_demo_backend:build_backend"
 ```
 
 Select it:
 
 ```bash
 export REPOINDEX_INDEX_BACKEND=demo-backend
-repoindex index
+codira index
 ```
 
 Rules:

@@ -50,10 +50,7 @@ def git_alias_entries() -> list[tuple[str, str]]:
         ),
         (
             "alias.ctx",
-            (
-                "!f(){ bash scripts/run_with_repo_python.sh -m repoindex "
-                'context-for "$@"; }; f'
-            ),
+            ("!f(){ bash scripts/run_with_repo_python.sh -m codira " 'ctx "$@"; }; f'),
         ),
         (
             "alias.check",
@@ -89,7 +86,7 @@ def git_alias_entries() -> list[tuple[str, str]]:
             (
                 "!f() { rm -f issues.json; timeout 10s gh api graphql "
                 '-f query=\'query {repository(owner: "marco0560", '
-                'name: "repoindex") {issues(first: 100, states: OPEN, '
+                'name: "codira") {issues(first: 100, states: OPEN, '
                 "orderBy: {field: CREATED_AT, direction: ASC}) {nodes "
                 "{number, title, body, url, labels(first: 20) "
                 "{nodes {name}}, milestone {number, title}, comments "

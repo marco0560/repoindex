@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This note records the maintainer workflow for publishing `repoindex` and its
+This note records the maintainer workflow for publishing `codira` and its
 first-party plugin packages so end users can install the official bundle
 through standard `pip` package-name resolution.
 
@@ -23,32 +23,32 @@ checkout.
 
 The final repository set contains these installable distributions:
 
-* `repoindex`
-* `repoindex-analyzer-python`
-* `repoindex-analyzer-json`
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
-* `repoindex-backend-sqlite`
-* `repoindex-bundle-official`
+* `codira`
+* `codira-analyzer-python`
+* `codira-analyzer-json`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
+* `codira-backend-sqlite`
+* `codira-bundle-official`
 
 The intended end-user install target is:
 
 ```bash
-pip install repoindex-bundle-official
+pip install codira-bundle-official
 ```
 
 The compatible extra-based surface remains:
 
 ```bash
-pip install "repoindex[bundle-official]"
+pip install "codira[bundle-official]"
 ```
 
 ## How `pip` Resolves Package Names
 
 When `pip` sees a dependency such as:
 
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
 * `sentence-transformers>=3.0`
 
 it does not inspect arbitrary subdirectories in a Git checkout.
@@ -59,7 +59,7 @@ Instead it:
 2. asks the configured package index for each dependency name
 3. downloads a wheel or source distribution for each resolved package
 
-That means a monorepo layout such as `packages/repoindex-analyzer-c/` is not
+That means a monorepo layout such as `packages/codira-analyzer-c/` is not
 enough by itself for normal end-user installation. For `pip` to resolve those
 names seamlessly, the packages must be published to a package index or
 installed explicitly by path.
@@ -69,13 +69,13 @@ installed explicitly by path.
 For the official bundle experience to work without local-path knowledge,
 publish at least:
 
-* `repoindex`
-* `repoindex-analyzer-python`
-* `repoindex-analyzer-json`
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
-* `repoindex-backend-sqlite`
-* `repoindex-bundle-official`
+* `codira`
+* `codira-analyzer-python`
+* `codira-analyzer-json`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
+* `codira-backend-sqlite`
+* `codira-bundle-official`
 
 The bundle package is the primary end-user target. The root extra remains a
 compatible secondary surface.
@@ -85,7 +85,7 @@ compatible secondary surface.
 The initial `v2.0.0` publish is coordinated:
 
 * every first-party distribution publishes `2.0.0`
-* `repoindex-bundle-official` pins the matching `2.0.0` package set
+* `codira-bundle-official` pins the matching `2.0.0` package set
 * release notes are coordinated across repositories
 * artifacts are built from the split repositories
 
@@ -149,43 +149,43 @@ Do not publish `v2.0.0` directly from the monorepo staging checkout.
 
 From each split repository root:
 
-Build `repoindex`:
+Build `codira`:
 
 ```bash
 python -m build
 ```
 
-Build `repoindex-analyzer-c`:
+Build `codira-analyzer-c`:
 
 ```bash
 python -m build
 ```
 
-Build `repoindex-analyzer-python`:
+Build `codira-analyzer-python`:
 
 ```bash
 python -m build
 ```
 
-Build `repoindex-analyzer-json`:
+Build `codira-analyzer-json`:
 
 ```bash
 python -m build
 ```
 
-Build `repoindex-analyzer-bash`:
+Build `codira-analyzer-bash`:
 
 ```bash
 python -m build
 ```
 
-Build `repoindex-backend-sqlite`:
+Build `codira-backend-sqlite`:
 
 ```bash
 python -m build
 ```
 
-Build `repoindex-bundle-official`:
+Build `codira-bundle-official`:
 
 ```bash
 python -m build
@@ -203,13 +203,13 @@ python -m twine check dist/*
 
 Publish in this order:
 
-1. `repoindex-analyzer-python`
-2. `repoindex-analyzer-json`
-3. `repoindex-analyzer-c`
-4. `repoindex-analyzer-bash`
-5. `repoindex-backend-sqlite`
-6. `repoindex`
-7. `repoindex-bundle-official`
+1. `codira-analyzer-python`
+2. `codira-analyzer-json`
+3. `codira-analyzer-c`
+4. `codira-analyzer-bash`
+5. `codira-backend-sqlite`
+6. `codira`
+7. `codira-bundle-official`
 
 This ensures that when the root package or bundle resolves dependency names,
 the analyzer distributions already exist in the package index.
@@ -230,8 +230,8 @@ source /tmp/ri-test/bin/activate
 pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  repoindex-bundle-official
-repoindex plugins
+  codira-bundle-official
+codira plugins
 ```
 
 The extra PyPI index is needed because TestPyPI typically does not host common
@@ -252,8 +252,8 @@ In a fresh environment:
 ```bash
 python -m venv /tmp/ri-prod
 source /tmp/ri-prod/bin/activate
-pip install repoindex-bundle-official
-repoindex plugins
+pip install codira-bundle-official
+codira plugins
 ```
 
 Verify that the expected official analyzers and the SQLite backend are discoverable.

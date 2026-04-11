@@ -26,12 +26,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 FIRST_PARTY_PACKAGE_DIRS: tuple[str, ...] = (
-    "packages/repoindex-analyzer-python",
-    "packages/repoindex-analyzer-json",
-    "packages/repoindex-analyzer-c",
-    "packages/repoindex-analyzer-bash",
-    "packages/repoindex-backend-sqlite",
-    "packages/repoindex-bundle-official",
+    "packages/codira-analyzer-python",
+    "packages/codira-analyzer-json",
+    "packages/codira-analyzer-c",
+    "packages/codira-analyzer-bash",
+    "packages/codira-backend-sqlite",
+    "packages/codira-bundle-official",
 )
 
 

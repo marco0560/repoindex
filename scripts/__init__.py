@@ -1,1 +1,1 @@
-"""Standalone developer tooling scripts for repoindex."""
+"""Standalone developer tooling scripts for codira."""

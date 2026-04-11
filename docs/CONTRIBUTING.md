@@ -54,7 +54,7 @@ Repository branch and ADR workflow guidance is documented in:
 Before broad patching work:
 
 ```bash
-repoindex context-for "<query>" --json
+codira ctx "<query>" --json
 ```
 
 Use `rg` first when you need to verify candidate symbols or files.

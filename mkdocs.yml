@@ -1,9 +1,9 @@
-site_name: repoindex
+site_name: codira
 site_description: Repository-local indexing and context retrieval for agent-assisted development
 site_author: Marco Coppola
 
-repo_name: repoindex
-repo_url: https://github.com/marco0560/repoindex
+repo_name: codira
+repo_url: https://github.com/marco0560/codira
 edit_uri: edit/main/docs/
 
 theme:

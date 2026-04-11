@@ -1,6 +1,6 @@
 # System Overview
 
-`repoindex` currently consists of four practical layers:
+`codira` currently consists of four practical layers:
 
 | Layer | Current responsibility |
 | --- | --- |
@@ -12,25 +12,25 @@
 The implementation is intentionally repository-local:
 
 - the CLI operates relative to the current repository root
-- index data lives under `.repoindex/`
+- index data lives under `.codira/`
 - exact and semantic query paths read the same SQLite database
 
 ## Current Module Shape
 
 The current branch centers on these modules:
 
-- `src/repoindex/cli.py` for command parsing and output formatting
-- `src/repoindex/scanner.py` for Git-backed file discovery with filesystem
+- `src/codira/cli.py` for command parsing and output formatting
+- `src/codira/scanner.py` for Git-backed file discovery with filesystem
   fallback
-- `src/repoindex/registry.py` for backend selection and analyzer activation
-- `src/repoindex/indexer.py` for incremental orchestration and SQLite backend
+- `src/codira/registry.py` for backend selection and analyzer activation
+- `src/codira/indexer.py` for incremental orchestration and SQLite backend
   persistence/query implementation
-- `src/repoindex/analyzers/python.py` and `src/repoindex/analyzers/c.py` for
+- `src/codira/analyzers/python.py` and `src/codira/analyzers/c.py` for
   language-specific analysis
-- `src/repoindex/storage.py` for SQLite initialization and schema refresh
-- `src/repoindex/query/exact.py` for exact lookup helpers
-- `src/repoindex/query/producers.py` for shared retrieval producer metadata
-- `src/repoindex/query/context.py` and `src/repoindex/semantic/search.py` for
+- `src/codira/storage.py` for SQLite initialization and schema refresh
+- `src/codira/query/exact.py` for exact lookup helpers
+- `src/codira/query/producers.py` for shared retrieval producer metadata
+- `src/codira/query/context.py` and `src/codira/semantic/search.py` for
   context retrieval and embedding-backed ranking
 
 ## ADR-004 Boundary

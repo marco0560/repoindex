@@ -15,13 +15,13 @@
 
 `ADR-012` then fixes the Phase 2 package set that the split must preserve:
 
-* `repoindex`
-* `repoindex-analyzer-python`
-* `repoindex-analyzer-json`
-* `repoindex-analyzer-c`
-* `repoindex-analyzer-bash`
-* `repoindex-backend-sqlite`
-* `repoindex-bundle-official`
+* `codira`
+* `codira-analyzer-python`
+* `codira-analyzer-json`
+* `codira-analyzer-c`
+* `codira-analyzer-bash`
+* `codira-backend-sqlite`
+* `codira-bundle-official`
 
 Before the split starts, the repository needs two explicit decisions:
 
@@ -40,26 +40,26 @@ Without those decisions, Phase 3 can drift into avoidable churn:
 
 Adopt the following final repository set for the post-split topology:
 
-* `repoindex`
+* `codira`
   Core platform repository for contracts, registry/discovery, CLI,
   orchestration, schema/storage, query flow, and shared utilities.
-* `repoindex-analyzer-python`
+* `codira-analyzer-python`
   First-party Python analyzer repository.
-* `repoindex-analyzer-json`
+* `codira-analyzer-json`
   First-party JSON analyzer repository.
-* `repoindex-analyzer-c`
+* `codira-analyzer-c`
   First-party C analyzer repository.
-* `repoindex-analyzer-bash`
+* `codira-analyzer-bash`
   First-party Bash analyzer repository.
-* `repoindex-backend-sqlite`
+* `codira-backend-sqlite`
   First-party SQLite backend repository.
-* `repoindex-bundle-official`
+* `codira-bundle-official`
   First-party meta-package repository that aggregates the official analyzers
   and backend.
 
 ### Repository ownership rule
 
-Each repository owns exactly one published distribution, except `repoindex`,
+Each repository owns exactly one published distribution, except `codira`,
 which owns the core distribution and the cross-package integration tests that
 validate the installed-package topology.
 
@@ -92,9 +92,9 @@ is not a permanent lockstep versioning rule.
 After the split:
 
 * each package repository must build and test in isolation
-* the `repoindex` core repository must retain integration coverage that
+* the `codira` core repository must retain integration coverage that
   installs the first-party packages as artifacts, not as sibling-source trees
-* `repoindex-bundle-official` must be validated as a real install target, not
+* `codira-bundle-official` must be validated as a real install target, not
   only as metadata declared inside the core repository
 
 ## Consequences
@@ -122,6 +122,6 @@ Phase 3 work must now:
 * prepare each future repository to build from its package-local boundary
 * move package-local tests and docs into their owning repositories where
   appropriate
-* keep cross-package integration validation in `repoindex`
+* keep cross-package integration validation in `codira`
 * use this repository set and coordinated `v2.0.0` policy in the execution
   ledger and release checklist

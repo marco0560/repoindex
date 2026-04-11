@@ -1,6 +1,6 @@
 # AST call graph implementation
 
-PROJECT: repoindex
+PROJECT: codira
 CURRENT_VERSION: v0.27.x
 TASK: Add AST-derived static call graph support
 ROLE: Senior Engineer
@@ -23,7 +23,7 @@ Rules:
 
 ## OBJECTIVE
 
-Add a useful, deterministic AST-derived static call graph to `repoindex`.
+Add a useful, deterministic AST-derived static call graph to `codira`.
 
 This call graph must improve:
 
@@ -78,11 +78,11 @@ No step skipping.
 
 Inspect only:
 
-1. `src/repoindex/parser_ast.py`
-2. `src/repoindex/indexer.py`
-3. `src/repoindex/schema.py`
-4. `src/repoindex/query/*`
-5. `src/repoindex/cli.py`
+1. `src/codira/parser_ast.py`
+2. `src/codira/indexer.py`
+3. `src/codira/schema.py`
+4. `src/codira/query/*`
+5. `src/codira/cli.py`
 6. relevant tests under `tests/`
 
 Determine:
@@ -197,7 +197,7 @@ For each command provide:
 
 The task is complete only when:
 
-- `repoindex` stores deterministic static call edges
+- `codira` stores deterministic static call edges
 - at least one grounded inspection path exists for callers/callees
 - tests cover the new behavior
 - no unrelated behavior regresses
