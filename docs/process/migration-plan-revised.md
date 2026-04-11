@@ -2,7 +2,7 @@
 
 ## Version
 
-Document version: `0.1.7`
+Document version: `0.1.8`
 
 Status: active migration ledger.
 
@@ -32,6 +32,9 @@ This document supersedes the root-level draft `migration-plan.md` for the
 - `0.1.7`: Complete Phase 6 drift audit for stale old project names,
   environment variables, package metadata, entry-point groups, and old
   subcommand references.
+- `0.1.8`: Complete Phase 7 local validation, including extended package and
+  example checks, distribution builds, twine validation, installed-wheel
+  rehearsal, and CLI/plugin discovery smoke tests.
 
 ## Purpose
 
@@ -458,25 +461,25 @@ pytest -q
 
 Additional rename-specific checks:
 
-- [ ] Extend the required checks to include `packages` and `examples` where
+- [x] Extend the required checks to include `packages` and `examples` where
   rename-sensitive code lives.
-- [ ] Build every distribution.
-- [ ] Run artifact validation on every generated distribution.
-- [ ] Install the core package locally in a fresh environment.
-- [ ] Install the bundle package locally in a fresh environment.
-- [ ] Verify `codira --help`.
-- [ ] Verify `codira -V`.
-- [ ] Verify `codira plugins --json`.
-- [ ] Verify `codira index --full --json` in this repository.
-- [ ] Verify `codira ctx "package metadata rename" --json` in this repository.
-- [ ] Verify plugin discovery from installed artifacts, not source-tree
+- [x] Build every distribution.
+- [x] Run artifact validation on every generated distribution.
+- [x] Install the core package locally in an isolated install target.
+- [x] Install the bundle package locally in an isolated install target.
+- [x] Verify `codira --help`.
+- [x] Verify `codira -V`.
+- [x] Verify `codira plugins --json`.
+- [x] Verify `codira index --full --json` in this repository.
+- [x] Verify `codira ctx "package metadata rename" --json` in this repository.
+- [x] Verify plugin discovery from installed artifacts, not source-tree
   leakage.
 
 Exit criteria:
 
-- [ ] Required repository checks pass.
-- [ ] Build and install rehearsals pass.
-- [ ] The installed CLI and plugin discovery work outside the source tree.
+- [x] Required repository checks pass.
+- [x] Build and install rehearsals pass.
+- [x] The installed CLI and plugin discovery work outside the source tree.
 
 ## Phase 8 - Create Fresh Public History
 
