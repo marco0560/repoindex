@@ -2,7 +2,7 @@
 
 ## Version
 
-Document version: `0.1.9`
+Document version: `0.1.10`
 
 Status: active migration ledger.
 
@@ -37,6 +37,9 @@ This document supersedes the root-level draft `migration-plan.md` for the
   rehearsal, and CLI/plugin discovery smoke tests.
 - `0.1.9`: Complete Phase 8 by publishing fresh `marco0560/codira` history
   from a prepared copy and pushing tag `v1.0.0`.
+- `0.1.10`: Complete Phase 9 by transferring the selected open issues from
+  `marco0560/repoindex` to `marco0560/codira`, verifying issue metadata, and
+  confirming GitHub redirects for sampled old issue URLs.
 
 ## Purpose
 
@@ -275,23 +278,23 @@ Preserve only useful active work in the new `codira` issue tracker.
 
 Tasks:
 
-- [x] Keep the old `codira` repository public while issue triage is in
+- [x] Keep the old `repoindex` repository public while issue triage is in
   progress.
-- [x] Classify each current `codira` issue as:
+- [x] Classify each current `repoindex` issue as:
   - [x] still relevant to `codira`
   - [x] historical only
   - [x] obsolete
-- [ ] Pre-create matching labels and milestones in `codira` where preserving
+- [x] Pre-create matching labels and milestones in `codira` where preserving
   them matters.
-- [ ] Transfer only still-relevant open issues in Phase 9 after the new
+- [x] Transfer only still-relevant open issues in Phase 9 after the new
   `codira` repository exists.
 - [x] Leave closed, obsolete, and historical issues in the archived
-  `codira` repository.
+  `repoindex` repository.
 
 Exit criteria:
 
-- [ ] The new `codira` issue tracker contains only intentional active work.
-- [x] The old `codira` issue tracker remains available for history.
+- [x] The new `codira` issue tracker contains only intentional active work.
+- [x] The old `repoindex` issue tracker remains available for history.
 
 Phase 2 classification record:
 
@@ -315,6 +318,8 @@ Phase 2 classification record:
   - [x] `#12` - replaceable Python analyzer and backend
   - [x] `#13` - monorepo analyzer fallback removal
 - [x] Obsolete issues: none identified.
+- [x] No labels or milestones were present on the selected open issues, so no
+  pre-created `codira` labels or milestones were needed.
 
 ## Phase 3 - Create The New Public GitHub Repository
 
@@ -324,9 +329,9 @@ Create a clean target remote without disturbing the old repository location.
 Tasks:
 
 - [x] Create a new public GitHub repository named `codira`.
-- [x] Do not rename the old `codira` repository in place.
-- [x] Do not transfer the old `codira` repository.
-- [x] Do not create a new repository at the old `codira` location after any
+- [x] Do not rename the old `repoindex` repository in place.
+- [x] Do not transfer the old `repoindex` repository.
+- [x] Do not create a new repository at the old `repoindex` location after any
   rename or transfer operation.
 - [ ] Configure the new repository with the expected default branch, branch
   protection, Actions settings, and trusted publishing settings if used.
@@ -486,7 +491,7 @@ Exit criteria:
 ## Phase 8 - Create Fresh Public History
 
 Goal:
-Publish a clean `codira` history without old `codira` commit history.
+Publish a clean `codira` history without old `repoindex` commit history.
 
 Tasks:
 
@@ -510,16 +515,38 @@ Move only intentionally active issue work to `codira`.
 
 Tasks:
 
-- [ ] Transfer selected open issues from `codira` to `codira`.
-- [ ] Verify transferred issues have comments and assignees.
-- [ ] Verify labels and milestones are preserved where intended.
-- [ ] Verify old issue URLs redirect to the transferred issues where GitHub
+- [x] Transfer selected open issues from `repoindex` to `codira`.
+- [x] Verify transferred issues have comments and assignees.
+- [x] Verify labels and milestones are preserved where intended.
+- [x] Verify old issue URLs redirect to the transferred issues where GitHub
   supports that redirect.
 
 Exit criteria:
 
-- [ ] Active issue work lives in `codira`.
-- [ ] Historical issue work remains in `codira`.
+- [x] Active issue work lives in `codira`.
+- [x] Historical issue work remains in `repoindex`.
+
+Phase 9 issue transfer record:
+
+- [x] `marco0560/repoindex#3` transferred to `marco0560/codira#1`.
+- [x] `marco0560/repoindex#4` transferred to `marco0560/codira#2`.
+- [x] `marco0560/repoindex#5` transferred to `marco0560/codira#3`.
+- [x] `marco0560/repoindex#6` transferred to `marco0560/codira#4`.
+- [x] `marco0560/repoindex#8` transferred to `marco0560/codira#5`.
+- [x] `marco0560/repoindex#14` transferred to `marco0560/codira#6`.
+- [x] `marco0560/repoindex#15` transferred to `marco0560/codira#7`.
+- [x] `gh issue list --repo marco0560/repoindex --state open` returned no
+  open issues after transfer.
+- [x] `gh issue list --repo marco0560/codira --state open` returned the seven
+  expected transferred issues.
+- [x] No transferred issue had labels, milestones, or assignees to preserve.
+- [x] Existing comments were preserved on transferred issues `#3`, `#4`, and
+  `#5`.
+- [x] GitHub redirect samples:
+  - [x] `https://github.com/marco0560/repoindex/issues/3` redirects to
+    `https://github.com/marco0560/codira/issues/1`.
+  - [x] `https://github.com/marco0560/repoindex/issues/15` redirects to
+    `https://github.com/marco0560/codira/issues/7`.
 
 ## Phase 10 - Archive The Old Repository
 
@@ -528,13 +555,13 @@ Freeze the old identity as historical reference.
 
 Tasks:
 
-- [ ] Update the old `codira` README with:
+- [ ] Update the old `repoindex` README with:
   - [ ] archived status
   - [ ] link to the new `codira` repository
   - [ ] note that active development moved to `codira`
   - [ ] note that the rename avoided conflict and confusion around the old
     `codira` package identity
-- [ ] Archive the old `codira` repository on GitHub.
+- [ ] Archive the old `repoindex` repository on GitHub.
 - [ ] Keep the old repository public.
 
 Exit criteria:
